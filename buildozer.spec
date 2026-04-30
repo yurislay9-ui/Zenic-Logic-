@@ -6,32 +6,30 @@ title = TITAN OMNISCALE X
 # (str) Package name
 package.name = titanomniscale
 
-# (str) Package domain (needed for android/ios packaging)
+# (str) Package domain
 package.domain = org.titan
 
-# (str) Source directory where the main python script lives
+# (str) Source directory
 source.dir = .
 
-# (list) Source files to include (let empty to include all files)
+# (list) Source files to include
 source.include_exts = py,png,jpg,kv,atlas,yaml,json
 
-# (list) List of inclusions using pattern matching
+# (list) Source patterns to include
 source.include_patterns = src/*
 
-# (list) Source files to exclude
-source.exclude_exts = spec,md,txt
-
-# (str) Application versioning
+# (str) Application version
 version = 1.0.0
 
-# (str) Requirements - only packages compatible with Android/ARM
-# fastapi/uvicorn/fastembed/tree-sitter-languages excluded - no ARM builds
-requirements = python3==3.11.5,kivy==2.3.0,pydantic==2.7.1,pyyaml==6.0.1,numpy==1.26.4,httpx==0.27.0,aiofiles==23.2.1,python-constraint==1.4.0
+# (str) Requirements - SOLO paquetes compatibles con Android
+# Kivy tiene recipe nativa en python-for-android
+# numpy tiene recipe pero es pesado; pyyaml es pure-python
+requirements = python3==3.11.5,kivy==2.3.0,pyyaml==6.0.1
 
 # (str) Supported orientations
 orientation = portrait
 
-# (bool) Indicate if the application should be fullscreen
+# (bool) Fullscreen mode
 fullscreen = 0
 
 # Android specific
