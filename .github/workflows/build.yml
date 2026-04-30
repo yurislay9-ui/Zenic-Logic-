@@ -14,15 +14,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
+      - name: Get Buildozer version
         id: buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
         with:
           workdir: .
           buildozer_version: stable
+          command: buildozer android debug 2>&1 | tee /tmp/build_log.txt
 
-      - name: Upload APK
+      - name: Save build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build_log.txt
+
+      - name: Find and upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: TITAN_APK
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: |
+            bin/*.apk
+            *.apk
