@@ -1,25 +1,15 @@
+# Buildozer
+.buildozer/
+bin/
+*.apk
+
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
 *.egg-info/
 dist/
 build/
-*.egg
-
-# Data files
-*.sqlite
-*.bin
-data/db/graph_ast.sqlite
-data/db/theorem_cache.sqlite
-data/db/merkle_state.json
-data/grammars/*.so
-data/models/*.bin
-
-# Environment
-.env
-!.env.example
 
 # IDE
 .vscode/
@@ -27,8 +17,10 @@ data/models/*.bin
 
 # OS
 .DS_Store
-*.log
+Thumbs.db
 
-# Node
-node_modules/
-coverage/
+# Data
+*.sqlite
+*.db
+titan_data/
+.titan_omniscale/
