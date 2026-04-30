@@ -6,7 +6,7 @@ package.domain = org.titan
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,yaml,json
 version = 1.0.0
-requirements = python3,kivy,pyjnius
+requirements = python3,kivy
 orientation = portrait
 fullscreen = 0
 
@@ -21,6 +21,3 @@ android.logcat_filters = *:S python:D
 p4a.branch = develop
 log_level = 2
 warn_on_root = 1
-
-# Forzar receta pyjnius
-android.gradle_dependencies = ''
