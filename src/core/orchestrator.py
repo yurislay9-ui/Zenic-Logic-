@@ -1,3 +1,9 @@
+"""
+TITAN OMNISCALE X - Orchestrator (Pure Python)
+
+Orquestador del pipeline completo. Sin dependencias externas.
+Compatible con Android.
+"""
 from pathlib import Path
 from src.config.loader import load_settings
 from src.core.shared.db_initializer import initialize_databases
@@ -10,6 +16,7 @@ from src.core.level5_structural_swarm.ast_surgeon import ASTSurgeon
 from src.core.level6_reflexion_sandbox.executor import ReflexionSandbox
 from src.core.level7_merkle_ledger.ledger import MerkleLedger
 from src.core.level8_theorem_cache.cache import TheoremCache
+
 
 class TitanOrchestrator:
     def __init__(self):
@@ -29,10 +36,11 @@ class TitanOrchestrator:
 
         self.ast.scan_project(self.p_dir)
 
-    async def execute(self, msg: str) -> dict:
+    async def execute(self, msg):
         # N1 & N8
         intent = self.parser.parse(msg)
-        if self.cache.lookup(intent): return {"status": "CACHED", "code": "// Servido desde Caché O(1)"}
+        if self.cache.lookup(intent):
+            return {"status": "CACHED", "code": "// Servido desde Cache O(1)"}
 
         # N2 & N4
         routing = self.router.route(intent)
@@ -40,11 +48,14 @@ class TitanOrchestrator:
 
         # N5
         code, lang = "", "python"
-        if ".kt" in intent.target: lang = "kotlin"
-        elif ".go" in intent.target: lang = "go"
+        if ".kt" in intent.target:
+            lang = "kotlin"
+        elif ".go" in intent.target:
+            lang = "go"
 
         for step in plan.steps:
-            if step.action == "SCRAPE_GITHUB": code = await self.scrap.fetch_modern_code(step.constraints.get("query",""), lang)
+            if step.action == "SCRAPE_GITHUB":
+                code = await self.scrap.fetch_modern_code(step.constraints.get("query", ""), lang)
             elif step.action == "REPLACE_AST_NODE":
                 try:
                     file_path = Path(f"{self.p_dir}/{intent.target}")

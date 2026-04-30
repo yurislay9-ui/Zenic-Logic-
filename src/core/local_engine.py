@@ -255,7 +255,8 @@ class TitanEngine:
             if step["action"] == "SCRAPE_GITHUB":
                 code = self._generate_template(intent["target"], lang)
             elif step["action"] == "REPLACE_AST_NODE":
-                code = f"// Optimized version of {step['target']}\n"
+                comment = "#" if lang == "python" else "//"
+                code = f"{comment} Optimized version of {step['target']}\n"
 
         if not code:
             return {"status": "NO_OP", "code": "", "error": "No new code generated",

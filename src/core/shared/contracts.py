@@ -1,67 +1,92 @@
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
-from enum import Enum
+"""
+TITAN OMNISCALE X - Contratos de datos (Pure Python)
 
-class OperationType(str, Enum):
+Sin dependencias externas. Compatible con Android.
+"""
+
+
+class OperationType:
     CREATE = "CREATE"
     REFACTOR = "REFACTOR"
     DELETE = "DELETE"
     SEARCH = "SEARCH"
 
-class GoalType(str, Enum):
+
+class GoalType:
     COMPLEXITY_REDUCTION = "COMPLEXITY_REDUCTION"
     MODERN_PATTERN = "MODERN_PATTERN"
     BUG_FIX = "BUG_FIX"
     FEATURE_ADD = "FEATURE_ADD"
 
-class CriticalityLevel(int, Enum):
+
+class CriticalityLevel:
     FAST_STANDARD = 1
     DEEP_MODERATE = 2
     SURGICAL_CRITICAL = 3
 
-class RoutePath(str, Enum):
+
+class RoutePath:
     FAST_PATH = "FAST_PATH_REGEX"
     DEEP_PATH = "DEEP_PATH_CONSTRAINT"
 
-class IntentPayload(BaseModel):
-    op: OperationType
-    target: str = "unknown"
-    goal: GoalType
-    scrap_query: str = ""
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
-class RoutingPayload(BaseModel):
-    intent: IntentPayload
-    criticality: CriticalityLevel
-    route: RoutePath
-    reason: str = ""
+class IntentPayload:
+    def __init__(self, op=OperationType.SEARCH, target="unknown",
+                 goal=GoalType.FEATURE_ADD, scrap_query="", confidence=0.0):
+        self.op = op
+        self.target = target
+        self.goal = goal
+        self.scrap_query = scrap_query
+        self.confidence = confidence
 
-class PlanStep(BaseModel):
-    step_id: int
-    action: Literal["SCRAPE_GITHUB", "REPLACE_AST_NODE", "INSERT_AST_NODE", "DELETE_AST_NODE"]
-    target_node_name: str
-    source: Literal["LOCAL_GRAPH", "GITHUB_SCRAPE"] = "LOCAL_GRAPH"
-    constraints: dict = Field(default_factory=dict)
 
-class ExecutionPlan(BaseModel):
-    plan_id: str
-    steps: list[PlanStep]
-    solver_status: Literal["PROVEN", "TIMEOUT", "HEURISTIC_FALLBACK"]
+class RoutingPayload:
+    def __init__(self, intent=None, criticality=CriticalityLevel.FAST_STANDARD,
+                 route=RoutePath.FAST_PATH, reason=""):
+        self.intent = intent or IntentPayload()
+        self.criticality = criticality
+        self.route = route
+        self.reason = reason
 
-class SandboxResult(BaseModel):
-    status: Literal["PASS", "FAIL_SYNTAX", "FAIL_DEPENDENCY", "TIMEOUT"]
-    error_message: str = ""
-    error_node: Optional[str] = None
 
-class MerkleNode(BaseModel):
-    file_path: str
-    hash_sha256: str
+class PlanStep:
+    def __init__(self, step_id=0, action="SCRAPE_GITHUB", target_node_name="",
+                 source="LOCAL_GRAPH", constraints=None):
+        self.step_id = step_id
+        self.action = action
+        self.target_node_name = target_node_name
+        self.source = source
+        self.constraints = constraints or {}
 
-class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant", "tool"]
-    content: str
 
-class ChatRequest(BaseModel):
-    model: str = "titan-omniscale-x"
-    messages: list[ChatMessage]
-    temperature: Optional[float] = 0.1
+class ExecutionPlan:
+    def __init__(self, plan_id="", steps=None, solver_status="HEURISTIC_FALLBACK"):
+        self.plan_id = plan_id
+        self.steps = steps or []
+        self.solver_status = solver_status
+
+
+class SandboxResult:
+    def __init__(self, status="PASS", error_message="", error_node=None):
+        self.status = status
+        self.error_message = error_message
+        self.error_node = error_node
+
+
+class MerkleNode:
+    def __init__(self, file_path="", hash_sha256=""):
+        self.file_path = file_path
+        self.hash_sha256 = hash_sha256
+
+
+class ChatMessage:
+    def __init__(self, role="user", content=""):
+        self.role = role
+        self.content = content
+
+
+class ChatRequest:
+    def __init__(self, model="titan-omniscale-x", messages=None, temperature=0.1):
+        self.model = model
+        self.messages = messages or []
+        self.temperature = temperature
