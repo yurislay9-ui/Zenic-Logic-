@@ -1,0 +1,9 @@
+project_dir: "."
+engine_limits:
+  solver_timeout_ms: 5000
+  sandbox_timeout_s: 5
+critical_nodes:
+  - "auth"
+  - "login"
+  - "crypto"
+  - "db"

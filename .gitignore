@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data files
+*.sqlite
+*.bin
+data/db/graph_ast.sqlite
+data/db/theorem_cache.sqlite
+data/db/merkle_state.json
+data/grammars/*.so
+data/models/*.bin
+
+# Environment
+.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+*.log
+
+# Node
+node_modules/
+coverage/
