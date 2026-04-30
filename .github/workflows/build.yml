@@ -6,59 +6,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build for Android
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
         with:
-          python-version: '3.11'
+          workdir: .
+          buildozer_version: stable
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -yqq \
-            autoconf automake libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            cmake libffi-dev libssl-dev \
-            libltdl-dev libbz2-dev libreadline-dev \
-            libsqlite3-dev wget curl llvm
-
-      - name: Cache Buildozer global
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-global-
-
-      - name: Cache Buildozer android
-        uses: actions/cache@v4
-        with:
-          path: .buildozer
-          key: buildozer-android-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-android-
-
-      - name: Install Buildozer
-        run: |
-          pip install --upgrade pip setuptools
-          pip install buildozer cython virtualenv
-
-      - name: Build Android APK (debug)
-        run: buildozer android debug
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TITAN_APK
-          path: bin/*.apk
-          if-no-files-found: warn
+          path: ${{ steps.buildozer.outputs.filename }}
