@@ -1,0 +1,24 @@
+#TitanApp - Kivy UI Definition
+<TitanApp>:
+    orientation: 'vertical'
+    padding: 30
+    spacing: 20
+
+    Label:
+        id: ip_label
+        text: "Conecta Cline a: http://000.000.000.000:5000/v1"
+        font_size: '18sp'
+        size_hint_y: 0.3
+
+    Label:
+        id: status
+        text: "Motor Apagado"
+        font_size: '16sp'
+        size_hint_y: 0.2
+
+    Button:
+        id: btn
+        text: "INICIAR TITAN OMNISCALE X"
+        font_size: '20sp'
+        size_hint: (1, 0.5)
+        on_press: app.start_engine(self)

@@ -1,19 +1,67 @@
 name: Build Android APK
-on: [push]
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
-      - name: Install Buildozer
-        run: pip install buildozer cython
-      - name: Build APK
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo5 cmake libffi-dev libssl-dev \
+            libltdl-dev libbz2-dev libreadline-dev \
+            libsqlite3-dev wget curl llvm \
+            openjdk-17-jdk
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Cache Buildozer global
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-global-
+
+      - name: Cache Buildozer android
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: buildozer-android-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-android-
+
+      - name: Install Buildozer and dependencies
+        run: |
+          pip install --upgrade pip setuptools
+          pip install buildozer cython virtualenv
+
+      - name: Build Android APK (debug)
         run: buildozer android debug
-      - uses: actions/upload-artifact@v4
+        env:
+          JAVA_HOME: /usr/lib/jvm/zulu-17-amd64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
           name: TITAN_APK
           path: bin/*.apk
+          if-no-files-found: warn

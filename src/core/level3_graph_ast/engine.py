@@ -2,7 +2,14 @@ import sqlite3
 import hashlib
 import logging
 from pathlib import Path
-from tree_sitter_languages import get_language, get_parser
+
+# Importación condicional: tree-sitter-languages puede no estar en Android
+try:
+    from tree_sitter_languages import get_language, get_parser
+    HAS_TREE_SITTER = True
+except ImportError:
+    HAS_TREE_SITTER = False
+
 from src.core.shared.db_initializer import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -18,6 +25,9 @@ LANGUAGE_QUERIES = {
 
 class GraphASTEngine:
     def scan_project(self, project_dir: str):
+        if not HAS_TREE_SITTER:
+            logger.info("tree-sitter-languages no disponible. Scan de AST deshabilitado.")
+            return
         base_path = Path(project_dir)
         if not base_path.exists():
             return
@@ -31,6 +41,8 @@ class GraphASTEngine:
                         logger.warning("Error parseando %s: %s", f, e)
 
     def _parse_and_store(self, f: Path, p_dir: str, conn: sqlite3.Connection):
+        if not HAS_TREE_SITTER:
+            return
         lang_map = {".py": "python", ".kt": "kotlin", ".go": "go", ".js": "javascript"}
         lang = lang_map.get(f.suffix)
         if not lang:
