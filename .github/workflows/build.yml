@@ -48,12 +48,24 @@ jobs:
       - name: Build APK
         run: buildozer android debug 2>&1 | tee build_log.txt
 
+      - name: Debug - List output files
+        if: always()
+        run: |
+          echo "=== Files in bin/ ==="
+          ls -la bin/ 2>/dev/null || echo "No bin/ directory"
+          echo "=== Find all APK files ==="
+          find . -name "*.apk" -type f 2>/dev/null
+          echo "=== Find all build outputs ==="
+          find . -path "./.buildozer" -prune -o -name "*.apk" -print -o -name "*.aab" -print 2>/dev/null
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: TITAN_APK
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            ./*.apk
 
       - name: Upload build log
         if: always()
