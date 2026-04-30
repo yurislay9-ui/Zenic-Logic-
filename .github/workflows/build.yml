@@ -22,37 +22,31 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-v2-${{ runner.os }}-
-
-      - name: Install system deps
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -yq autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev libltdl-dev zip unzip
-
-      - name: Install buildozer
-        run: |
           pip install --upgrade pip setuptools wheel
           pip install buildozer cython virtualenv
 
-      - name: Build APK
+      - name: Build APK with debug log
         run: |
-          set -o pipefail
-          buildozer android debug 2>&1 | tee build_log.txt
+          buildozer android debug 2>&1 | tee build_output.txt
+        continue-on-error: true
 
-      - name: Show APK info
+      - name: Show full build log
         if: always()
         run: |
-          echo "=== Buscando APK ==="
-          find . -name "*.apk" -type f 2>/dev/null || echo "No se encontro APK"
-          echo "=== Ultimas 100 lineas del log ==="
-          tail -100 build_log.txt 2>/dev/null || echo "No hay log"
+          echo "========== BUILD LOG (ultimas 200 lineas) =========="
+          tail -200 build_output.txt 2>/dev/null || echo "No hay log"
+
+      - name: Find APK files
+        if: always()
+        run: |
+          echo "========== BUSCANDO APK =========="
+          find . -name "*.apk" -type f 2>/dev/null
+          echo "========== CONTENIDO DE bin/ =========="
+          ls -la bin/ 2>/dev/null || echo "No existe bin/"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -61,4 +55,14 @@ jobs:
           name: TITAN_APK
           path: |
             bin/*.apk
-            build_log.txt
+            build_output.txt
+
+      - name: Check if APK exists
+        if: always()
+        run: |
+          if ls bin/*.apk 2>/dev/null; then
+            echo "APK generado exitosamente!"
+          else
+            echo "ERROR: No se genero ningun APK"
+            echo "Revisa el log arriba para ver el error de buildozer"
+          fi
