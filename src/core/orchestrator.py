@@ -34,6 +34,9 @@ from src.core.level6_reflexion_sandbox.executor import ReflexionSandbox
 from src.core.level7_merkle_ledger.ledger import MerkleLedger
 from src.core.level8_theorem_cache.cache import TheoremCache
 from src.core.shared.contracts import OperationType, GoalType, RoutePath
+from src.core.shared.sandbox_isolation import (
+    get_isolation_manager, SandboxWorkspace, shutdown_isolation
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,9 @@ class TitanOrchestrator:
 
         # Pending resumptions for partial reasoning (Gap 5)
         self._pending_resumptions = {}  # token -> resumption_state
+
+        # Sistema de aislamiento del sandbox
+        self._isolation_manager = get_isolation_manager()
 
         # Escanear proyecto si existe
         if Path(self.p_dir).exists():
@@ -217,13 +223,18 @@ class TitanOrchestrator:
         final_code = result_code if result_code else code
 
         # Nivel 7 (Snapshot) -> Nivel 6 (Sandbox Trial) -> Nivel 7 (Commit/Rollback)
+        # Crear workspace AISLADO para sandbox y ledger
+        sandbox_workspace = self._isolation_manager.create_workspace(
+            ttl_seconds=max(self.sandbox.timeout_seconds * 3, 120)
+        )
         p_dir = str(get_projects_dir())
-        self.ledger.snapshot(intent.target, p_dir)
+        self.ledger.snapshot(intent.target, p_dir, workspace=sandbox_workspace)
 
         trial = await self.sandbox.validate_code(final_code, lang, intent.target)
 
         if trial.status == "PASS" and final_code:
-            node = self.ledger.commit(intent.target, final_code, p_dir)
+            node = self.ledger.commit(intent.target, final_code, p_dir,
+                                       workspace=sandbox_workspace)
             self.cache.save(intent, "PROVEN",
                           {"h": node.hash_sha256[:8], "code": final_code},
                           final_code, lang)
@@ -247,7 +258,9 @@ class TitanOrchestrator:
                 "paths_pruned": trial.paths_pruned,
             }
         elif trial.status.startswith("FAIL") and final_code:
-            self.ledger.rollback(intent.target, p_dir)
+            self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
+            # Liberar workspace tras rollback
+            self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
             elapsed = int((time.time() - start_time) * 1000)
             self._log_request(intent, "ROLLBACK", elapsed,
                             solver_status=plan.solver_status)
@@ -302,9 +315,14 @@ class TitanOrchestrator:
         """
         logger.warning("PROTOCOLO ABORTIVO activado para: %s", intent.target)
 
+        # Crear workspace AISLADO para el protocolo abortivo
+        abortive_workspace = self._isolation_manager.create_workspace(
+            ttl_seconds=max(self.sandbox.timeout_seconds * 5, 300)
+        )
+
         # Rollback
         p_dir = str(get_projects_dir())
-        self.ledger.rollback(intent.target, p_dir)
+        self.ledger.rollback(intent.target, p_dir, workspace=abortive_workspace)
 
         solver_timeout = plan.solver_proof.get("timeout_ms", get_solver_timeout_ms(self.settings)) if plan.solver_proof else get_solver_timeout_ms(self.settings)
 
@@ -334,12 +352,13 @@ class TitanOrchestrator:
 
         if combined_code:
             # Validar resultado combinado en sandbox
-            self.ledger.snapshot(intent.target, p_dir)
+            self.ledger.snapshot(intent.target, p_dir, workspace=abortive_workspace)
             trial = await self.sandbox.validate_code(combined_code, intent.language, intent.target)
 
             if trial.status == "PASS" and combined_code:
-                # Commit resultado combinado
-                node = self.ledger.commit(intent.target, combined_code, p_dir)
+                # Commit resultado combinado en workspace aislado
+                node = self.ledger.commit(intent.target, combined_code, p_dir,
+                                           workspace=abortive_workspace)
                 self.cache.save(intent, "PROVEN",
                               {"h": node.hash_sha256[:8], "code": combined_code},
                               combined_code, intent.language)
@@ -370,7 +389,8 @@ class TitanOrchestrator:
                 }
             elif trial.status == "FAIL_K_PATH":
                 # K-Path exceeded -> rollback + partial reasoning with resumption
-                self.ledger.rollback(intent.target, p_dir)
+                self.ledger.rollback(intent.target, p_dir, workspace=abortive_workspace)
+                self._isolation_manager.release_workspace(abortive_workspace.sandbox_id)
                 elapsed = int((time.time() - start_time) * 1000)
                 return self._build_partial_reasoning_response(
                     intent, routing, plan, ast_analysis, trial, start_time,
@@ -378,7 +398,8 @@ class TitanOrchestrator:
                 )
             else:
                 # Other failure -> rollback + partial reasoning with resumption
-                self.ledger.rollback(intent.target, p_dir)
+                self.ledger.rollback(intent.target, p_dir, workspace=abortive_workspace)
+                self._isolation_manager.release_workspace(abortive_workspace.sandbox_id)
                 elapsed = int((time.time() - start_time) * 1000)
                 # Build a synthetic SandboxResult for the partial reasoning response
                 from src.core.shared.contracts import SandboxResult
@@ -585,24 +606,31 @@ class TitanOrchestrator:
 
         final_code = result_code if result_code else code
 
-        # Sandbox validation (Level 7 snapshot -> Level 6 sandbox -> Level 7 commit/rollback)
+        # Sandbox validation con workspace AISLADO para subtask
+        subtask_workspace = self._isolation_manager.create_workspace(
+            ttl_seconds=max(self.sandbox.timeout_seconds * 2, 60)
+        )
         p_dir = str(get_projects_dir())
-        self.ledger.snapshot(sub_intent.target, p_dir)
+        self.ledger.snapshot(sub_intent.target, p_dir, workspace=subtask_workspace)
         trial = await self.sandbox.validate_code(final_code, lang, sub_intent.target)
 
         if trial.status == "PASS" and final_code:
-            node = self.ledger.commit(sub_intent.target, final_code, p_dir)
+            node = self.ledger.commit(sub_intent.target, final_code, p_dir,
+                                       workspace=subtask_workspace)
+            self._isolation_manager.release_workspace(subtask_workspace.sandbox_id)
             self.cache.save(sub_intent, "PROVEN",
                           {"h": node.hash_sha256[:8], "code": final_code},
                           final_code, lang)
             return {"status": "SUCCESS", "code": final_code, "hash": node.hash_sha256[:12],
                     "explanations": explanations}
         elif trial.status == "FAIL_K_PATH":
-            self.ledger.rollback(sub_intent.target, p_dir)
+            self.ledger.rollback(sub_intent.target, p_dir, workspace=subtask_workspace)
+            self._isolation_manager.release_workspace(subtask_workspace.sandbox_id)
             return {"status": "K_PATH_EXCEEDED", "code": final_code,
                     "error": trial.error_message, "explanations": explanations}
         else:
-            self.ledger.rollback(sub_intent.target, p_dir)
+            self.ledger.rollback(sub_intent.target, p_dir, workspace=subtask_workspace)
+            self._isolation_manager.release_workspace(subtask_workspace.sandbox_id)
             return {"status": "ROLLBACK", "code": final_code,
                     "error": trial.error_message if hasattr(trial, 'error_message') else "Sandbox validation failed",
                     "explanations": explanations}

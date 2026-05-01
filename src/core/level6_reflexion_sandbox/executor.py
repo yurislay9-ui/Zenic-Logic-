@@ -1,10 +1,15 @@
 """
-TITAN OMNISCALE X - Reflexion Sandbox v13 (Symbolic Execution Real)
+TITAN OMNISCALE X - Reflexion Sandbox v13 (Isolated + Symbolic Execution)
 
 Sandbox con ejecucion simbolica acotada real, timeout real, K-Path limiting
 basado en grafo de dependencias, y path pruning para I/O.
 
-MEJORAS v13:
+MEJORAS v13 - AISLAMIENTO COMPLETO:
+- Workspace aislado: el sandbox NUNCA toca archivos del proyecto
+- Builtins restringidos con open() que solo escribe dentro del workspace
+- __import__ restringido: solo modulos seguros permitidos
+- DBs del sandbox son INDEPENDIENTES de las del sistema
+- Cleanup automatico de workspaces expirados
 - Ejecucion Simbolica Acotada real (SymbolicExecutor)
 - K-Paths medidos desde el grafo AST (KPathAnalyzer)
 - Path Pruning de side effects con Mocks
@@ -21,6 +26,9 @@ import logging
 from src.core.shared.contracts import (
     SandboxResult, TimeoutEnforcer, SymbolicExecutor, KPathAnalyzer
 )
+from src.core.shared.sandbox_isolation import (
+    get_isolation_manager, create_sandbox_globals, SandboxWorkspace
+)
 from src.config.loader import load_settings, get_sandbox_timeout_s, get_k_path_limit
 
 logger = logging.getLogger(__name__)
@@ -29,13 +37,15 @@ logger = logging.getLogger(__name__)
 class ReflexionSandbox:
     """
     Sandbox con ejecucion simbolica real, timeout real y K-Path limiting.
+    TODO el codigo se ejecuta en un workspace AISLADO separado del proyecto.
 
     Implementa el Nivel 6 del documento de arquitectura:
+    - AISLAMIENTO: Workspace separado, sin acceso al filesystem del proyecto
     - Ejecucion Simbolica Acotada (estados simbolicos + path conditions)
     - K-Paths de radio configurable (default 10) desde el grafo AST
     - Path Pruning de side effects (I/O -> Mock)
     - Timeout enforcement real via threading
-    - Ejecucion segura con builtins restringidos
+    - Ejecucion segura con builtins restringidos y open() sandboxed
     """
 
     def __init__(self, timeout_seconds=None, k_path_limit=None):
@@ -49,7 +59,10 @@ class ReflexionSandbox:
         )
         self._kpath_analyzer = KPathAnalyzer(k_limit=self.k_path_limit)
 
-        logger.info("ReflexionSandbox: timeout=%ds, k_path_limit=%d",
+        # Sistema de aislamiento
+        self._isolation_manager = get_isolation_manager()
+
+        logger.info("ReflexionSandbox: timeout=%ds, k_path_limit=%d, ISOLATED=True",
                      self.timeout_seconds, self.k_path_limit)
 
     async def validate_code(self, code, language, target_name):
@@ -59,7 +72,7 @@ class ReflexionSandbox:
         return self._validate_other(code, language, target_name)
 
     def _validate_python(self, code, target_name):
-        """Validacion completa de codigo Python con ejecucion simbolica."""
+        """Validacion completa de codigo Python con ejecucion simbolica AISLADA."""
         # Fase 1: Parseo AST
         try:
             tree = ast.parse(code)
@@ -151,10 +164,10 @@ class ReflexionSandbox:
                 paths_pruned=paths_pruned
             )
 
-        # Fase 7: Ejecucion segura con timeout real
+        # Fase 7: Ejecucion segura AISLADA con timeout real
         if not dangerous_calls:
             exec_result, timed_out = self._enforcer.execute_with_timeout(
-                self._safe_exec, code, target_name
+                self._isolated_exec, code, target_name
             )
             if timed_out:
                 return SandboxResult(
@@ -181,6 +194,7 @@ class ReflexionSandbox:
         # Agregar info de la ejecucion simbolica al resultado
         metrics["symbolic_paths"] = len(symbolic_result.get("paths", []))
         metrics["symbolic_violations"] = len(symbolic_result.get("violations", []))
+        metrics["sandbox_isolated"] = True
 
         return SandboxResult(
             status="PASS",
@@ -243,7 +257,7 @@ class ReflexionSandbox:
         return SandboxResult(
             status="PASS",
             warnings=warnings + symbolic_result.get("warnings", []),
-            metrics={"k_paths": paths_explored},
+            metrics={"k_paths": paths_explored, "sandbox_isolated": True},
             paths_explored=paths_explored,
             paths_pruned=paths_pruned
         )
@@ -298,27 +312,64 @@ class ReflexionSandbox:
                         dangerous.append(full)
         return list(set(dangerous))
 
-    def _safe_exec(self, code, target_name):
-        """Ejecuta codigo en un entorno sandbox con builtins restringidos."""
-        safe_builtins = {
-            'print': lambda *a, **kw: None,  # Mocked I/O (Path Pruning)
-            'len': len, 'range': range, 'enumerate': enumerate,
-            'str': str, 'int': int, 'float': float, 'bool': bool, 'list': list,
-            'dict': dict, 'set': set, 'tuple': tuple, 'type': type,
-            'isinstance': isinstance, 'hasattr': hasattr, 'getattr': getattr,
-            'setattr': setattr, 'sorted': sorted, 'reversed': reversed,
-            'zip': zip, 'map': map, 'filter': filter, 'sum': sum,
-            'min': min, 'max': max, 'abs': abs, 'round': round,
-            'any': any, 'all': all,
-            'open': lambda *a, **kw: None,  # Mocked I/O (Path Pruning)
-            'True': True, 'False': False, 'None': None,
-            'Exception': Exception, 'ValueError': ValueError,
-            'TypeError': TypeError, 'KeyError': KeyError,
-            'AttributeError': AttributeError, 'IndexError': IndexError,
-        }
-        sandbox_globals = {"__builtins__": safe_builtins, "__name__": "__sandbox__"}
+    def _isolated_exec(self, code, target_name):
+        """
+        Ejecuta codigo en un workspace AISLADO con builtins restringidos.
+
+        El codigo se ejecuta en un directorio separado donde:
+        - open() solo puede escribir/leer DENTRO del workspace
+        - __import__ solo permite modulos seguros (math, json, etc.)
+        - NO hay acceso al filesystem del proyecto
+        - NO hay acceso a os, subprocess, shutil, etc.
+        - El workspace se limpia automaticamente al terminar
+        """
+        workspace = None
         try:
-            exec(compile(code, target_name, 'exec'), sandbox_globals)
+            # Crear workspace aislado para esta ejecucion
+            workspace = self._isolation_manager.create_workspace(
+                ttl_seconds=self.timeout_seconds * 2 + 60  # TTL > timeout
+            )
+
+            # Escribir codigo en el workspace aislado
+            workspace.write_code(code, filename=f"{target_name}")
+
+            # Crear globals con builtins restringidos que operan dentro del workspace
+            sandbox_globals = create_sandbox_globals(workspace)
+
+            # Log de ejecucion
+            workspace.write_log(
+                f"Exec started: target={target_name}, "
+                f"code_size={len(code)} bytes, "
+                f"workspace={workspace.sandbox_id}"
+            )
+
+            # Ejecutar codigo compilado en el workspace aislado
+            compiled = compile(code, str(workspace.code_dir / target_name), 'exec')
+            exec(compiled, sandbox_globals)
+
+            # Log de exito
+            workspace.write_log(f"Exec completed successfully: target={target_name}")
+
             return {}
+
+        except PermissionError as e:
+            # El codigo intento acceder fuera del workspace
+            logger.warning("Sandbox bloqueo acceso ilegal: %s", e)
+            return {"error": f"Sandbox security: {str(e)}"}
+
+        except ImportError as e:
+            # El codigo intento importar un modulo bloqueado
+            logger.warning("Sandbox bloqueo import ilegal: %s", e)
+            return {"error": f"Sandbox import blocked: {str(e)}"}
+
         except Exception as e:
             return {"error": f"Runtime error: {type(e).__name__}: {str(e)}"}
+
+        finally:
+            # Liberar workspace (se limpia del disco)
+            if workspace:
+                try:
+                    self._isolation_manager.release_workspace(workspace.sandbox_id)
+                except Exception as e:
+                    logger.warning("Error liberando workspace %s: %s",
+                                   workspace.sandbox_id, e)
