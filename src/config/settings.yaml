@@ -1,9 +1,36 @@
 project_dir: "."
 engine_limits:
-  solver_timeout_ms: 5000
-  sandbox_timeout_s: 5
+  solver_timeout_ms: 15000        # 15s quirurgico como especifica el documento
+  solver_fast_timeout_ms: 5000    # 5s para operaciones no quirurgicas
+  sandbox_timeout_s: 5            # Timeout del sandbox
+  mcts_max_depth: 5               # Profundidad maxima MCTS
+  mcts_max_simulations: 100       # Maximo de simulaciones MCTS
+  max_k_paths: 10                 # Radio de K-Paths
 critical_nodes:
   - "auth"
   - "login"
+  - "signin"
+  - "signup"
+  - "password"
+  - "token"
   - "crypto"
+  - "cipher"
+  - "encrypt"
+  - "decrypt"
+  - "hash"
+  - "salt"
+  - "payment"
+  - "stripe"
+  - "paypal"
+  - "transaction"
+  - "billing"
   - "db"
+  - "database"
+  - "sql"
+  - "migration"
+  - "schema"
+  - "session"
+  - "cookie"
+  - "jwt"
+  - "oauth"
+  - "saml"

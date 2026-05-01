@@ -1,30 +1,52 @@
+#!/usr/bin/env python3
 """
-TITAN OMNISCALE X - Motor de IA Quirurgico Local v13
-Servidor OpenAI-Compatible para Cline, Aide, OpenCode y mas.
+TITAN OMNISCALE X v13 - Headless Server for Termux/proot-distro
 
-Usa modulos src/core/ con Z3 SMT Solver (con fallback AC-3),
-MCTS real, Ejecucion Simbolica real, Timeout enforcement real,
-Caché de Teoremas con Skeleton Hash, Protocolo Abortivo,
-y Razonamiento Parcial con tool_calls.
+Servidor OpenAI-Compatible SIN Kivy. Diseñado para correr en
+Termux + proot-distro (Debian) en tu Redmi 12R Pro.
 
-Modo de uso:
-  1. Pulsa INICIAR MOTOR
-  2. Conecta Cline/Aide a: http://TU_IP:5000/v1
-  3. El motor procesa tus peticiones con 8 niveles de razonamiento
+Uso:
+  python3 main_headless.py                    # Modo interactivo
+  python3 main_headless.py --port 5000        # Puerto custom
+  python3 main_headless.py --ram-limit 2048   # Limite RAM en MB
+  python3 main_headless.py --daemon           # Modo daemon (background)
+
+Endpoints:
+  GET  /v1/models           - Lista modelos disponibles
+  POST /v1/chat/completions - Chat completion (OpenAI-compatible)
+  GET  /health              - Status del motor + recursos
+  GET  /                    - Info general
 """
 
 import json
 import os
+import sys
 import time
 import uuid
 import threading
 import socket
 import logging
+import argparse
+import signal
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
-# Importar desde modulos src/core/ (arquitectura modular)
+# ============================================================
+#  INICIALIZACION - Antes de importar modulos pesados
+# ============================================================
+
+# Tunear GC para ARM antes de cargar nada
+from src.core.shared.resource_governor import (
+    tune_gc_for_arm, set_process_priority_low,
+    limit_open_files, init_governor, get_governor
+)
+
+tune_gc_for_arm()
+set_process_priority_low()
+limit_open_files()
+
+# Ahora importar los modulos del engine
 from src.core.shared.contracts import (
     OperationType, GoalType, CriticalityLevel, RoutePath,
     IntentPayload, RoutingPayload, PlanStep, ExecutionPlan,
@@ -47,26 +69,23 @@ from src.core.level7_merkle_ledger.ledger import MerkleLedger
 from src.core.level8_theorem_cache.cache import TheoremCache
 from src.core.orchestrator import TitanOrchestrator
 
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.textinput import TextInput
-from kivy.uix.scrollview import ScrollView
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 logger = logging.getLogger("TITAN")
 
-IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
 
 # ============================================================
-#  SERVIDOR HTTP OPENAI-COMPATIBLE
+#  SERVIDOR HTTP OPENAI-COMPATIBLE (Sin Kivy)
 # ============================================================
 
 class TitanHTTPHandler(BaseHTTPRequestHandler):
     """Handler HTTP compatible con la API de OpenAI."""
 
     orchestrator = None
+    governor = None
 
     def log_message(self, format, *args):
         logger.info("HTTP: %s", format % args)
@@ -80,19 +99,40 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             })
         elif self.path == '/':
             solver_name = "Z3" if HAS_Z3 else "AC-3"
+            gov = self.governor
+            res_status = gov.get_status() if gov else {}
             self._send_json({
-                "status": "active", "model": "titan-omniscale-x", "version": "13.0",
-                "endpoints": ["/v1/chat/completions", "/v1/models"],
+                "status": "active",
+                "model": "titan-omniscale-x",
+                "version": "13.0-headless",
+                "endpoints": ["/v1/chat/completions", "/v1/models", "/health"],
                 "pipeline_levels": 8,
                 "solver": solver_name,
+                "platform": "termux-proot",
+                "resources": res_status,
                 "features": ["MCTS", f"{solver_name}_Solver", "Timeout_Enforcement",
                              "Theorem_Cache", "Skeleton_Hash", "K_Path_Limiting",
                              "Symbolic_Execution", "Abortive_Protocol",
-                             "Partial_Reasoning", "Contextual_CodeGen"],
-                "description": f"TITAN OMNISCALE X v13 - Local Surgical AI Engine ({solver_name})"
+                             "Partial_Reasoning", "Contextual_CodeGen",
+                             "Resource_Governor"],
+                "description": f"TITAN OMNISCALE X v13 - Headless ({solver_name}) for Termux"
             })
         elif self.path == '/health':
-            self._send_json({"status": "healthy"})
+            gov = self.governor
+            solver_name = "Z3" if HAS_Z3 else "AC-3"
+            health = {
+                "status": "healthy",
+                "solver": solver_name,
+                "has_z3": HAS_Z3,
+                "uptime_s": int(time.time() - START_TIME) if 'START_TIME' in dir() else 0,
+            }
+            if gov:
+                health["resources"] = gov.get_status()
+                # Marcar unhealthy si RAM critica
+                if gov.is_ram_critical():
+                    health["status"] = "degraded"
+                    health["reason"] = f"RAM critical: {gov._ram_usage_mb:.0f}MB"
+            self._send_json(health)
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -113,6 +153,18 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
     def _handle_chat_completions(self):
+        # Pre-request: preparar recursos
+        gov = self.governor
+        if gov:
+            gov.pre_request()
+            # Rechazar si RAM critica
+            if gov.is_ram_critical():
+                self._send_json({
+                    "error": {"message": "Server overloaded - RAM critical. Retry later.",
+                              "type": "server_overloaded"}
+                }, status=503)
+                return
+
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
@@ -145,17 +197,13 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             result = loop.run_until_complete(self.orchestrator.execute(user_msg))
             loop.close()
 
-            # ============================================================
-            #  RAZONAMIENTO PARCIAL - Response Contract con tool_calls
-            # ============================================================
+            # Razonamiento Parcial
             if result.get("partial_reasoning"):
                 response = self._build_partial_reasoning_response(data, result, user_msg)
                 self._send_json(response)
                 return
 
-            # ============================================================
-            #  RESPUESTA NORMAL
-            # ============================================================
+            # Respuesta Normal
             content_parts = [f"TITAN OMNISCALE X v13 - {result['status']}"]
 
             if result.get("explanations"):
@@ -174,7 +222,6 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             if result.get("cache_source"):
                 content_parts.append(f"\nCache hit: {result['cache_source']} (hits: {result.get('cache_hits', 0)})")
 
-            # Metadata del solver y MCTS
             solver_status = result.get('solver_status', 'N/A')
             mcts_sims = result.get('mcts_simulations', 0)
             mcts_depth = result.get('mcts_depth_reached', 0)
@@ -192,8 +239,13 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             if paths_explored:
                 meta_parts.append(f"Paths: {paths_explored} explored, {paths_pruned} pruned")
 
-            content_parts.append(" | ".join(meta_parts))
+            # Agregar info de recursos
+            if gov:
+                res = gov.get_status()
+                meta_parts.append(f"RAM: {res['ram_usage_mb']}MB/{res['ram_limit_mb']}MB")
+                meta_parts.append(f"CPU: {res['cpu_usage_pct']}%")
 
+            content_parts.append(" | ".join(meta_parts))
             response_content = "\n".join(content_parts)
 
             response = {
@@ -222,6 +274,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
                     "paths_explored": paths_explored,
                     "paths_pruned": paths_pruned,
                     "symbolic_execution": True,
+                    "platform": "termux-proot",
                 }
             }
             self._send_json(response)
@@ -229,7 +282,6 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.error("Error processing request: %s", e, exc_info=True)
 
-            # Error interno - respuesta compatible con OpenAI
             error_content = f"TITAN OMNISCALE X v13 - Internal Error\n{str(e)}\n\nTry reformulating your request."
 
             self._send_json({
@@ -244,15 +296,12 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             })
 
+        finally:
+            if gov:
+                gov.post_request()
+
     def _build_partial_reasoning_response(self, data, result, user_msg):
-        """
-        Construye la respuesta de Razonamiento Parcial como especifica el documento.
-
-        Payload JSON con tool_calls para que el cliente (Cline/Aide)
-        pueda continuar la operacion subdividida.
-        """
         partial = result.get("partial_reasoning_payload", {})
-
         response = {
             "id": f"titan-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
@@ -283,7 +332,6 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
                 "partial_reasoning": True,
             }
         }
-
         return response
 
     def _send_json(self, data, status=200):
@@ -302,212 +350,160 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 # ============================================================
-#  INTERFAZ KIVY
+#  FUNCIONES AUXILIARES
 # ============================================================
 
-class TitanApp(App):
-    """TITAN OMNISCALE X v13 con servidor OpenAI-compatible."""
+def get_ip():
+    """Obtiene la IP local del telefono."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
-    def build(self):
-        self.engine = TitanOrchestrator()
-        self.server = None
-        self.server_running = False
-        self.log_lines = []
 
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-
-        solver_name = "Z3" if HAS_Z3 else "AC-3"
-
-        self.title_label = Label(
-            text=f"[b]TITAN OMNISCALE X v13[/b]\nMotor de IA Quirurgico Local ({solver_name})",
-            font_size='22sp', markup=True, size_hint=(1, 0.12),
-            color=(0.2, 0.8, 1, 1))
-
-        self.ip_label = Label(
-            text="Conecta Cline/Aide/OpenCode a:\nhttp://0.0.0.0:5000/v1",
-            font_size='16sp', size_hint=(1, 0.1),
-            color=(1, 1, 0.5, 1))
-
-        self.status_label = Label(
-            text="Motor Apagado", font_size='16sp', size_hint=(1, 0.06),
-            color=(1, 0.5, 0.5, 1))
-
-        self.btn = Button(
-            text="INICIAR MOTOR TITAN v13", font_size='20sp', size_hint=(1, 0.1),
-            background_color=(0.1, 0.5, 0.9, 1))
-        self.btn.bind(on_press=self.toggle_engine)
-
-        self.input_field = TextInput(
-            hint_text="Prueba local: 'crear modulo auth.py'",
-            multiline=False, font_size='14sp', size_hint=(1, 0.08))
-        self.input_field.bind(on_text_validate=self.test_local)
-
-        self.test_btn = Button(
-            text="PROBAR LOCALMENTE", font_size='14sp', size_hint=(1, 0.06),
-            background_color=(0.3, 0.7, 0.3, 1))
-        self.test_btn.bind(on_press=self.test_local)
-
-        scroll = ScrollView(size_hint=(1, 0.48))
-        self.log_label = Label(
-            text=f"Motor v13 listo. Pulsa INICIAR MOTOR para activar el servidor.\n\n"
-                 f"NOVEDADES v13:\n"
-                 f"- {solver_name} SMT Solver (Z3 si disponible, AC-3 fallback)\n"
-                 f"- MCTS real (UCB1, 100 simulaciones, depth 5)\n"
-                 f"- Ejecucion Simbolica Acotada real\n"
-                 f"- Timeout enforcement real (15s quirurgico, 5s moderado)\n"
-                 f"- K-Paths basado en grafo de dependencias\n"
-                 f"- Protocolo Abortivo (auto-subdivision en timeout)\n"
-                 f"- Razonamiento Parcial con tool_calls\n"
-                 f"- Caché de Teoremas con Skeleton Hash\n"
-                 f"- Configuracion YAML conectada\n"
-                 f"- MacroRouter con firmas topologicas del AST\n"
-                 f"- Generacion de codigo contextual\n\n"
-                 f"COMO CONECTAR CLINE:\n"
-                 f"1. Inicia el motor en esta app\n"
-                 f"2. En VS Code, configura Cline:\n"
-                 f"   - API Provider: OpenAI Compatible\n"
-                 f"   - Base URL: http://TU_IP:5000/v1\n"
-                 f"   - Model: titan-omniscale-x\n"
-                 f"3. Cline enviara peticiones a tu telefono",
-            font_size='12sp', size_hint_y=None, valign='top')
-        self.log_label.bind(
-            width=lambda *x: setattr(self.log_label, 'text_size', (self.log_label.width, None)))
-        self.log_label.bind(texture_size=self.log_label.setter('size'))
-        scroll.add_widget(self.log_label)
-
-        layout.add_widget(self.title_label)
-        layout.add_widget(self.ip_label)
-        layout.add_widget(self.status_label)
-        layout.add_widget(self.btn)
-        layout.add_widget(self.input_field)
-        layout.add_widget(self.test_btn)
-        layout.add_widget(scroll)
-        return layout
-
-    def get_ip(self):
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except Exception:
-            return "127.0.0.1"
-
-    def toggle_engine(self, instance):
-        if self.server_running:
-            self._stop_engine()
-        else:
-            self._start_engine()
-
-    def _start_engine(self):
-        ip = self.get_ip()
-        self.ip_label.text = f"Conecta Cline/Aide/OpenCode a:\nhttp://{ip}:5000/v1"
-        self.status_label.text = "Iniciando motor v13..."
-        self.status_label.color = (1, 1, 0.5, 1)
-        self.btn.disabled = True
-        TitanHTTPHandler.orchestrator = self.engine
-
-        def run_server():
-            try:
-                self.server = ThreadedHTTPServer(('0.0.0.0', 5000), TitanHTTPHandler)
-                self.server_running = True
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_running(ip))
-                self.server.serve_forever()
-            except OSError as e:
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_error(str(e)))
-            except Exception as e:
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_error(str(e)))
-
-        threading.Thread(target=run_server, daemon=True).start()
-
-    def _stop_engine(self):
-        if self.server:
-            self.server.shutdown()
-            self.server = None
-        self.server_running = False
-        self.status_label.text = "Motor Apagado"
-        self.status_label.color = (1, 0.5, 0.5, 1)
-        self.btn.text = "INICIAR MOTOR TITAN v13"
-        self.btn.background_color = (0.1, 0.5, 0.9, 1)
-        self.btn.disabled = False
-        self._add_log("Motor detenido.")
-
-    def _update_status_running(self, ip):
-        solver_name = "Z3" if HAS_Z3 else "AC-3"
-        self.status_label.text = f"Motor v13 ACTIVO ({solver_name}) - {ip}:5000"
-        self.status_label.color = (0.3, 1, 0.3, 1)
-        self.btn.text = "DETENER MOTOR"
-        self.btn.background_color = (0.9, 0.3, 0.1, 1)
-        self.btn.disabled = False
-        self._add_log(f"Motor v13 activo. {solver_name} + MCTS + SymbolicExec reales.")
-
-    def _update_status_error(self, error):
-        self.status_label.text = f"Error: {error}"
-        self.status_label.color = (1, 0.3, 0.3, 1)
-        self.btn.text = "REINTENTAR"
-        self.btn.background_color = (0.1, 0.5, 0.9, 1)
-        self.btn.disabled = False
-        self._add_log(f"Error: {error}")
-
-    def test_local(self, instance):
-        msg = self.input_field.text.strip()
-        if not msg:
-            return
-        self._add_log(f"\n>> Local: {msg}")
-        self.test_btn.disabled = True
-        self.input_field.text = ""
-        threading.Thread(target=self._run_local_test, args=(msg,), daemon=True).start()
-
-    def _run_local_test(self, msg):
-        try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(self.engine.execute(msg))
-            loop.close()
-            solver_name = "Z3" if HAS_Z3 else "AC-3"
-            output = f"TITAN v13 - {result['status']}\n"
-            output += f"Route: {result.get('route', 'N/A')} | Crit: {result.get('criticality', 'N/A')}\n"
-            output += f"Time: {result.get('processing_time_ms', 0)}ms | Hash: {result.get('hash', 'N/A')}\n"
-            output += f"Solver({solver_name}): {result.get('solver_status', 'N/A')} | MCTS: {result.get('mcts_simulations', 0)} sims\n"
-            if result.get('paths_explored'):
-                output += f"Paths: {result.get('paths_explored', 0)} explored, {result.get('paths_pruned', 0)} pruned\n"
-            if result.get('partial_reasoning'):
-                output += "PROTOCOL: Razonamiento Parcial - subdividiendo tarea\n"
-            if result.get('explanations'):
-                for exp in result['explanations']:
-                    output += f"  {exp}\n"
-            if result.get('code'):
-                output += f"\nCode:\n{result['code']}\n"
-            if result.get('error'):
-                output += f"\nError: {result['error']}\n"
-        except Exception as e:
-            output = f"Error: {str(e)}"
-        from kivy.clock import Clock
-        Clock.schedule_once(lambda dt: self._update_test_result(output))
-
-    def _update_test_result(self, text):
-        self._add_log(text)
-        self.test_btn.disabled = False
-
-    def _add_log(self, text):
-        self.log_lines.append(text)
-        if len(self.log_lines) > 200:
-            self.log_lines = self.log_lines[-200:]
-        self.log_label.text = "\n".join(self.log_lines)
+def print_banner(ip, port, solver_name, governor):
+    """Imprime el banner de inicio en la terminal."""
+    res = governor.get_status() if governor else {}
+    banner = f"""
+╔══════════════════════════════════════════════════════════════╗
+║  TITAN OMNISCALE X v13 - HEADLESS SERVER                   ║
+║  Motor de IA Quirurgico Local ({solver_name})                   ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Conecta Cline/Aide/OpenCode a:                              ║
+║  http://{ip}:{port}/v1                                       ║
+║                                                              ║
+║  Endpoints:                                                  ║
+║    GET  /v1/models        - Modelos disponibles              ║
+║    POST /v1/chat/completions - Chat completion               ║
+║    GET  /health           - Status + recursos                ║
+║                                                              ║
+║  Recursos:                                                   ║
+║    Solver: {solver_name} | MCTS: adaptativo                    ║
+║    RAM: {res.get('ram_usage_mb', 0):.0f}MB / {res.get('ram_limit_mb', '?')}MB limite           ║
+║    GC tuned for ARM | Priority: low                          ║
+║                                                              ║
+║  Ctrl+C para detener                                         ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+    print(banner)
 
 
 # ============================================================
 #  PUNTO DE ENTRADA
 # ============================================================
 
-if __name__ == '__main__':
+START_TIME = time.time()
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="TITAN OMNISCALE X v13 - Headless Server"
+    )
+    parser.add_argument(
+        '--port', type=int, default=5000,
+        help='Puerto del servidor (default: 5000)'
+    )
+    parser.add_argument(
+        '--host', type=str, default='0.0.0.0',
+        help='Host para bind (default: 0.0.0.0)'
+    )
+    parser.add_argument(
+        '--ram-limit', type=int, default=2048,
+        help='Limite RAM en MB (default: 2048)'
+    )
+    parser.add_argument(
+        '--daemon', action='store_true',
+        help='Correr como daemon (background)'
+    )
+    parser.add_argument(
+        '--debug', action='store_true',
+        help='Modo debug con logs verbose'
+    )
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    # Inicializar Resource Governor
+    governor = init_governor(ram_limit_mb=args.ram_limit)
+
+    # Inicializar bases de datos
     initialize_databases()
+
     solver_name = "Z3" if HAS_Z3 else "AC-3"
-    logger.info("TITAN OMNISCALE X v13.0 - Local Surgical AI Engine")
-    logger.info(f"Solver: {solver_name} | MCTS Real | Symbolic Exec Real | Timeout Real | Skeleton Hash")
-    logger.info("OpenAI-compatible server for Cline, Aide, OpenCode")
-    TitanApp().run()
+    logger.info("TITAN OMNISCALE X v13.0 - Headless Server")
+    logger.info(f"Solver: {solver_name} | MCTS Adaptive | Symbolic Exec | Resource Governor")
+    logger.info(f"RAM limit: {args.ram_limit}MB | GC tuned for ARM | Process priority: low")
+
+    # Crear orchestrator
+    orchestrator = TitanOrchestrator()
+
+    # Configurar handler
+    TitanHTTPHandler.orchestrator = orchestrator
+    TitanHTTPHandler.governor = governor
+
+    # Obtener IP
+    ip = get_ip()
+
+    # Banner
+    print_banner(ip, args.port, solver_name, governor)
+
+    # Crear servidor
+    try:
+        server = ThreadedHTTPServer((args.host, args.port), TitanHTTPHandler)
+    except OSError as e:
+        logger.error(f"No se pudo iniciar el servidor: {e}")
+        logger.error(f"¿Puerto {args.port} en uso? Intenta: --port 5001")
+        sys.exit(1)
+
+    # Signal handler para shutdown limpio
+    def shutdown_handler(signum, frame):
+        logger.info("Shutting down gracefully...")
+        governor.stop_monitoring()
+        server.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # Modo daemon
+    if args.daemon:
+        logger.info("Running as daemon on port %d", args.port)
+        server.serve_forever()
+    else:
+        # Modo interactivo - servir en thread, mantener terminal activa
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+
+        logger.info(f"Server listening on http://{ip}:{args.port}")
+
+        # Loop interactivo simple
+        try:
+            while True:
+                try:
+                    cmd = input("").strip()
+                    if cmd.lower() in ('quit', 'exit', 'q', 'stop'):
+                        break
+                    elif cmd.lower() == 'status':
+                        status = governor.get_status()
+                        print(f"  CPU: {status['cpu_usage_pct']}% | RAM: {status['ram_usage_mb']}MB/{status['ram_limit_mb']}MB")
+                        print(f"  Throttle: {status['thermal_throttle']} | MCTS: {status['adaptive_mcts_sims']} sims")
+                        print(f"  Requests: {status['stats']['requests_served']} | GC forced: {status['stats']['gc_forced']}")
+                    elif cmd.lower() == 'help':
+                        print("  Commands: status | quit | help")
+                except EOFError:
+                    break
+        except KeyboardInterrupt:
+            pass
+
+        governor.stop_monitoring()
+        server.shutdown()
+        logger.info("Server stopped.")
+
+
+if __name__ == '__main__':
+    main()

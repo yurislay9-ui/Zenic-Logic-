@@ -9,13 +9,15 @@ import json
 import logging
 import urllib.request
 import urllib.error
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
 
 class GitHubScrapAgent:
     async def fetch_modern_code(self, query, language="kotlin"):
-        url = f"https://api.github.com/search/code?q={query}+language:{language}&sort=stars"
+        encoded_query = urllib.parse.quote(query, safe='')
+        url = f"https://api.github.com/search/code?q={encoded_query}+language:{language}&sort=stars"
         headers = {
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "TITAN",
