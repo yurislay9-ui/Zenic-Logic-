@@ -45,87 +45,84 @@ class KPathAnalyzer:
             dict con depth, nodes_affected, exceeds_limit
         """
         import sqlite3
-        from src.core.shared.db_initializer import get_db_path
+        from src.core.shared.db_initializer import get_connection
 
         try:
-            with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-                conn.row_factory = sqlite3.Row
+            conn = get_connection("graph_ast.sqlite")
 
-                # Buscar nodo(s) por nombre
-                target_rows = conn.execute(
-                    "SELECT name, node_type, connections FROM ast_nodes WHERE name LIKE ?",
-                    (f"%{target_name}%",)
+            # Buscar nodo(s) por nombre
+            target_rows = conn.execute(
+                "SELECT name, node_type, connections FROM ast_nodes WHERE name LIKE ?",
+                (f"%{target_name}%",)
+            ).fetchall()
+
+            if not target_rows:
+                return {
+                    "depth": 0,
+                    "nodes_affected": 0,
+                    "exceeds_limit": False,
+                    "affected_nodes": [],
+                }
+
+            # BFS desde el nodo target
+            visited = set()
+            queue = []
+            all_affected = []
+
+            for row in target_rows:
+                node_name = row["name"]
+                if node_name not in visited:
+                    queue.append((node_name, 0))
+                    visited.add(node_name)
+
+            while queue:
+                current, depth = queue.pop(0)
+
+                if depth > self.k_limit:
+                    continue
+
+                all_affected.append({
+                    "name": current,
+                    "depth": depth,
+                })
+
+                # Buscar conexiones del nodo actual
+                conn_rows = conn.execute(
+                    "SELECT name, connections FROM ast_nodes WHERE name = ?",
+                    (current,)
                 ).fetchall()
 
-                if not target_rows:
-                    return {
-                        "depth": 0,
-                        "nodes_affected": 0,
-                        "exceeds_limit": False,
-                        "affected_nodes": [],
-                    }
+                for c_row in conn_rows:
+                    try:
+                        connections = json.loads(c_row["connections"]) if c_row["connections"] else []
+                    except (json.JSONDecodeError, TypeError):
+                        connections = []
 
-                # BFS desde el nodo target
-                visited = set()
-                queue = []
-                all_affected = []
+                    for conn_item in connections:
+                        conn_str = str(conn_item)
+                        if ":" in conn_str:
+                            _, dep_name = conn_str.split(":", 1)
+                        else:
+                            dep_name = conn_str
 
-                for row in target_rows:
-                    node_name = row["name"]
-                    if node_name not in visited:
-                        queue.append((node_name, 0))
-                        visited.add(node_name)
+                        dep_rows = conn.execute(
+                            "SELECT name FROM ast_nodes WHERE name = ?",
+                            (dep_name,)
+                        ).fetchall()
 
-                while queue:
-                    current, depth = queue.pop(0)
+                        for dr in dep_rows:
+                            if dr["name"] not in visited:
+                                visited.add(dr["name"])
+                                queue.append((dr["name"], depth + 1))
 
-                    if depth > self.k_limit:
-                        continue
+            max_depth = max((n["depth"] for n in all_affected), default=0)
 
-                    all_affected.append({
-                        "name": current,
-                        "depth": depth,
-                    })
-
-                    # Buscar conexiones del nodo actual
-                    conn_rows = conn.execute(
-                        "SELECT name, connections FROM ast_nodes WHERE name = ?",
-                        (current,)
-                    ).fetchall()
-
-                    for c_row in conn_rows:
-                        try:
-                            connections = json.loads(c_row["connections"]) if c_row["connections"] else []
-                        except (json.JSONDecodeError, TypeError):
-                            connections = []
-
-                        for conn_item in connections:
-                            conn_str = str(conn_item)
-                            # Extraer nombre de conexion (formato: "method:name" o "extends:name" o "name")
-                            if ":" in conn_str:
-                                _, dep_name = conn_str.split(":", 1)
-                            else:
-                                dep_name = conn_str
-
-                            # Buscar si existe un nodo con ese nombre
-                            dep_rows = conn.execute(
-                                "SELECT name FROM ast_nodes WHERE name = ?",
-                                (dep_name,)
-                            ).fetchall()
-
-                            for dr in dep_rows:
-                                if dr["name"] not in visited:
-                                    visited.add(dr["name"])
-                                    queue.append((dr["name"], depth + 1))
-
-                max_depth = max((n["depth"] for n in all_affected), default=0)
-
-                return {
-                    "depth": max_depth,
-                    "nodes_affected": len(all_affected),
-                    "exceeds_limit": len(all_affected) > self.k_limit,
-                    "affected_nodes": all_affected,
-                }
+            return {
+                "depth": max_depth,
+                "nodes_affected": len(all_affected),
+                "exceeds_limit": len(all_affected) > self.k_limit,
+                "affected_nodes": all_affected,
+            }
 
         except Exception as e:
             logger.debug("K-Path analysis error: %s", e)

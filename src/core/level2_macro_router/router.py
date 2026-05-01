@@ -14,13 +14,12 @@ Sin dependencias externas. Compatible con Android.
 """
 
 import json
-import sqlite3
 import logging
 from src.core.shared.contracts import (
     IntentPayload, RoutingPayload, CriticalityLevel, RoutePath, OperationType
 )
 from src.config.loader import load_settings, get_critical_nodes, get_critical_patterns
-from src.core.shared.db_initializer import get_db_path
+from src.core.shared.db_initializer import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -147,46 +146,43 @@ class MacroRouter:
         3. Tiene alta centralidad (muchas conexiones entrantes)
         """
         try:
-            with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-                conn.row_factory = sqlite3.Row
+            conn = get_connection("graph_ast.sqlite")
+            rows = conn.execute(
+                "SELECT name, node_type, connections, complexity FROM ast_nodes WHERE name LIKE ?",
+                (f"%{target_name}%",)
+            ).fetchall()
 
-                # Buscar el nodo por nombre
-                rows = conn.execute(
-                    "SELECT name, node_type, connections, complexity FROM ast_nodes WHERE name LIKE ?",
-                    (f"%{target_name}%",)
-                ).fetchall()
+            if not rows:
+                return False
 
-                if not rows:
-                    return False
+            for row in rows:
+                name = row["name"].lower()
+                node_type = row["node_type"]
+                connections_raw = row["connections"]
+                complexity = row["complexity"]
 
-                for row in rows:
-                    name = row["name"].lower()
-                    node_type = row["node_type"]
-                    connections_raw = row["connections"]
-                    complexity = row["complexity"]
-
-                    # Criterio 1: Nombre del nodo contiene keyword critico
-                    for keyword in self.critical_keywords:
-                        if keyword in name:
-                            logger.debug("AST critical match (keyword): %s contains %s", name, keyword)
-                            return True
-
-                    # Criterio 2: Conectado a nodos criticos
-                    try:
-                        connections = json.loads(connections_raw) if connections_raw else []
-                        for conn_item in connections:
-                            conn_str = str(conn_item).lower()
-                            for keyword in self.critical_keywords:
-                                if keyword in conn_str:
-                                    logger.debug("AST critical match (connection): %s -> %s", name, conn_str)
-                                    return True
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                    # Criterio 3: Alta centralidad (nodo con muchas conexiones = critico)
-                    if node_type == "function" and complexity > 15:
-                        logger.debug("AST critical match (high complexity): %s complexity=%d", name, complexity)
+                # Criterio 1: Nombre del nodo contiene keyword critico
+                for keyword in self.critical_keywords:
+                    if keyword in name:
+                        logger.debug("AST critical match (keyword): %s contains %s", name, keyword)
                         return True
+
+                # Criterio 2: Conectado a nodos criticos
+                try:
+                    connections = json.loads(connections_raw) if connections_raw else []
+                    for conn_item in connections:
+                        conn_str = str(conn_item).lower()
+                        for keyword in self.critical_keywords:
+                            if keyword in conn_str:
+                                logger.debug("AST critical match (connection): %s -> %s", name, conn_str)
+                                return True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                # Criterio 3: Alta centralidad (nodo con muchas conexiones = critico)
+                if node_type == "function" and complexity > 15:
+                    logger.debug("AST critical match (high complexity): %s complexity=%d", name, complexity)
+                    return True
 
         except Exception as e:
             logger.debug("AST criticality check error: %s", e)

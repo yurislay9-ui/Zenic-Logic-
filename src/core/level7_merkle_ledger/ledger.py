@@ -20,7 +20,7 @@ import time
 import logging
 from pathlib import Path
 from src.core.shared.contracts import MerkleNode
-from src.core.shared.db_initializer import get_data_dir, get_db_path
+from src.core.shared.db_initializer import get_data_dir, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +34,15 @@ class MerkleLedger:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(get_db_path("merkle_ledger.sqlite")) as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS ledger (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT NOT NULL,
-                hash_sha256 TEXT NOT NULL,
-                parent_hash TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                timestamp REAL NOT NULL)""")
+        conn = get_connection("merkle_ledger.sqlite")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL,
+            hash_sha256 TEXT NOT NULL,
+            parent_hash TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            timestamp REAL NOT NULL)""")
+        conn.commit()
 
     def _hash_content(self, content):
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
@@ -63,20 +64,32 @@ class MerkleLedger:
 
     def _get_last_hash(self, file_path, db_path=None):
         """Obtiene el ultimo hash para un archivo. Si db_path se proporciona, usa esa DB."""
-        actual_db = db_path or get_db_path("merkle_ledger.sqlite")
-        with sqlite3.connect(actual_db) as conn:
+        try:
+            if db_path:
+                conn = sqlite3.connect(db_path)
+            else:
+                conn = get_connection("merkle_ledger.sqlite")
             r = conn.execute(
                 "SELECT hash_sha256 FROM ledger WHERE file_path=? ORDER BY id DESC LIMIT 1",
                 (file_path,)).fetchone()
+            if db_path:
+                conn.close()
             return r[0] if r else "GENESIS"
+        except Exception:
+            return "GENESIS"
 
     def _record_operation(self, file_path, content_hash, parent_hash, operation, db_path=None):
         """Registra una operacion en el ledger. Si db_path se proporciona, usa esa DB."""
-        actual_db = db_path or get_db_path("merkle_ledger.sqlite")
-        with sqlite3.connect(actual_db) as conn:
-            conn.execute(
-                "INSERT INTO ledger (file_path, hash_sha256, parent_hash, operation, timestamp) VALUES (?,?,?,?,?)",
-                (file_path, content_hash, parent_hash, operation, time.time()))
+        if db_path:
+            conn = sqlite3.connect(db_path)
+        else:
+            conn = get_connection("merkle_ledger.sqlite")
+        conn.execute(
+            "INSERT INTO ledger (file_path, hash_sha256, parent_hash, operation, timestamp) VALUES (?,?,?,?,?)",
+            (file_path, content_hash, parent_hash, operation, time.time()))
+        conn.commit()
+        if db_path:
+            conn.close()
 
     def snapshot(self, rel_path, project_dir, workspace=None):
         """

@@ -3,19 +3,20 @@ TITAN OMNISCALE X - Graph AST Engine v13 (ast nativo + regex)
 
 Motor de AST usando el modulo nativo ast de Python para codigo Python,
 y regex para otros lenguajes. Almacena nodos en SQLite con conexiones.
+
+v13 FIX: Usa connection pool de db_initializer en vez de abrir
+conexiones nuevas por cada operacion. Batch inserts para scan_project.
+
 Sin dependencias externas. Compatible con Android.
 """
 
 import ast
 import re
 import hashlib
-import sqlite3
 import json
 import logging
 from pathlib import Path
-from src.core.shared.db_initializer import get_db_path
-
-logger = logging.getLogger(__name__)
+from src.core.shared.db_initializer import get_connection
 
 
 class GraphASTEngine:
@@ -25,15 +26,18 @@ class GraphASTEngine:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS ast_nodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT NOT NULL, node_type TEXT NOT NULL,
-                name TEXT NOT NULL, start_byte INTEGER NOT NULL,
-                end_byte INTEGER NOT NULL, content_hash TEXT NOT NULL,
-                docstring TEXT, complexity INTEGER DEFAULT 1,
-                connections TEXT DEFAULT '[]',
-                UNIQUE(file_path, name, node_type))""")
+        conn = get_connection("graph_ast.sqlite")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ast_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL, node_type TEXT NOT NULL,
+            name TEXT NOT NULL, start_byte INTEGER NOT NULL,
+            end_byte INTEGER NOT NULL, content_hash TEXT NOT NULL,
+            docstring TEXT, complexity INTEGER DEFAULT 1,
+            connections TEXT DEFAULT '[]',
+            UNIQUE(file_path, name, node_type))""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_name ON ast_nodes(name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_type ON ast_nodes(node_type)")
+        conn.commit()
 
     def scan_code(self, code, file_path="input.py", language="python"):
         if language == "python":
@@ -41,18 +45,26 @@ class GraphASTEngine:
         return self._parse_regex(code, file_path, language)
 
     def scan_project(self, project_dir):
+        """Escanear proyecto completo. Usa connection pool + batch insert."""
         base_path = Path(project_dir)
         if not base_path.exists():
             return
-        with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-            for f in base_path.rglob("*"):
-                if f.suffix in [".py", ".kt", ".go", ".js", ".ts", ".java", ".rs"]:
-                    try:
-                        lang = self._detect_language(f.suffix)
-                        source = f.read_text(encoding="utf-8", errors="ignore")
-                        self.scan_code(source, str(f.relative_to(base_path)), lang)
-                    except Exception as e:
-                        logger.warning("Error parsing %s: %s", f, e)
+
+        # Recolectar todos los nodos primero, luego batch insert
+        all_nodes = []
+        for f in base_path.rglob("*"):
+            if f.suffix in [".py", ".kt", ".go", ".js", ".ts", ".java", ".rs"]:
+                try:
+                    lang = self._detect_language(f.suffix)
+                    source = f.read_text(encoding="utf-8", errors="ignore")
+                    nodes = self.scan_code(source, str(f.relative_to(base_path)), lang)
+                    all_nodes.extend(nodes)
+                except Exception as e:
+                    logging.getLogger(__name__).warning("Error parsing %s: %s", f, e)
+
+        # Batch insert en una sola transaccion
+        if all_nodes:
+            self._store_nodes_batch(all_nodes)
 
     def _detect_language(self, suffix):
         mapping = {".py": "python", ".kt": "kotlin", ".go": "go",
@@ -79,7 +91,6 @@ class GraphASTEngine:
                         "content_hash": content_hash, "docstring": docstring,
                         "complexity": complexity, "connections": json.dumps(connections),
                     })
-                    self._store_node(nodes[-1])
                 elif isinstance(node, ast.ClassDef):
                     connections = self._extract_class_connections(node)
                     content_hash = hashlib.sha256(node.name.encode()).hexdigest()[:16]
@@ -91,7 +102,6 @@ class GraphASTEngine:
                         "content_hash": content_hash, "docstring": docstring,
                         "complexity": 1, "connections": json.dumps(connections),
                     })
-                    self._store_node(nodes[-1])
                 elif isinstance(node, (ast.Import, ast.ImportFrom)):
                     names = []
                     for alias in node.names:
@@ -106,9 +116,8 @@ class GraphASTEngine:
                         "content_hash": content_hash, "docstring": "",
                         "complexity": 0, "connections": "[]",
                     })
-                    self._store_node(nodes[-1])
         except SyntaxError as e:
-            logger.warning("Syntax error in %s: %s", file_path, e)
+            logging.getLogger(__name__).warning("Syntax error in %s: %s", file_path, e)
         return nodes
 
     def _parse_regex(self, code, file_path, language):
@@ -131,25 +140,44 @@ class GraphASTEngine:
                 "end_byte": match.end(), "content_hash": content_hash,
                 "docstring": "", "complexity": 1, "connections": "[]",
             })
-            self._store_node(nodes[-1])
         return nodes
 
     def _store_node(self, node_data):
+        """Insertar un solo nodo usando connection pool."""
         try:
-            with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-                conn.execute(
-                    """INSERT OR REPLACE INTO ast_nodes
-                    (file_path, node_type, name, start_byte, end_byte,
-                     content_hash, docstring, complexity, connections)
-                    VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (node_data["file_path"], node_data["node_type"],
-                     node_data["name"], node_data["start_byte"],
-                     node_data["end_byte"], node_data["content_hash"],
-                     node_data["docstring"], node_data["complexity"],
-                     node_data["connections"])
-                )
+            conn = get_connection("graph_ast.sqlite")
+            conn.execute(
+                """INSERT OR REPLACE INTO ast_nodes
+                (file_path, node_type, name, start_byte, end_byte,
+                 content_hash, docstring, complexity, connections)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (node_data["file_path"], node_data["node_type"],
+                 node_data["name"], node_data["start_byte"],
+                 node_data["end_byte"], node_data["content_hash"],
+                 node_data["docstring"], node_data["complexity"],
+                 node_data["connections"])
+            )
+            conn.commit()
         except Exception as e:
-            logger.debug("Error storing node: %s", e)
+            logging.getLogger(__name__).debug("Error storing node: %s", e)
+
+    def _store_nodes_batch(self, nodes):
+        """Batch insert de multiples nodos en una sola transaccion."""
+        try:
+            conn = get_connection("graph_ast.sqlite")
+            conn.executemany(
+                """INSERT OR REPLACE INTO ast_nodes
+                (file_path, node_type, name, start_byte, end_byte,
+                 content_hash, docstring, complexity, connections)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                [(n["file_path"], n["node_type"], n["name"],
+                  n["start_byte"], n["end_byte"], n["content_hash"],
+                  n["docstring"], n["complexity"], n["connections"])
+                 for n in nodes]
+            )
+            conn.commit()
+        except Exception as e:
+            logging.getLogger(__name__).debug("Error batch storing nodes: %s", e)
 
     def _cyclomatic_complexity(self, func_node):
         complexity = 1
@@ -185,14 +213,16 @@ class GraphASTEngine:
         return connections
 
     def get_node_info(self, target_name):
-        with sqlite3.connect(get_db_path("graph_ast.sqlite")) as conn:
-            conn.row_factory = sqlite3.Row
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM ast_nodes WHERE name LIKE ?",
-                (f"%{target_name}%",)).fetchall()]
+        conn = get_connection("graph_ast.sqlite")
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM ast_nodes WHERE name LIKE ?",
+            (f"%{target_name}%",)).fetchall()]
 
     def analyze_structure(self, code, language="python"):
         nodes = self.scan_code(code, "analysis_target", language)
+        # Persistir nodos individuales (para consultas posteriores)
+        if nodes:
+            self._store_nodes_batch(nodes)
         if not nodes:
             return {"functions": 0, "classes": 0, "imports": 0,
                     "max_complexity": 0, "total_complexity": 0,

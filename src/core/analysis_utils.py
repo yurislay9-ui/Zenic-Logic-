@@ -8,10 +8,9 @@ and logging requests. Most methods are pure functions or need minimal orchestrat
 import ast
 import json
 import uuid
-import sqlite3
 import logging
 
-from src.core.shared.db_initializer import get_db_path
+from src.core.shared.db_initializer import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -127,14 +126,15 @@ class AnalysisUtils:
     def log_request(intent, status, elapsed_ms, cache_hit=False,
                     solver_status="", mcts_sims=0):
         try:
-            with sqlite3.connect(get_db_path("request_log.sqlite")) as conn:
-                conn.execute(
-                    """INSERT INTO requests
-                    (request_id, model, operation, goal, route, status,
-                     processing_time_ms, solver_status, mcts_simulations, cache_hit)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    (str(uuid.uuid4())[:8], "titan-omniscale-x",
-                     intent.op, intent.goal, "", status, elapsed_ms,
-                     solver_status, mcts_sims, int(cache_hit)))
+            conn = get_connection("request_log.sqlite")
+            conn.execute(
+                """INSERT INTO requests
+                (request_id, model, operation, goal, route, status,
+                 processing_time_ms, solver_status, mcts_simulations, cache_hit)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (str(uuid.uuid4())[:8], "titan-omniscale-x",
+                 intent.op, intent.goal, "", status, elapsed_ms,
+                 solver_status, mcts_sims, int(cache_hit)))
+            conn.commit()
         except Exception:
             pass

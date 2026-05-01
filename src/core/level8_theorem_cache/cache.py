@@ -11,11 +11,10 @@ Sin dependencias externas. Compatible con Android.
 import ast
 import re
 import hashlib
-import sqlite3
 import json
 import logging
 from src.core.shared.contracts import IntentPayload
-from src.core.shared.db_initializer import get_db_path
+from src.core.shared.db_initializer import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -82,28 +81,30 @@ class TheoremCache:
         luego skeleton hash como fallback estructural.
         """
         try:
-            with sqlite3.connect(get_db_path("theorem_cache.sqlite")) as c:
-                # Busqueda directa por hash compuesto
-                r = c.execute(
-                    "SELECT solution_payload, hit_count FROM theorems WHERE structural_hash=?",
-                    (self._hash(intent),)).fetchone()
+            conn = get_connection("theorem_cache.sqlite")
+            # Busqueda directa por hash compuesto
+            r = conn.execute(
+                "SELECT solution_payload, hit_count FROM theorems WHERE structural_hash=?",
+                (self._hash(intent),)).fetchone()
+            if r:
+                conn.execute(
+                    "UPDATE theorems SET hit_count=hit_count+1, last_used=CURRENT_TIMESTAMP WHERE structural_hash=?",
+                    (self._hash(intent),))
+                conn.commit()
+                return {"source": "composite_hash", "data": json.loads(r[0]), "hits": r[1]}
+            
+            # Busqueda por skeleton hash (bypass experiencial)
+            if code:
+                sk_hash = self._skeleton_hash(code, language)
+                r = conn.execute(
+                    "SELECT solution_payload, hit_count FROM theorems WHERE skeleton_hash=?",
+                    (sk_hash,)).fetchone()
                 if r:
-                    c.execute(
-                        "UPDATE theorems SET hit_count=hit_count+1, last_used=CURRENT_TIMESTAMP WHERE structural_hash=?",
-                        (self._hash(intent),))
-                    return {"source": "composite_hash", "data": json.loads(r[0]), "hits": r[1]}
-                
-                # Busqueda por skeleton hash (bypass experiencial)
-                if code:
-                    sk_hash = self._skeleton_hash(code, language)
-                    r = c.execute(
-                        "SELECT solution_payload, hit_count FROM theorems WHERE skeleton_hash=?",
-                        (sk_hash,)).fetchone()
-                    if r:
-                        c.execute(
-                            "UPDATE theorems SET hit_count=hit_count+1, last_used=CURRENT_TIMESTAMP WHERE skeleton_hash=?",
-                            (sk_hash,))
-                        return {"source": "skeleton_hash", "data": json.loads(r[0]), "hits": r[1]}
+                    conn.execute(
+                        "UPDATE theorems SET hit_count=hit_count+1, last_used=CURRENT_TIMESTAMP WHERE skeleton_hash=?",
+                        (sk_hash,))
+                    conn.commit()
+                    return {"source": "skeleton_hash", "data": json.loads(r[0]), "hits": r[1]}
         except Exception as e:
             logger.debug("Cache lookup error: %s", e)
         return None
@@ -114,12 +115,13 @@ class TheoremCache:
             skeleton_hash = None
             if code:
                 skeleton_hash = self._skeleton_hash(code, language)
-            with sqlite3.connect(get_db_path("theorem_cache.sqlite")) as c:
-                c.execute(
-                    """INSERT OR REPLACE INTO theorems
-                    (structural_hash, operation, goal, proof_result, solution_payload, skeleton_hash)
-                    VALUES (?,?,?,?,?,?)""",
-                    (self._hash(intent), intent.op, intent.goal, proof,
-                     json.dumps(sol), skeleton_hash))
+            conn = get_connection("theorem_cache.sqlite")
+            conn.execute(
+                """INSERT OR REPLACE INTO theorems
+                (structural_hash, operation, goal, proof_result, solution_payload, skeleton_hash)
+                VALUES (?,?,?,?,?,?)""",
+                (self._hash(intent), intent.op, intent.goal, proof,
+                 json.dumps(sol), skeleton_hash))
+            conn.commit()
         except Exception as e:
             logger.debug("Cache save error: %s", e)
