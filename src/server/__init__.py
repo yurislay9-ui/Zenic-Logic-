@@ -7,6 +7,7 @@ Elimina la duplicacion de ~300 lineas entre main.py y main_headless.py.
 
 from src.server.http_handler import TitanHTTPHandler
 from src.server.server import ThreadedHTTPServer, get_local_ip, configure_handler
+from src.server.rate_limiter import RateLimiter
 from src.server.response_builder import (
     build_normal_response,
     build_partial_reasoning_response,
@@ -19,6 +20,7 @@ __all__ = [
     "ThreadedHTTPServer",
     "get_local_ip",
     "configure_handler",
+    "RateLimiter",
     "build_normal_response",
     "build_partial_reasoning_response",
     "build_error_response",

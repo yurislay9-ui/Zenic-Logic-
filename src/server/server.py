@@ -1,13 +1,15 @@
 """
 TITAN OMNISCALE X v13 - Server Utilities
 
-ThreadedHTTPServer, utilidades de red y funciones auxiliares
+ThreadedHTTPServer, utilidades de red, rate limiter y funciones auxiliares
 compartidas entre main.py (Kivy) y main_headless.py (Termux).
 """
 
 import socket
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
+
+from src.server.rate_limiter import RateLimiter
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -36,7 +38,13 @@ def get_local_ip():
         return "127.0.0.1"
 
 
-def configure_handler(orchestrator, governor=None, start_time=None, platform_tag=""):
+def configure_handler(
+    orchestrator,
+    governor=None,
+    start_time=None,
+    platform_tag="",
+    rate_limiter=None,
+):
     """
     Configura TitanHTTPHandler con las instancias necesarias.
 
@@ -47,9 +55,11 @@ def configure_handler(orchestrator, governor=None, start_time=None, platform_tag
         governor: ResourceGovernor instance (opcional, solo headless)
         start_time: float - timestamp de inicio (opcional)
         platform_tag: str - identificador de plataforma (e.g. "termux-proot")
+        rate_limiter: RateLimiter instance (opcional, proteccion contra flood)
     """
     from src.server.http_handler import TitanHTTPHandler
     TitanHTTPHandler.orchestrator = orchestrator
     TitanHTTPHandler.governor = governor
     TitanHTTPHandler.start_time = start_time
     TitanHTTPHandler.platform_tag = platform_tag
+    TitanHTTPHandler.rate_limiter = rate_limiter

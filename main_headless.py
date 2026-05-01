@@ -44,7 +44,7 @@ from src.core.shared.db_initializer import initialize_databases
 from src.core.orchestrator import TitanOrchestrator
 from src.server import (
     TitanHTTPHandler, ThreadedHTTPServer,
-    get_local_ip, configure_handler,
+    get_local_ip, configure_handler, RateLimiter,
 )
 
 logging.basicConfig(
@@ -137,9 +137,17 @@ def main():
     # Crear orchestrator
     orchestrator = TitanOrchestrator()
 
-    # Configurar handler compartido con governor
+    # Crear rate limiter (proteccion contra flood en ARM)
+    rate_limiter = RateLimiter(
+        max_requests_per_minute=args.ram_limit // 64,  # ~32 RPM for 2048MB
+        burst_size=10,
+        global_max_concurrent=20,
+    )
+
+    # Configurar handler compartido con governor + rate limiter
     configure_handler(orchestrator, governor=governor,
-                      start_time=START_TIME, platform_tag="termux-proot")
+                      start_time=START_TIME, platform_tag="termux-proot",
+                      rate_limiter=rate_limiter)
 
     # Obtener IP
     ip = get_local_ip()

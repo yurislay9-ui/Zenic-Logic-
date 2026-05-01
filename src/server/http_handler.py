@@ -13,6 +13,7 @@ import time
 from http.server import BaseHTTPRequestHandler
 
 from src.core.shared.contracts import HAS_Z3
+from src.server.rate_limiter import RateLimiter
 from src.server.response_builder import (
     build_normal_response,
     build_partial_reasoning_response,
@@ -38,6 +39,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
     governor = None
     start_time = None
     platform_tag = ""
+    rate_limiter = None  # RateLimiter instance (configured by server)
 
     def log_message(self, format, *args):
         logger.info("HTTP: %s", format % args)
@@ -129,7 +131,16 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, status=404)
 
     def _handle_chat_completions(self):
-        """Procesa peticion /v1/chat/completions con soporte para governor."""
+        """Procesa peticion /v1/chat/completions con rate limiting y governor."""
+        # Rate limiting check
+        client_ip = self.client_address[0]
+        if self.rate_limiter and not self.rate_limiter.acquire(client_ip):
+            self._send_json({
+                "error": {"message": "Rate limit exceeded. Slow down.",
+                          "type": "rate_limit_exceeded"}
+            }, status=429)
+            return
+
         gov = self.governor
 
         # Pre-request: preparar recursos y verificar RAM
@@ -137,6 +148,8 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             gov.pre_request()
             if gov.is_ram_critical():
                 self._send_json(build_overloaded_response(), status=503)
+                if self.rate_limiter:
+                    self.rate_limiter.release()
                 return
 
         try:
@@ -197,6 +210,8 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         finally:
             if gov:
                 gov.post_request()
+            if self.rate_limiter:
+                self.rate_limiter.release()
 
     # ============================================================
     #  CORS + JSON helpers
