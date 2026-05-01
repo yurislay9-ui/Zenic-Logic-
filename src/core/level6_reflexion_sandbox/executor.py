@@ -119,8 +119,42 @@ class ReflexionSandbox:
         metrics["io_calls"] = paths_pruned
 
         # Agregar violaciones simbolicas como warnings
+        # NUEVA MEJORA: Probar formalmente con Z3 si las violaciones son alcanzables
         for violation in symbolic_result.get("violations", []):
-            warnings.append(f"Symbolic: {violation}")
+            # Try to prove the violation is reachable using Z3
+            proven_reachable = False
+            for path in symbolic_result.get("paths", []):
+                reachability = self._symbolic_executor.prove_violation_reachable(
+                    violation, path
+                )
+                if reachability.get("reachable") is True:
+                    counterexample = reachability.get("counterexample", {})
+                    if counterexample:
+                        warnings.append(
+                            f"Symbolic (Z3 PROVEN): {violation} "
+                            f"[counterexample: {counterexample}]"
+                        )
+                    else:
+                        warnings.append(f"Symbolic (Z3 PROVEN): {violation}")
+                    proven_reachable = True
+                    break
+                elif reachability.get("reachable") is False:
+                    # Z3 proved the violation is NOT reachable - skip it
+                    continue
+            if not proven_reachable:
+                warnings.append(f"Symbolic: {violation}")
+
+        # NUEVA MEJORA: Generar test inputs concretos para cada path factible
+        concrete_test_inputs = []
+        for path in symbolic_result.get("paths", []):
+            if path.is_feasible() and not path.is_pruned:
+                inputs_result = self._symbolic_executor.generate_concrete_inputs(path)
+                if inputs_result.get("inputs"):
+                    concrete_test_inputs.append(inputs_result["inputs"])
+
+        if concrete_test_inputs:
+            metrics["concrete_test_inputs"] = len(concrete_test_inputs)
+            metrics["test_inputs_sample"] = concrete_test_inputs[:3]  # First 3 samples
 
         # Fase 4: Deteccion de side effects (I/O) - Path Pruning
         io_calls = self._detect_io_calls(tree)
@@ -195,6 +229,15 @@ class ReflexionSandbox:
         metrics["symbolic_paths"] = len(symbolic_result.get("paths", []))
         metrics["symbolic_violations"] = len(symbolic_result.get("violations", []))
         metrics["sandbox_isolated"] = True
+
+        # NUEVA MEJORA: Exportar path conditions como SMT-LIB2 para analisis externo
+        if symbolic_result.get("paths"):
+            smt_export = self._symbolic_executor.export_path_conditions_smt(
+                symbolic_result["paths"], target_name
+            )
+            metrics["smt_path_count"] = len(smt_export)
+            # Store SMT formulas (truncated for metrics, full export available via API)
+            metrics["smt_paths_available"] = True
 
         return SandboxResult(
             status="PASS",

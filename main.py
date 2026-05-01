@@ -4,7 +4,7 @@ Servidor OpenAI-Compatible para Cline, Aide, OpenCode y mas.
 
 Usa modulos src/core/ con Z3 SMT Solver (con fallback AC-3),
 MCTS real, Ejecucion Simbolica real, Timeout enforcement real,
-Caché de Teoremas con Skeleton Hash, Protocolo Abortivo,
+Cache de Teoremas con Skeleton Hash, Protocolo Abortivo,
 y Razonamiento Parcial con tool_calls.
 
 Modo de uso:
@@ -13,39 +13,17 @@ Modo de uso:
   3. El motor procesa tus peticiones con 8 niveles de razonamiento
 """
 
-import json
 import os
-import time
-import uuid
-import threading
-import socket
 import logging
-from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from socketserver import ThreadingMixIn
+import threading
 
-# Importar desde modulos src/core/ (arquitectura modular)
-from src.core.shared.contracts import (
-    OperationType, GoalType, CriticalityLevel, RoutePath,
-    IntentPayload, RoutingPayload, PlanStep, ExecutionPlan,
-    SandboxResult, MerkleNode, ChatMessage, ChatRequest,
-    MCTSNode, MCTSPlanner, ConstraintSolver, Constraint,
-    TimeoutEnforcer, CodeConstraintBuilder, Z3Solver, HAS_Z3,
-    SymbolicExecutor, KPathAnalyzer
-)
-from src.core.shared.db_initializer import (
-    initialize_databases, get_data_dir, get_db_path, get_projects_dir
-)
-from src.core.level1_semantic_engine.parser import SemanticParser
-from src.core.level2_macro_router.router import MacroRouter
-from src.core.level3_graph_ast.engine import GraphASTEngine
-from src.core.level4_apa_planner.planner import APAPlanner
-from src.core.level5_structural_swarm.scrap_agent import GitHubScrapAgent
-from src.core.level5_structural_swarm.ast_surgeon import ASTSurgeon
-from src.core.level6_reflexion_sandbox.executor import ReflexionSandbox
-from src.core.level7_merkle_ledger.ledger import MerkleLedger
-from src.core.level8_theorem_cache.cache import TheoremCache
+from src.core.shared.contracts import HAS_Z3
+from src.core.shared.db_initializer import initialize_databases
 from src.core.orchestrator import TitanOrchestrator
+from src.server import (
+    TitanHTTPHandler, ThreadedHTTPServer,
+    get_local_ip, configure_handler,
+)
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -58,247 +36,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TITAN")
 
 IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
-
-# ============================================================
-#  SERVIDOR HTTP OPENAI-COMPATIBLE
-# ============================================================
-
-class TitanHTTPHandler(BaseHTTPRequestHandler):
-    """Handler HTTP compatible con la API de OpenAI."""
-
-    orchestrator = None
-
-    def log_message(self, format, *args):
-        logger.info("HTTP: %s", format % args)
-
-    def do_GET(self):
-        if self.path == '/v1/models':
-            self._send_json({
-                "object": "list",
-                "data": [{"id": "titan-omniscale-x", "object": "model",
-                          "created": int(time.time()), "owned_by": "titan-local"}]
-            })
-        elif self.path == '/':
-            solver_name = "Z3" if HAS_Z3 else "AC-3"
-            self._send_json({
-                "status": "active", "model": "titan-omniscale-x", "version": "13.0",
-                "endpoints": ["/v1/chat/completions", "/v1/models"],
-                "pipeline_levels": 8,
-                "solver": solver_name,
-                "features": ["MCTS", f"{solver_name}_Solver", "Timeout_Enforcement",
-                             "Theorem_Cache", "Skeleton_Hash", "K_Path_Limiting",
-                             "Symbolic_Execution", "Abortive_Protocol",
-                             "Partial_Reasoning", "Contextual_CodeGen"],
-                "description": f"TITAN OMNISCALE X v13 - Local Surgical AI Engine ({solver_name})"
-            })
-        elif self.path == '/health':
-            self._send_json({"status": "healthy"})
-        else:
-            self._send_json({"error": "Not found"}, status=404)
-
-    def do_POST(self):
-        if self.path == '/v1/chat/completions':
-            self._handle_chat_completions()
-        else:
-            self._send_json({"error": "Not found"}, status=404)
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self._set_cors_headers()
-        self.end_headers()
-
-    def _set_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-
-    def _handle_chat_completions(self):
-        try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8')
-            data = json.loads(body)
-        except (json.JSONDecodeError, ValueError) as e:
-            self._send_json({"error": {"message": f"Invalid JSON: {str(e)}",
-                "type": "invalid_request_error"}}, status=400)
-            return
-
-        messages = data.get("messages", [])
-        if not messages:
-            self._send_json({"error": {"message": "No messages provided",
-                "type": "invalid_request_error"}}, status=400)
-            return
-
-        user_msg = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
-                break
-
-        if not user_msg:
-            self._send_json({"error": {"message": "No user message found",
-                "type": "invalid_request_error"}}, status=400)
-            return
-
-        try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(self.orchestrator.execute(user_msg))
-            loop.close()
-
-            # ============================================================
-            #  RAZONAMIENTO PARCIAL - Response Contract con tool_calls
-            # ============================================================
-            if result.get("partial_reasoning"):
-                response = self._build_partial_reasoning_response(data, result, user_msg)
-                self._send_json(response)
-                return
-
-            # ============================================================
-            #  RESPUESTA NORMAL
-            # ============================================================
-            content_parts = [f"TITAN OMNISCALE X v13 - {result['status']}"]
-
-            if result.get("explanations"):
-                for exp in result["explanations"]:
-                    content_parts.append(f"  {exp}")
-
-            if result.get("code"):
-                lang = result.get("ast_analysis", {}).get("language", "python")
-                content_parts.append(f"\n```{lang}\n{result['code']}\n```")
-
-            if result.get("warnings"):
-                content_parts.append("\nWarnings:")
-                for w in result["warnings"]:
-                    content_parts.append(f"  - {w}")
-
-            if result.get("cache_source"):
-                content_parts.append(f"\nCache hit: {result['cache_source']} (hits: {result.get('cache_hits', 0)})")
-
-            # Metadata del solver y MCTS
-            solver_status = result.get('solver_status', 'N/A')
-            mcts_sims = result.get('mcts_simulations', 0)
-            mcts_depth = result.get('mcts_depth_reached', 0)
-            paths_explored = result.get('paths_explored', 0)
-            paths_pruned = result.get('paths_pruned', 0)
-
-            solver_name = "Z3" if HAS_Z3 else "AC-3"
-            meta_parts = [
-                f"\nTime: {result.get('processing_time_ms', 0)}ms",
-                f"Route: {result.get('route', 'N/A')}",
-                f"Hash: {result.get('hash', 'N/A')}",
-                f"Solver({solver_name}): {solver_status}",
-                f"MCTS: {mcts_sims} sims, depth {mcts_depth}",
-            ]
-            if paths_explored:
-                meta_parts.append(f"Paths: {paths_explored} explored, {paths_pruned} pruned")
-
-            content_parts.append(" | ".join(meta_parts))
-
-            response_content = "\n".join(content_parts)
-
-            response = {
-                "id": f"titan-{uuid.uuid4().hex[:8]}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": data.get("model", "titan-omniscale-x"),
-                "choices": [{"index": 0, "message": {
-                    "role": "assistant", "content": response_content},
-                    "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": len(user_msg.split()),
-                    "completion_tokens": len(response_content.split()),
-                    "total_tokens": len(user_msg.split()) + len(response_content.split())},
-                "titan_metadata": {
-                    "status": result["status"],
-                    "hash": result.get("hash", "N/A"),
-                    "processing_time_ms": result.get("processing_time_ms", 0),
-                    "route": result.get("route", ""),
-                    "criticality": result.get("criticality", 0),
-                    "solver_type": solver_name,
-                    "solver_status": solver_status,
-                    "solver_proof": result.get("solver_proof"),
-                    "mcts_simulations": mcts_sims,
-                    "mcts_depth_reached": mcts_depth,
-                    "cache_hit": bool(result.get("cache_source")),
-                    "paths_explored": paths_explored,
-                    "paths_pruned": paths_pruned,
-                    "symbolic_execution": True,
-                }
-            }
-            self._send_json(response)
-
-        except Exception as e:
-            logger.error("Error processing request: %s", e, exc_info=True)
-
-            # Error interno - respuesta compatible con OpenAI
-            error_content = f"TITAN OMNISCALE X v13 - Internal Error\n{str(e)}\n\nTry reformulating your request."
-
-            self._send_json({
-                "id": f"titan-{uuid.uuid4().hex[:8]}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": "titan-omniscale-x",
-                "choices": [{"index": 0, "message": {
-                    "role": "assistant",
-                    "content": error_content},
-                    "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            })
-
-    def _build_partial_reasoning_response(self, data, result, user_msg):
-        """
-        Construye la respuesta de Razonamiento Parcial como especifica el documento.
-
-        Payload JSON con tool_calls para que el cliente (Cline/Aide)
-        pueda continuar la operacion subdividida.
-        """
-        partial = result.get("partial_reasoning_payload", {})
-
-        response = {
-            "id": f"titan-{uuid.uuid4().hex[:8]}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": data.get("model", "titan-omniscale-x"),
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": partial.get("content", result.get("explanations", [""])[0] if result.get("explanations") else ""),
-                    "tool_calls": partial.get("tool_calls", []),
-                },
-                "finish_reason": partial.get("finish_reason", "tool_calls"),
-            }],
-            "usage": result.get("usage_metadata", {
-                "prompt_tokens": len(user_msg.split()),
-                "completion_tokens": 0,
-                "total_tokens": len(user_msg.split()),
-            }),
-            "titan_metadata": {
-                "status": "PARTIAL_REASONING",
-                "processing_time_ms": result.get("processing_time_ms", 0),
-                "route": result.get("route", ""),
-                "criticality": result.get("criticality", 0),
-                "solver_status": result.get("solver_status", ""),
-                "paths_explored": result.get("paths_explored", 0),
-                "paths_pruned": result.get("paths_pruned", 0),
-                "partial_reasoning": True,
-            }
-        }
-
-        return response
-
-    def _send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self._set_cors_headers()
-        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
-        self.send_header('Content-Length', len(body))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
 
 
 # ============================================================
@@ -358,7 +95,7 @@ class TitanApp(App):
                  f"- K-Paths basado en grafo de dependencias\n"
                  f"- Protocolo Abortivo (auto-subdivision en timeout)\n"
                  f"- Razonamiento Parcial con tool_calls\n"
-                 f"- Caché de Teoremas con Skeleton Hash\n"
+                 f"- Cache de Teoremas con Skeleton Hash\n"
                  f"- Configuracion YAML conectada\n"
                  f"- MacroRouter con firmas topologicas del AST\n"
                  f"- Generacion de codigo contextual\n\n"
@@ -384,16 +121,6 @@ class TitanApp(App):
         layout.add_widget(scroll)
         return layout
 
-    def get_ip(self):
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except Exception:
-            return "127.0.0.1"
-
     def toggle_engine(self, instance):
         if self.server_running:
             self._stop_engine()
@@ -401,12 +128,14 @@ class TitanApp(App):
             self._start_engine()
 
     def _start_engine(self):
-        ip = self.get_ip()
+        ip = get_local_ip()
         self.ip_label.text = f"Conecta Cline/Aide/OpenCode a:\nhttp://{ip}:5000/v1"
         self.status_label.text = "Iniciando motor v13..."
         self.status_label.color = (1, 1, 0.5, 1)
         self.btn.disabled = True
-        TitanHTTPHandler.orchestrator = self.engine
+
+        # Configurar handler compartido
+        configure_handler(self.engine, governor=None, platform_tag="kivy")
 
         def run_server():
             try:

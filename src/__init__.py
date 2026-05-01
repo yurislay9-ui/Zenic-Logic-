@@ -1,9 +1,13 @@
 """
-TITAN OMNISCALE X - Motor Local (Pure Python)
-Version simplificada compatible con Android.
-No depende de pydantic, fastapi, tree-sitter, fastembed ni httpx.
+TITAN OMNISCALE X - Motor de IA Quirurgico Local v13
+
+Pipeline de 8 niveles con Z3 SMT Solver, MCTS real,
+Ejecucion Simbolica, Timeout enforcement, Cache de Teoremas,
+Protocolo Abortivo y Razonamiento Parcial.
+
+Compatible con Android (Termux + proot-distro).
 """
 
-from src.core.local_engine import TitanEngine
+from src.core.orchestrator import TitanOrchestrator
 
-__all__ = ["TitanEngine"]
+__all__ = ["TitanOrchestrator"]
