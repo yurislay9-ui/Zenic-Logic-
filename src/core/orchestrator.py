@@ -24,6 +24,7 @@ Decomposed into focused modules:
 import time
 import logging
 from pathlib import Path
+from typing import Dict, Any, List
 
 from src.config.loader import load_settings
 from src.core.shared.db_initializer import initialize_databases, get_projects_dir
@@ -51,6 +52,12 @@ from src.core.partial_reasoning import PartialReasoningManager
 from src.core.code_generator import CodeGenerator
 from src.core.code_transformer import CodeTransformer
 from src.core.analysis_utils import AnalysisUtils
+
+# Extended AI Architecture - App & Automation Generation
+from src.core.thinking_engine import ThinkingEngine, GenerationPlan
+from src.core.app_generator import AppGenerator
+from src.core.automation_engine import AutomationEngine
+from src.core.schema_designer import SchemaDesigner
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +101,20 @@ class TitanOrchestrator:
         sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
         ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
         logger.info(f"AI Architecture: SemanticEngine={sem_status} | MiniAI(Qwen)={ai_status} | SmartMemory=ready")
+
+        # ============================================================
+        #  EXTENDED AI ARCHITECTURE - App & Automation Generation
+        # ============================================================
+        self._thinking = ThinkingEngine(
+            mini_ai=self._ai,
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+        self._app_gen = AppGenerator(thinking_engine=self._thinking)
+        self._automation = AutomationEngine(thinking_engine=self._thinking)
+        self._schema_designer = SchemaDesigner(thinking_engine=self._thinking)
+
+        logger.info(f"Extended Architecture: ThinkingEngine=ready | AppGenerator=ready | AutomationEngine=ready | SchemaDesigner=ready")
 
         # ============================================================
         #  DECOMPOSED SUB-MODULES (composition)
@@ -407,6 +428,144 @@ class TitanOrchestrator:
     async def resume_from_partial(self, resumption_token, subtask_index=None):
         """Resume execution from a partial reasoning state. Delegates to PartialReasoningManager."""
         return await self._partial_reasoning.resume_from_partial(resumption_token, subtask_index)
+
+    # ============================================================
+    #  APP & AUTOMATION GENERATION
+    # ============================================================
+
+    async def generate_app(self, request: str, project_name: str = "",
+                           output_dir: str = "") -> Dict[str, Any]:
+        """
+        Genera una aplicación completa a partir de una descripción.
+        
+        Usa ThinkingEngine para planificar, AppGenerator para crear archivos,
+        y el pipeline para verificar el resultado.
+        """
+        # Generate the app
+        result = self._app_gen.generate_app(request, project_name, output_dir)
+        
+        # Save to project memory
+        if result.status == "generated" and self._memory:
+            self._memory.save_project(
+                project_name=result.name,
+                project_type=result.template_type,
+                description=request,
+                path=result.path,
+                status="generated",
+                entities=[e.get("name", "") for e in result.entities],
+                endpoints=[str(ep) for ep in result.endpoints],
+            )
+            self._memory.save_episode(
+                event_type="app_generated",
+                description=f"Generated {result.template_type} app: {result.name}",
+                context=request[:200],
+                outcome="success" if result.status == "generated" else "failed",
+                importance=0.8,
+            )
+            # Learn the pattern
+            self._memory.learn_pattern(
+                pattern_name=f"gen_{result.template_type}",
+                pattern_type="app_generation",
+                description=f"Generated {result.template_type} app from request",
+                steps=[f"Used template: {result.template_type}", f"Generated {len(result.files)} files"],
+                success=result.status == "generated",
+            )
+        
+        return {
+            "status": result.status,
+            "project_name": result.name,
+            "template_type": result.template_type,
+            "path": result.path,
+            "files": result.files,
+            "endpoints": result.endpoints,
+            "entities": result.entities,
+            "generation_time_s": result.generation_time_s,
+            "error": result.error,
+        }
+
+    async def generate_automation(self, description: str,
+                                   output_dir: str = "") -> Dict[str, Any]:
+        """
+        Genera un proyecto de automatización a partir de una descripción.
+        """
+        result = self._automation.generate_automation_project(description, output_dir)
+        
+        # Save to memory
+        if self._memory:
+            wf = result.get("workflow")
+            if wf:
+                self._memory.save_episode(
+                    event_type="automation_created",
+                    description=f"Created automation: {wf.name}",
+                    outcome="success",
+                    importance=0.7,
+                )
+        
+        return {
+            "status": result.get("status", "unknown"),
+            "path": result.get("path", ""),
+            "files": result.get("files", []),
+            "workflow": {
+                "id": result.get("workflow", None).id if result.get("workflow") else None,
+                "name": result.get("workflow", None).name if result.get("workflow") else None,
+            } if result.get("workflow") else None,
+        }
+
+    async def design_schema(self, description: str) -> Dict[str, Any]:
+        """
+        Diseña un esquema de base de datos a partir de una descripción.
+        """
+        schema = self._schema_designer.design_schema(description)
+        sql = self._schema_designer.generate_sql(schema)
+        models = self._schema_designer.generate_models(schema)
+        init_sql = self._schema_designer.generate_init_sql(schema)
+        
+        return {
+            "status": "designed",
+            "tables": [{"name": t.name, "columns": len(t.columns)} for t in schema.tables],
+            "sql": sql,
+            "models": models,
+            "init_sql": init_sql,
+        }
+
+    async def list_projects(self, status: str = "") -> List[Dict[str, Any]]:
+        """Lista proyectos generados."""
+        if self._memory:
+            return self._memory.list_projects(status)
+        return []
+
+    async def list_automations(self) -> List[Dict[str, Any]]:
+        """Lista automatizaciones."""
+        return self._automation.list_workflows()
+
+    async def think(self, query: str, context: str = "") -> Dict[str, Any]:
+        """
+        Usa ThinkingEngine para razonar sobre una pregunta.
+        """
+        result = self._thinking.reason(query, context)
+        return {
+            "answer": result.answer,
+            "confidence": result.confidence,
+            "source": result.source,
+            "context_used": result.context_used,
+            "thinking_time_s": result.thinking_time_s,
+        }
+
+    async def get_system_status(self) -> Dict[str, Any]:
+        """Obtiene estado completo del sistema."""
+        return {
+            "pipeline": "8-level active",
+            "ai": {
+                "qwen_loaded": self._ai.is_loaded if self._ai else False,
+                "semantic_loaded": self._semantic.is_loaded if self._semantic else False,
+                "memory_available": self._memory is not None,
+            },
+            "thinking_engine": self._thinking.stats,
+            "app_templates": AppGenerator.list_templates(),
+            "automation_stats": self._automation.stats,
+            "memory_stats": self._memory.enhanced_stats if self._memory else {},
+            "request_count": self.request_count,
+        }
 
     # ============================================================
     #  BACKWARD COMPATIBILITY - delegate old method names to sub-objects
