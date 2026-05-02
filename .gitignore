@@ -24,3 +24,5 @@ Thumbs.db
 *.db
 titan_data/
 .titan_omniscale/
+# AI Models (too large for GitHub, download separately)
+models/*.gguf

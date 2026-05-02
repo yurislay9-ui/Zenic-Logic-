@@ -3,6 +3,7 @@ TITAN OMNISCALE X - Orchestrator v13 (Real Pipeline + Abortive Protocol)
 
 Orquestador del pipeline completo de 8 niveles.
 Incluye:
+- MiniAIEngine: Qwen3-0.6B como copiloto semantico (7 tareas bounded)
 - Protocolo Abortivo: auto-subdivision cuando el solver hace timeout
 - Razonamiento Parcial: response contract OpenAI-compatible
 - Generacion contextual: usa datos del AST, solver y MCTS
@@ -11,6 +12,7 @@ Incluye:
 Sin dependencias externas obligatorias. Compatible con Android.
 
 Decomposed into focused modules:
+- mini_ai_engine: MiniAIEngine (Qwen3-0.6B semantic copilot)
 - subtask_descriptor: SubtaskDescriptor class
 - abortive_protocol: AbortiveProtocol (auto-subdivision)
 - partial_reasoning: PartialReasoningManager (response contract)
@@ -40,6 +42,7 @@ from src.core.shared.sandbox_isolation import (
 )
 
 # Decomposed modules
+from src.core.mini_ai_engine import MiniAIEngine
 from src.core.subtask_descriptor import SubtaskDescriptor
 from src.core.abortive_protocol import AbortiveProtocol
 from src.core.partial_reasoning import PartialReasoningManager
@@ -76,6 +79,15 @@ class TitanOrchestrator:
         self._isolation_manager = get_isolation_manager()
 
         # ============================================================
+        #  MINI AI ENGINE - Qwen3-0.6B Semantic Copilot
+        # ============================================================
+        self._ai = MiniAIEngine(auto_load=True)
+        if self._ai.is_loaded:
+            logger.info("MiniAI: Qwen3-0.6B semantic copilot ACTIVE")
+        else:
+            logger.info("MiniAI: Model not available, using deterministic fallbacks")
+
+        # ============================================================
         #  DECOMPOSED SUB-MODULES (composition)
         # ============================================================
         self._abortive = AbortiveProtocol(self)
@@ -93,8 +105,17 @@ class TitanOrchestrator:
         start_time = time.time()
         self.request_count += 1
 
-        # Nivel 1: Parse semantico (TF-IDF)
+        # Nivel 1: Parse semantico (TF-IDF + MiniAI copiloto)
         intent = self.parser.parse(msg)
+
+        # MiniAI: Mejorar clasificacion si el LLM esta disponible
+        if self._ai.is_loaded:
+            ai_intent = self._ai.classify_intent(msg)
+            if ai_intent.source == "llm" and ai_intent.confidence > 0.5:
+                # LLM override: si esta mas seguro que TF-IDF, usar su resultado
+                intent.op = ai_intent.operation
+                intent.goal = ai_intent.goal
+                logger.info(f"MiniAI: Intent overridden -> {ai_intent.operation}/{ai_intent.goal} (LLM, conf={ai_intent.confidence:.2f})")
 
         # Nivel 3: Analisis AST del codigo proporcionado
         ast_analysis = {}
@@ -168,6 +189,10 @@ class TitanOrchestrator:
             elif step.action == "REPLACE_AST_NODE":
                 if code and step.target_node_name:
                     solver_insights = self._code_gen.extract_solver_insights(plan.solver_proof) if plan else None
+                    # MiniAI: sugerir patrón de reemplazo
+                    if self._ai.is_loaded:
+                        pattern = self._ai.suggest_pattern(step.target_node_name, str(intent))
+                        explanations.append(f"MiniAI suggests pattern: {pattern}")
                     new_snippet = self._code_transform.optimize_function(step.target_node_name, lang, ast_analysis, solver_insights)
                     result_code = self.surgeon.mutate_node(code, step.target_node_name, new_snippet, lang)
                     explanations.append(f"Function '{step.target_node_name}' replaced via AST surgery")
@@ -199,7 +224,20 @@ class TitanOrchestrator:
 
             elif step.action == "EXPLAIN_CODE":
                 if code:
-                    explanations.append(self._analysis.explain_code(code, lang, ast_analysis))
+                    base_explanation = self._analysis.explain_code(code, lang, ast_analysis)
+                    # MiniAI: mejorar explicacion si hay violaciones detectadas
+                    if self._ai.is_loaded:
+                        # Detectar violaciones basicas del codigo para explicar
+                        violations = []
+                        if "eval(" in code or "exec(" in code:
+                            violations.append("dangerous_call")
+                        if "os.system(" in code:
+                            violations.append("command_injection")
+                        if violations:
+                            ai_explain = self._ai.explain_violation(code[:200], violations)
+                            if ai_explain:
+                                base_explanation += f" | AI: {ai_explain}"
+                    explanations.append(base_explanation)
                 else:
                     explanations.append(self._analysis.explain_concept(intent))
 
@@ -274,6 +312,7 @@ class TitanOrchestrator:
                 "warnings": trial.warnings, "metrics": trial.metrics,
                 "paths_explored": trial.paths_explored,
                 "paths_pruned": trial.paths_pruned,
+                "mini_ai_stats": self._ai.stats,
             }
         elif trial.status.startswith("FAIL") and final_code:
             self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
