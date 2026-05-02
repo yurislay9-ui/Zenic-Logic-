@@ -30,12 +30,22 @@ def main():
         username = 'git'
         hostname = user_host
 
-    # Load SSH key
-    key_path = os.path.expanduser("~/.ssh/id_rsa")
-    try:
-        pkey = paramiko.RSAKey.from_private_key_file(key_path)
-    except Exception as e:
-        print(f"Error loading SSH key: {e}", file=sys.stderr)
+    # Load SSH key (try Ed25519 first, then RSA)
+    pkey = None
+    for key_path_str, loader in [
+        ("~/.ssh/id_ed25519", paramiko.Ed25519Key.from_private_key_file),
+        ("~/.ssh/id_rsa", paramiko.RSAKey.from_private_key_file),
+    ]:
+        key_path = os.path.expanduser(key_path_str)
+        if os.path.exists(key_path):
+            try:
+                pkey = loader(key_path)
+                break
+            except Exception as e:
+                print(f"Warning: Could not load {key_path}: {e}", file=sys.stderr)
+
+    if pkey is None:
+        print("Error: No SSH key found (~/.ssh/id_ed25519 or ~/.ssh/id_rsa)", file=sys.stderr)
         sys.exit(1)
 
     # Connect
