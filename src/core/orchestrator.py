@@ -41,8 +41,10 @@ from src.core.shared.sandbox_isolation import (
     get_isolation_manager, SandboxWorkspace, shutdown_isolation
 )
 
-# Decomposed modules
-from src.core.mini_ai_engine import MiniAIEngine
+# Decomposed modules - 3-Layer AI Architecture
+from src.core.semantic_engine import SemanticEngine   # Capa 1: ENTIENDE
+from src.core.mini_ai_engine import MiniAIEngine      # Capa 2: PIENSA
+from src.core.smart_memory import SmartMemory          # Capa 3: RECUERDA
 from src.core.subtask_descriptor import SubtaskDescriptor
 from src.core.abortive_protocol import AbortiveProtocol
 from src.core.partial_reasoning import PartialReasoningManager
@@ -79,13 +81,19 @@ class TitanOrchestrator:
         self._isolation_manager = get_isolation_manager()
 
         # ============================================================
-        #  MINI AI ENGINE - Qwen3-0.6B Semantic Copilot
+        #  3-LAYER AI ARCHITECTURE
+        #  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud)
+        #  Capa 2: MiniAIEngine (Qwen) → PIENSA (razonamiento)
+        #  Capa 3: SmartMemory → RECUERDA (cache, contexto, aprendizaje)
         # ============================================================
+        self._semantic = SemanticEngine(auto_load=True)
         self._ai = MiniAIEngine(auto_load=True)
-        if self._ai.is_loaded:
-            logger.info("MiniAI: Qwen3-0.6B semantic copilot ACTIVE")
-        else:
-            logger.info("MiniAI: Model not available, using deterministic fallbacks")
+        self._memory = SmartMemory(semantic_engine=self._semantic)
+
+        # Log AI status
+        sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
+        ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
+        logger.info(f"AI Architecture: SemanticEngine={sem_status} | MiniAI(Qwen)={ai_status} | SmartMemory=ready")
 
         # ============================================================
         #  DECOMPOSED SUB-MODULES (composition)
@@ -105,17 +113,44 @@ class TitanOrchestrator:
         start_time = time.time()
         self.request_count += 1
 
-        # Nivel 1: Parse semantico (TF-IDF + MiniAI copiloto)
+        # ============================================================
+        #  CAPA 3: SmartMemory - Check semantic cache first
+        # ============================================================
+        cached = self._memory.check_cache(msg)
+        if cached:
+            elapsed = int((time.time() - start_time) * 1000)
+            logger.info(f"SmartMemory: Cache hit ({cached['source']}) for: {msg[:50]}")
+            self._analysis.log_request(intent if 'intent' in dir() else None, "CACHED", elapsed, cache_hit=True)
+            return {
+                "status": "CACHED",
+                "code": cached.get("response", ""),
+                "hash": "mem",
+                "error": "",
+                "cache_source": cached["source"],
+                "processing_time_ms": elapsed,
+            }
+
+        # ============================================================
+        #  CAPA 1: SemanticEngine + CAPA 2: MiniAI - Intent Classification
+        # ============================================================
+        # Nivel 1: Parse semantico (TF-IDF baseline)
         intent = self.parser.parse(msg)
 
-        # MiniAI: Mejorar clasificacion si el LLM esta disponible
-        if self._ai.is_loaded:
+        # Capa 1: SemanticEngine classify (mejor que keywords, mejor que Qwen)
+        if self._semantic.is_loaded:
+            sem_result = self._semantic.classify_intent(msg)
+            if sem_result.source == "embedding" and sem_result.confidence > 0.3:
+                intent.op = sem_result.operation
+                intent.goal = sem_result.goal
+                logger.info(f"SemanticEngine: {sem_result.operation}/{sem_result.goal} (emb={sem_result.confidence:.2f})")
+
+        # Capa 2: MiniAI (Qwen) como backup si SemanticEngine no está seguro
+        elif self._ai.is_loaded:
             ai_intent = self._ai.classify_intent(msg)
             if ai_intent.source == "llm" and ai_intent.confidence > 0.5:
-                # LLM override: si esta mas seguro que TF-IDF, usar su resultado
                 intent.op = ai_intent.operation
                 intent.goal = ai_intent.goal
-                logger.info(f"MiniAI: Intent overridden -> {ai_intent.operation}/{ai_intent.goal} (LLM, conf={ai_intent.confidence:.2f})")
+                logger.info(f"MiniAI: {ai_intent.operation}/{ai_intent.goal} (LLM, conf={ai_intent.confidence:.2f})")
 
         # Nivel 3: Analisis AST del codigo proporcionado
         ast_analysis = {}
@@ -298,6 +333,12 @@ class TitanOrchestrator:
             self._analysis.log_request(intent, "SUCCESS", elapsed,
                             solver_status=plan.solver_status,
                             mcts_sims=plan.mcts_simulations)
+
+            # SmartMemory: Save successful interaction (learning)
+            importance = SmartMemory.compute_importance(
+                msg, intent.op, intent.goal, success=True, response_length=len(final_code))
+            self._memory.add_working(msg, final_code[:500], intent.op, intent.goal, importance)
+            self._memory.save_to_cache(msg, final_code[:500], intent.op, intent.goal, importance)
             return {
                 "status": "SUCCESS", "code": final_code,
                 "hash": node.hash_sha256[:12], "error": "",
@@ -313,6 +354,8 @@ class TitanOrchestrator:
                 "paths_explored": trial.paths_explored,
                 "paths_pruned": trial.paths_pruned,
                 "mini_ai_stats": self._ai.stats,
+                "semantic_stats": self._semantic.stats,
+                "memory_stats": self._memory.stats,
             }
         elif trial.status.startswith("FAIL") and final_code:
             self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
@@ -343,6 +386,10 @@ class TitanOrchestrator:
         else:
             elapsed = int((time.time() - start_time) * 1000)
             self._analysis.log_request(intent, "NO_OP", elapsed)
+
+            # Save to SmartMemory even on NO_OP (learning what doesn't work)
+            self._memory.add_working(msg, "NO_OP", intent.op, intent.goal, importance=0.2)
+
             return {
                 "status": "NO_OP", "code": "", "hash": "N/A",
                 "error": "No new code generated",

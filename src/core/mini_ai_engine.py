@@ -1,12 +1,24 @@
 """
 TITAN OMNISCALE X - MiniAIEngine (Qwen3-0.6B Q4_K_M)
 
-Motor de IA semántico COPILOTO - No es el cerebro, es la intuición.
-El pipeline es el cerebro, la IA es el copiloto semántico.
+Motor de RAZONAMIENTO - La base de pensamiento del sistema.
+
+Arquitectura de 3 capas:
+  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud, clasificación)
+  Capa 2: MiniAIEngine (Qwen) → PIENSA (razonamiento, generación, código)  ← ESTE
+  Capa 3: SmartMemory → RECUERDA (cache semántico, contexto, aprendizaje)
+
+Qwen es el MOTOR PRINCIPAL de razonamiento. NO hace semántica (para eso
+está SemanticEngine). Qwen hace lo que SemanticEngine NO puede:
+  - Razonar sobre código
+  - Generar snippets
+  - Explicar violaciones en lenguaje natural
+  - Sugerir nombres descriptivos
+  - Rellenar templates con lógica
 
 7 Tareas Bounded (max ~50 tokens/call):
-  1. classify_intent()     ~10 tokens - Clasificar intención del usuario
-  2. extract_entities()    ~20 tokens - Extraer entidades (archivo, lenguaje)
+  1. classify_intent()     ~10 tokens - Razonar sobre intención (backup de SemanticEngine)
+  2. extract_entities()    ~20 tokens - Extraer entidades (backup de regex)
   3. suggest_pattern()     ~30 tokens - Sugerir patrón de reemplazo
   4. fill_template_gaps()  ~50 tokens - Rellenar huecos de template
   5. generate_pattern()    ~20 lines  - Generar snippet de patrón
