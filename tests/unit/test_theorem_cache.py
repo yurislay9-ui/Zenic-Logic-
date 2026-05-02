@@ -7,6 +7,18 @@ Tests skeleton hash generation, composite hash lookups, and cache save/lookup.
 import pytest
 from src.core.level8_theorem_cache.cache import TheoremCache
 from src.core.shared.contracts import IntentPayload, OperationType
+from src.core.shared.db_initializer import initialize_databases
+
+
+@pytest.fixture(autouse=True)
+def _init_db():
+    """Ensure the theorems table exists before any test runs."""
+    initialize_databases()
+    # Clean the cache table for test isolation
+    from src.core.shared.db_initializer import get_connection
+    conn = get_connection("theorem_cache.sqlite")
+    conn.execute("DELETE FROM theorems")
+    conn.commit()
 
 
 @pytest.fixture

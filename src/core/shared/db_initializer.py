@@ -101,8 +101,8 @@ def close_all_connections():
         for key, conn in list(_db_connections.items()):
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"close_all_connections: Failed to close connection: {e}")
         _db_connections.clear()
 
 

@@ -23,7 +23,7 @@ import re
 import json
 import time
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -87,7 +87,7 @@ class ReasoningEngine:
       Capa 3: SmartMemory → experiencia previa
     """
 
-    def __init__(self, mini_ai=None, semantic_engine=None, smart_memory=None):
+    def __init__(self, mini_ai: Optional[Any] = None, semantic_engine: Optional[Any] = None, smart_memory: Optional[Any] = None) -> None:
         self._ai = mini_ai
         self._semantic = semantic_engine
         self._memory = smart_memory
@@ -519,7 +519,7 @@ class ReasoningEngine:
 
         return " | ".join(parts) if parts else ""
 
-    def _save_to_memory(self, query: str, answer: str, mode: str, confidence: float):
+    def _save_to_memory(self, query: str, answer: str, mode: str, confidence: float) -> None:
         """Save reasoning result to memory for future use."""
         if not self._memory:
             return
@@ -653,7 +653,7 @@ class ReasoningEngine:
         else:
             return f"Based on analysis, this requires a structured implementation with: (1) Data models and validation, (2) Business logic with error handling, (3) API endpoints or automation workflows, (4) Tests for critical paths."
 
-    def _fallback_evaluate(self, answer: str, problem: str) -> tuple:
+    def _fallback_evaluate(self, answer: str, problem: str) -> Tuple[float, List[str]]:
         """Deterministic evaluation of an answer."""
         issues = []
         score = 0.5
@@ -679,7 +679,7 @@ class ReasoningEngine:
 
         return max(0.1, min(0.9, score)), issues
 
-    def _fallback_context_reasoning(self, problem: str, semantic_info: Dict) -> str:
+    def _fallback_context_reasoning(self, problem: str, semantic_info: Dict[str, Any]) -> str:
         """Fallback reasoning using semantic info only."""
         op = semantic_info.get("operation", "UNKNOWN")
         goal = semantic_info.get("goal", "UNKNOWN")

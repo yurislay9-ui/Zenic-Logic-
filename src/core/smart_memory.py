@@ -649,11 +649,11 @@ class SmartMemory:
             procedural_count = 0
             project_count = 0
             try: episodic_count = conn.execute("SELECT COUNT(*) FROM episodic_memory").fetchone()[0]
-            except: pass
+            except sqlite3.OperationalError: pass
             try: procedural_count = conn.execute("SELECT COUNT(*) FROM procedural_memory").fetchone()[0]
-            except: pass
+            except sqlite3.OperationalError: pass
             try: project_count = conn.execute("SELECT COUNT(*) FROM project_memory").fetchone()[0]
-            except: pass
+            except sqlite3.OperationalError: pass
         return {"session_id": self._session_id, "working_memory_size": len(self._working_memory), "semantic_cache_size": cache_count, "long_term_memory_size": ltm_count, "episodic_memory_size": episodic_count, "procedural_memory_size": procedural_count, "project_memory_size": project_count, "semantic_engine_available": self._semantic is not None and self._semantic.is_loaded}
 
 

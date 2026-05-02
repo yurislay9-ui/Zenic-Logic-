@@ -94,7 +94,7 @@ class LogicChain:
         self._blocks: List[Dict[str, Any]] = []
         self._log: List[Dict[str, Any]] = []
 
-    def execute(self, initial_data: Dict, context: Optional[Dict] = None) -> Dict:
+    def execute(self, initial_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Ejecuta la cadena completa de bloques secuencialmente.
 
         Args:
@@ -794,8 +794,8 @@ class InventoryTrackerBlock(LogicBlock):
                     row = cursor.fetchone()
                     if row:
                         current_quantity = row[0] if not hasattr(row, 'keys') else row["quantity"]
-                except Exception:
-                    pass  # Use data-provided value
+                except Exception as db_err:
+                    logger.debug(f"InventoryTrackerBlock: DB read failed, using data value: {db_err}")
 
             # Apply operation
             if operation == "add":
@@ -821,8 +821,8 @@ class InventoryTrackerBlock(LogicBlock):
                         "UPDATE inventory SET quantity = ? WHERE product_id = ?",
                         (new_quantity, product_id)
                     )
-                except Exception:
-                    pass
+                except Exception as db_err:
+                    logger.debug(f"InventoryTrackerBlock: DB update failed: {db_err}")
 
             logger.debug(f"InventoryTrackerBlock: {product_id} {current_quantity}->{new_quantity}, alerts={len(alerts)}")
             return {
@@ -1962,8 +1962,8 @@ class AuthLoginBlock(LogicBlock):
                         user = dict(row) if hasattr(row, 'keys') else {
                             "id": row[0], "username": row[1], "password_hash": row[2], "role": row[3]
                         }
-                except Exception:
-                    pass
+                except Exception as db_err:
+                    logger.debug(f"AuthLoginBlock: DB lookup failed: {db_err}")
 
             if user:
                 # Verify password hash
@@ -2244,7 +2244,7 @@ class LogicBuilder:
     ejecutables, reemplazando el _process() placeholder.
     """
 
-    def __init__(self, template_engine=None):
+    def __init__(self, template_engine: Optional[Any] = None) -> None:
         """Inicializa el LogicBuilder con bloques pre-construidos.
 
         Args:
@@ -2295,8 +2295,8 @@ class LogicBuilder:
                     mapped = self._map_template_block(ts)
                     if mapped:
                         suggested_blocks.add(mapped)
-            except Exception:
-                pass
+            except Exception as mapping_err:
+                logger.debug(f"Block suggestion from template failed: {mapping_err}")
 
         # Organize blocks by category order (validation -> flow -> business_logic -> data -> integrations -> auth)
         category_order = ["validation", "flow", "business_logic", "data", "integrations", "auth"]
@@ -2637,8 +2637,8 @@ class LogicBuilder:
             if block and block.template_path:
                 # Return a function call that would use the template
                 return f'_execute_block("{block_name}", payload, context)'
-        except Exception:
-            pass
+        except Exception as template_err:
+            logger.debug(f"Template block codegen failed: {template_err}")
 
         return None
 

@@ -7,6 +7,7 @@ Compatible con Android via Buildozer.
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import shutil
@@ -16,6 +17,8 @@ import os
 
 # === Detectar plataforma ===
 IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
+
+logger = logging.getLogger(__name__)
 
 
 # === Constantes ===
@@ -166,8 +169,8 @@ class SimpleCache:
             with sqlite3.connect(get_db_path("theorem_cache.sqlite")) as c:
                 c.execute("INSERT OR REPLACE INTO theorems (structural_hash, operation, proof_result, solution_payload) VALUES (?,?,?,?)",
                           (self._hash(intent), intent["op"], proof, json.dumps(sol)))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"SimpleCache: Failed to save theorem to cache: {e}")
 
 
 class SimpleLedger:

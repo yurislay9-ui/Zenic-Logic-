@@ -96,7 +96,7 @@ class ThinkingEngine:
     Qwen piense con contexto, comprensión semántica y experiencia previa.
     """
 
-    def __init__(self, mini_ai=None, semantic_engine=None, smart_memory=None):
+    def __init__(self, mini_ai: Optional[Any] = None, semantic_engine: Optional[Any] = None, smart_memory: Optional[Any] = None) -> None:
         """
         Inicializa ThinkingEngine con referencias a las 3 capas.
 
@@ -325,7 +325,7 @@ class ThinkingEngine:
         # Fallback: default entities based on template
         return self._default_entities(template)
 
-    def _generate_endpoints(self, entities: List[Dict], template: str) -> List[Dict[str, str]]:
+    def _generate_endpoints(self, entities: List[Dict[str, Any]], template: str) -> List[Dict[str, str]]:
         """Genera endpoints CRUD para las entidades identificadas."""
         endpoints = []
 
@@ -425,7 +425,7 @@ class ThinkingEngine:
             {"name": "Item", "fields": ["id:int", "name:str", "description:str", "created_at:datetime"]},
         ])
 
-    def _generate_config(self, template: str, entities: List[Dict]) -> Dict[str, Any]:
+    def _generate_config(self, template: str, entities: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Genera configuración por defecto para el proyecto."""
         return {
             "app_name": template.replace("_", " ").title(),

@@ -37,8 +37,8 @@ class GitHubScrapAgent:
                     try:
                         with urllib.request.urlopen(raw_req, timeout=10) as raw_resp:
                             return raw_resp.read().decode()[:1500]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"GitHubScrapAgent: Failed to fetch raw code from GitHub: {e}")
         except urllib.error.HTTPError as e:
             if e.code == 403:
                 logger.warning("GitHub API rate limit alcanzado. Configura GITHUB_TOKEN.")

@@ -96,8 +96,8 @@ class ConstraintSolver:
                 try:
                     if not condition_func(**current_assignment):
                         counterexamples.append(dict(current_assignment))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"ConstraintSolver: Invariant condition evaluation failed: {e}")
                 return
 
             var = variables[var_idx]
@@ -157,8 +157,8 @@ class ConstraintSolver:
                     violations.append(assignment)
                     if len(violations) >= 3:
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"ConstraintSolver: Sample verify condition evaluation failed: {e}")
 
         if self._timed_out:
             return {"status": "TIMEOUT", "verified": False, "counterexamples": violations}

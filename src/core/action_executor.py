@@ -319,7 +319,7 @@ class HttpExecutor(ActionExecutor):
                 kwargs["json" if isinstance(body, (dict, list)) else "data"] = body if isinstance(body, (dict, list)) else str(body)
             async with session.request(method, url, **kwargs) as resp:
                 try: resp_body = await resp.text()
-                except: resp_body = ""
+                except Exception: resp_body = ""
                 return {"status": resp.status, "headers": dict(resp.headers), "body": resp_body, "url": str(resp.url)}
 
     def _execute_urllib(self, url, method, headers, body, timeout, auth):
@@ -478,17 +478,26 @@ class FileExecutor(ActionExecutor):
 
     async def _read(self, path):
         if not os.path.exists(path): raise FileNotFoundError(f"File not found: {path}")
-        content = await asyncio.to_thread(lambda: open(path, "r", encoding="utf-8", errors="replace").read())
+        def _do_read():
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        content = await asyncio.to_thread(_do_read)
         return {"content": content, "size": len(content), "path": path}
 
     async def _write(self, path, content):
         d = os.path.dirname(path)
         if d: os.makedirs(d, exist_ok=True)
-        await asyncio.to_thread(lambda: open(path, "w", encoding="utf-8").write(content))
+        def _do_write():
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+        await asyncio.to_thread(_do_write)
         return {"path": path, "size": len(content), "operation": "write"}
 
     async def _append(self, path, content):
-        await asyncio.to_thread(lambda: open(path, "a", encoding="utf-8").write(content))
+        def _do_append():
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(content)
+        await asyncio.to_thread(_do_append)
         return {"path": path, "appended_size": len(content), "operation": "append"}
 
     async def _copy(self, source, destination):
@@ -541,7 +550,7 @@ class NotificationExecutor(ActionExecutor):
     """
 
     def __init__(self, email_executor: Optional[EmailExecutor] = None,
-                 webhook_executor: Optional["WebhookExecutor"] = None):
+                 webhook_executor: Optional["WebhookExecutor"] = None) -> None:
         self._email_executor = email_executor
         self._webhook_executor = webhook_executor
 
@@ -893,8 +902,8 @@ class ScheduleExecutor(ActionExecutor):
     Operations: add, remove, list, pause, resume
     """
 
-    def __init__(self):
-        self._scheduler = None
+    def __init__(self) -> None:
+        self._scheduler: Optional[Any] = None
         self._simple_jobs: Dict[str, Dict[str, Any]] = {}
         self._job_results: Dict[str, Any] = {}
         if _HAS_APSCHEDULER:
@@ -966,7 +975,7 @@ class ScheduleExecutor(ActionExecutor):
     async def _remove_job(self, job_id):
         if self._scheduler and _HAS_APSCHEDULER:
             try: self._scheduler.remove_job(job_id)
-            except: pass
+            except Exception: logger.debug(f"ScheduleExecutor: remove_job failed for {job_id}")
         removed = self._simple_jobs.pop(job_id, None) is not None
         return {"job_id": job_id, "removed": removed}
 
@@ -985,14 +994,14 @@ class ScheduleExecutor(ActionExecutor):
     async def _pause_job(self, job_id):
         if self._scheduler and _HAS_APSCHEDULER:
             try: self._scheduler.pause_job(job_id)
-            except: pass
+            except Exception: logger.debug(f"ScheduleExecutor: pause_job failed for {job_id}")
         if job_id in self._simple_jobs: self._simple_jobs[job_id]["status"] = "paused"
         return {"job_id": job_id, "status": "paused"}
 
     async def _resume_job(self, job_id):
         if self._scheduler and _HAS_APSCHEDULER:
             try: self._scheduler.resume_job(job_id)
-            except: pass
+            except Exception: logger.debug(f"ScheduleExecutor: resume_job failed for {job_id}")
         if job_id in self._simple_jobs: self._simple_jobs[job_id]["status"] = "active"
         return {"job_id": job_id, "status": "active"}
 
@@ -1008,11 +1017,11 @@ class ExecutorRegistry:
     cualquier tipo de acción a través de su executor correspondiente.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._executors: Dict[str, ActionExecutor] = {}
         self._register_defaults()
 
-    def _register_defaults(self):
+    def _register_defaults(self) -> None:
         """Registra los ejecutores por defecto."""
         email_exec = EmailExecutor()
         http_exec = HttpExecutor()

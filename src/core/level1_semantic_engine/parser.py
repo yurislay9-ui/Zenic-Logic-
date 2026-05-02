@@ -7,10 +7,14 @@ Compatible con Android.
 """
 
 import re
+import logging
 from collections import Counter
 from src.core.shared.contracts import IntentPayload, OperationType, GoalType
 from src.core.semantic_engine import SemanticEngine
 from src.core.smart_memory import SmartMemory
+
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticParser:
@@ -240,8 +244,8 @@ class SemanticParser:
                             importance=result.confidence,
                         )
                     return result
-            except Exception:
-                pass  # Fall back to TF-IDF
+            except Exception as e:
+                logger.debug(f"SemanticParser: SemanticEngine classification failed, falling back to TF-IDF: {e}")
 
         # Fallback: existing TF-IDF classification
         tokens = self._tokenize(text)
@@ -290,8 +294,8 @@ class SemanticParser:
                     goal=result.goal,
                     importance=result.confidence,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"SemanticParser: Failed to cache TF-IDF result in SmartMemory: {e}")
 
         return result
 

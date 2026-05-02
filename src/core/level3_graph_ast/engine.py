@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from src.core.shared.db_initializer import get_connection
 
+logger = logging.getLogger(__name__)
+
 
 class GraphASTEngine:
     """Motor de AST usando ast nativo para Python, regex para otros."""
@@ -236,8 +238,8 @@ class GraphASTEngine:
             try:
                 conns = json.loads(n.get("connections", "[]"))
                 all_connections.extend(conns)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"GraphASTEngine: Failed to parse connections JSON: {e}")
         return {
             "functions": len(functions), "classes": len(classes),
             "imports": len(imports),

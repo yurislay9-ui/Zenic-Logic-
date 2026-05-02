@@ -24,7 +24,7 @@ Decomposed into focused modules:
 import time
 import logging
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from src.config.loader import load_settings
 from src.core.shared.db_initializer import initialize_databases, get_projects_dir
@@ -68,13 +68,22 @@ from src.core.auth_service import AuthService
 from src.core.reasoning_engine import ReasoningEngine, ReasoningMode, ReasoningResult
 from src.core.chain_validator import ChainValidator, ChainExecutor, execute_chain_safe, validate_chain, RecoveryAction
 
+# Agent Framework (Phase F1-F5) - AI-driven logic replaces hardcoded rules
+from src.core.agents import AgentRunner, AgentCache
+from src.core.agents.intent_agent import IntentAgent
+from src.core.agents.reasoning_agent import ReasoningAgent
+from src.core.agents.business_logic_agent import BusinessLogicAgent
+from src.core.agents.code_agent import CodeAgent
+from src.core.agents.automation_agent import AutomationAgent
+from src.core.agents.validation_agent import ValidationAgent
+
 logger = logging.getLogger(__name__)
 
 
 class TitanOrchestrator:
     """Orquestador del pipeline completo de 8 niveles con Protocolo Abortivo."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         initialize_databases()
         self.settings = load_settings()
         self.p_dir = self.settings.get("project_dir", ".")
@@ -180,11 +189,88 @@ class TitanOrchestrator:
         self._code_transform = CodeTransformer()
         self._analysis = AnalysisUtils(self)
 
+        # ============================================================
+        #  AGENT FRAMEWORK (Phase F1) - IA-driven agents
+        #  Reemplaza logica de negocio hardcodeada con agentes IA
+        # ============================================================
+        self._agent_runner = AgentRunner(
+            mini_ai=self._ai,
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+            enable_cache=True,
+        )
+        # Cablear cache semantico al AgentRunner
+        if self._semantic and self._semantic.is_loaded:
+            self._agent_runner._cache.set_semantic_engine(self._semantic)
+
+        # ============================================================
+        #  INTENT AGENT (Phase F2) - Replaces scattered intent classification
+        #  Unifica: SemanticParser + SemanticEngine + MiniAI classify_intent
+        # ============================================================
+        self._intent_agent = IntentAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+
+        agent_status = "ACTIVE" if self._ai and self._ai.is_loaded else "fallback"
+        intent_agent_status = f"ACTIVE (sem={self._semantic.is_loaded})" if self._semantic else "fallback"
+        logger.info(f"Agent Framework: AgentRunner={agent_status} | IntentAgent={intent_agent_status} | Cache=enabled | SemanticCache={'ACTIVE' if self._semantic and self._semantic.is_loaded else 'off'}")
+
+        # ============================================================
+        #  REASONING AGENT (Phase F3) - Replaces ReasoningEngine + ThinkingEngine
+        #  Unifica: step_by_step + self_reflect + with_context reasoning
+        # ============================================================
+        self._reasoning_agent = ReasoningAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+
+        # ============================================================
+        #  BUSINESS LOGIC AGENT (Phase F3) - Replaces 30+ LogicBlocks
+        #  Unifica: invoice, inventory, CRM, task, report, notification, analytics
+        # ============================================================
+        self._business_logic_agent = BusinessLogicAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+
+        logger.info(f"Agent Framework F3: ReasoningAgent=ready | BusinessLogicAgent=ready")
+
+        # ============================================================
+        #  CODE AGENT (Phase F4) - Replaces CodeGenerator + CodeTransformer
+        #  Unifica: generate, transform, scaffold, optimize, fix
+        # ============================================================
+        self._code_agent = CodeAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+            template_engine=self._template_engine,
+        )
+
+        # ============================================================
+        #  AUTOMATION AGENT (Phase F4) - Replaces AutomationEngine keyword inference
+        #  Unifica: trigger inference, action inference, schedule parsing
+        # ============================================================
+        self._automation_agent = AutomationAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+
+        # ============================================================
+        #  VALIDATION AGENT (Phase F5) - Replaces ChainValidator regex patterns
+        #  Unifica: code validation, chain validation, config validation
+        # ============================================================
+        self._validation_agent = ValidationAgent(
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+
+        logger.info(f"Agent Framework F4-F5: CodeAgent=ready | AutomationAgent=ready | ValidationAgent=ready")
+
         # Escanear proyecto si existe
         if Path(self.p_dir).exists():
             self.ast_engine.scan_project(self.p_dir)
 
-    async def execute(self, msg):
+    async def execute(self, msg: str) -> Dict[str, Any]:
         """Ejecuta el pipeline completo de 8 niveles con Protocolo Abortivo."""
         start_time = time.time()
         self.request_count += 1
@@ -207,26 +293,26 @@ class TitanOrchestrator:
             }
 
         # ============================================================
-        #  CAPA 1: SemanticEngine + CAPA 2: MiniAI - Intent Classification
+        #  INTENT AGENT (Phase F2) - Unified intent classification
+        #  Reemplaza: SemanticParser + SemanticEngine + MiniAI classify_intent
+        #  Flujo: AgentRunner(LLM) → SemanticEngine → TF-IDF fallback
         # ============================================================
-        # Nivel 1: Parse semantico (TF-IDF baseline)
-        intent = self.parser.parse(msg)
+        from src.core.agents.schemas import IntentInput
+        intent_output = self._intent_agent.classify_with_runner(
+            self._agent_runner, msg, context=""
+        )
+        intent = self._intent_agent.to_intent_payload(intent_output, context=msg)
 
-        # Capa 1: SemanticEngine classify (mejor que keywords, mejor que Qwen)
-        if self._semantic.is_loaded:
-            sem_result = self._semantic.classify_intent(msg)
-            if sem_result.source == "embedding" and sem_result.confidence > 0.3:
-                intent.op = sem_result.operation
-                intent.goal = sem_result.goal
-                logger.info(f"SemanticEngine: {sem_result.operation}/{sem_result.goal} (emb={sem_result.confidence:.2f})")
+        # Extraer código del mensaje (separado de la clasificación)
+        code_lang, raw_code = IntentAgent._extract_code_block(msg)
+        if raw_code:
+            intent.raw_code = raw_code
+            if code_lang:
+                intent.language = code_lang
 
-        # Capa 2: MiniAI (Qwen) como backup si SemanticEngine no está seguro
-        elif self._ai.is_loaded:
-            ai_intent = self._ai.classify_intent(msg)
-            if ai_intent.source == "llm" and ai_intent.confidence > 0.5:
-                intent.op = ai_intent.operation
-                intent.goal = ai_intent.goal
-                logger.info(f"MiniAI: {ai_intent.operation}/{ai_intent.goal} (LLM, conf={ai_intent.confidence:.2f})")
+        logger.info(f"IntentAgent: {intent_output.operation}/{intent_output.goal} "
+                    f"(source={intent_output.source}, conf={intent_output.confidence:.2f}, "
+                    f"target={intent.target})")
 
         # Nivel 3: Analisis AST del codigo proporcionado
         ast_analysis = {}
@@ -365,7 +451,25 @@ class TitanOrchestrator:
                         explanations.append(f"'{intent.target}' not found in code")
 
             elif step.action in ["SYMBOLIC_VALIDATION", "SYNTAX_VALIDATION"]:
-                explanations.append("Symbolic validation executed (bounded symbolic execution)")
+                # Use ValidationAgent (F5) for intelligent validation
+                if self._validation_agent and code:
+                    from src.core.agents.schemas import ValidationInput
+                    v_output = self._validation_agent.validate_with_runner(
+                        self._agent_runner, target="code", content=code,
+                        rules=["security", "quality"], language=lang,
+                    )
+                    if v_output.issues:
+                        issue_strs = [f"{i.severity}: {i.message}" for i in v_output.issues[:5]]
+                        explanations.append(
+                            f"Validation (F5): {len(v_output.issues)} issues found "
+                            f"(risk={v_output.risk_score:.2f}, source={v_output.source})"
+                        )
+                        for iss in issue_strs:
+                            explanations.append(f"  - {iss}")
+                    else:
+                        explanations.append("Validation (F5): No issues found")
+                else:
+                    explanations.append("Symbolic validation executed (bounded symbolic execution)")
 
             elif step.action == "ANALYZE_AND_RESPOND":
                 if code:
@@ -480,7 +584,7 @@ class TitanOrchestrator:
     #  PUBLIC API - resume_from_partial (delegates to PartialReasoningManager)
     # ============================================================
 
-    async def resume_from_partial(self, resumption_token, subtask_index=None):
+    async def resume_from_partial(self, resumption_token: str, subtask_index: Optional[int] = None) -> Dict[str, Any]:
         """Resume execution from a partial reasoning state. Delegates to PartialReasoningManager."""
         return await self._partial_reasoning.resume_from_partial(resumption_token, subtask_index)
 
@@ -542,8 +646,34 @@ class TitanOrchestrator:
                                    output_dir: str = "") -> Dict[str, Any]:
         """
         Genera un proyecto de automatización a partir de una descripción.
+
+        Usa AutomationAgent (F4) para diseño inteligente del workflow,
+        con fallback a AutomationEngine (Legacy) para generación de archivos.
         """
+        # Try AutomationAgent (F4) for workflow design first
+        automation_design = None
+        if self._automation_agent:
+            from src.core.agents.schemas import AutomationInput
+            automation_design = self._automation_agent.design_with_runner(
+                self._agent_runner, description,
+            )
+
+        # Generate project files using existing AutomationEngine (keeps file generation)
         result = self._automation.generate_automation_project(description, output_dir)
+
+        # Enhance result with AutomationAgent design if available
+        if automation_design:
+            wf_dict = self._automation_agent.to_workflow_dict(automation_design)
+            result["automation_agent"] = {
+                "name": automation_design.name,
+                "triggers": [{"type": t.type, "config": t.config, "description": t.description}
+                             for t in automation_design.triggers],
+                "actions": [{"type": a.type, "config": a.config, "description": a.description}
+                            for a in automation_design.actions],
+                "schedule": {"type": automation_design.schedule.type,
+                             "cron": automation_design.schedule.cron_expression},
+                "source": automation_design.source,
+            }
         
         # Save to memory
         if self._memory:
@@ -564,6 +694,7 @@ class TitanOrchestrator:
                 "id": result.get("workflow", None).id if result.get("workflow") else None,
                 "name": result.get("workflow", None).name if result.get("workflow") else None,
             } if result.get("workflow") else None,
+            "automation_agent": result.get("automation_agent"),
         }
 
     async def design_schema(self, description: str) -> Dict[str, Any]:
@@ -634,11 +765,40 @@ class TitanOrchestrator:
 
     async def build_logic(self, description: str) -> Dict[str, Any]:
         """
-        Construye una cadena de lógica de negocio a partir de una descripción.
-        
-        Usa LogicBuilder para componer bloques pre-construidos que
-        reemplazan el placeholder _process().
+        Construye lógica de negocio a partir de una descripción.
+
+        Usa BusinessLogicAgent (F3) para ejecución inteligente,
+        con fallback a LogicBuilder (Legacy) para composición de bloques.
+        Mantiene compatibilidad con la API Legacy (block_count, generated_code).
         """
+        # Try BusinessLogicAgent (F3) first
+        if self._business_logic_agent:
+            output = self._business_logic_agent.execute_with_runner(
+                self._agent_runner,
+                operation_type="custom",
+                data={"description": description},
+                description=description,
+            )
+            result = {
+                "success": output.success,
+                "data": output.data,
+                "side_effects": output.side_effects,
+                "insights": output.insights,
+                "errors": output.errors,
+                "source": output.source,
+                "description": description,
+            }
+            # Legacy compat: if LogicBuilder available, also include blocks
+            if self._logic_builder:
+                chain = self._logic_builder.build_from_description(description)
+                blocks = [b.name for b in chain.blocks]
+                code = self._logic_builder.generate_process_method(blocks)
+                result["blocks"] = blocks
+                result["block_count"] = len(blocks)
+                result["generated_code"] = code
+            return result
+
+        # Legacy fallback to LogicBuilder only
         if not self._logic_builder:
             return {"error": "LogicBuilder not available"}
         chain = self._logic_builder.build_from_description(description)
@@ -686,10 +846,29 @@ class TitanOrchestrator:
     async def reason(self, query: str, mode: str = "auto",
                      context: str = "") -> Dict[str, Any]:
         """
-        Razonamiento avanzado usando ReasoningEngine.
+        Razonamiento avanzado usando ReasoningAgent (F3) o ReasoningEngine (Legacy).
 
         Modes: step_by_step, self_reflect, with_context, auto
         """
+        # Try ReasoningAgent (F3) first
+        if self._reasoning_agent:
+            actual_mode = mode if mode != "auto" else "step_by_step"
+            output = self._reasoning_agent.reason_with_runner(
+                self._agent_runner, query, mode=actual_mode, context=context,
+            )
+            return {
+                "answer": output.answer,
+                "confidence": output.confidence,
+                "mode": output.mode,
+                "steps": len(output.steps),
+                "refinements": output.refinements,
+                "context_used": output.context_used,
+                "memory_hits": output.memory_hits,
+                "source": output.source,
+                "duration_ms": output.total_duration_ms,
+            }
+
+        # Legacy fallback to ReasoningEngine
         if not self._reasoning:
             return {"error": "ReasoningEngine not available"}
 
@@ -709,7 +888,48 @@ class TitanOrchestrator:
     async def validate_logic_chain(self, description: str) -> Dict[str, Any]:
         """
         Valida una cadena de lógica antes de ejecutarla.
+
+        Usa ValidationAgent (F5) para validación inteligente,
+        con fallback a ChainValidator (Legacy) para validación por reglas.
         """
+        # Try ValidationAgent (F5) first
+        if self._validation_agent:
+            from src.core.agents.schemas import ValidationInput
+            output = self._validation_agent.validate_with_runner(
+                self._agent_runner, target="chain", content=description,
+                rules=["compatibility", "completeness"], language="python",
+            )
+            result = {
+                "is_valid": output.is_valid,
+                "can_execute": output.is_valid or not any(
+                    i.severity == "error" for i in output.issues
+                ),
+                "issues": [
+                    {"severity": i.severity, "code": i.code,
+                     "message": i.message, "line": i.line,
+                     "suggestion": i.suggestion}
+                    for i in output.issues
+                ],
+                "suggestions": output.suggestions,
+                "risk_score": output.risk_score,
+                "source": output.source,
+            }
+            # Legacy compat: also run ChainValidator if LogicBuilder available
+            if self._logic_builder:
+                chain = self._logic_builder.build_from_description(description)
+                validation = self._chain_validator.validate(chain)
+                result["block_count"] = len(chain.blocks)
+                result["legacy_errors"] = [
+                    {"code": e.code, "message": e.message, "block": e.block_name}
+                    for e in validation.errors
+                ]
+                result["legacy_warnings"] = [
+                    {"code": e.code, "message": e.message, "block": e.block_name}
+                    for e in validation.warnings
+                ]
+            return result
+
+        # Legacy fallback to ChainValidator
         if not self._logic_builder:
             return {"error": "LogicBuilder not available"}
         chain = self._logic_builder.build_from_description(description)
@@ -725,7 +945,7 @@ class TitanOrchestrator:
         }
 
     async def execute_logic_chain(self, description: str,
-                                   data: Dict[str, Any] = None,
+                                   data: Optional[Dict[str, Any]] = None,
                                    recovery: str = "skip") -> Dict[str, Any]:
         """
         Ejecuta una cadena de lógica con validación, rollback y recovery.
@@ -808,6 +1028,16 @@ class TitanOrchestrator:
                 "reasoning_available": self._reasoning is not None,
                 "chain_validation": True,
                 "chain_recovery_modes": 5,
+            },
+            "agent_framework": {
+                "runner_stats": self._agent_runner.stats if self._agent_runner else {},
+                "cache_stats": self._agent_runner._cache.stats if self._agent_runner and self._agent_runner._cache else {},
+                "intent_agent": self._intent_agent.stats if self._intent_agent else {},
+                "reasoning_agent": self._reasoning_agent.stats if self._reasoning_agent else {},
+                "business_logic_agent": self._business_logic_agent.stats if self._business_logic_agent else {},
+                "code_agent": self._code_agent.stats if self._code_agent else {},
+                "automation_agent": self._automation_agent.stats if self._automation_agent else {},
+                "validation_agent": self._validation_agent.stats if self._validation_agent else {},
             },
             "request_count": self.request_count,
         }

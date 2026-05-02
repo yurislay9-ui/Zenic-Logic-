@@ -89,8 +89,8 @@ class SandboxWorkspace:
             try:
                 from android.storage import app_storage_path
                 return Path(app_storage_path()) / "titan_sandbox"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"SandboxWorkspace: Android storage path detection failed: {e}")
         return Path.home() / ".titan_omniscale" / "sandbox"
 
     def _create_workspace(self):

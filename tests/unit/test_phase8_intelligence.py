@@ -7,12 +7,36 @@ Tests for the Phase 8 components:
   3. SmartMemory session management and consolidation
   4. Orchestrator Phase 8 integration
   5. Cross-phase wiring verification
+
+Memory optimization: Orchestrator-heavy test classes share a single
+module-scoped instance to avoid OOM on memory-constrained environments.
 """
 
 import os
+import gc
 import time
 import tempfile
 import pytest
+
+
+# ============================================================
+#  SHARED ORCHESTRATOR FIXTURE (memory-efficient)
+# ============================================================
+
+@pytest.fixture(scope="module")
+def shared_orchestrator():
+    """Create a single TitanOrchestrator shared by all orchestrator tests.
+
+    This avoids loading the fastembed model repeatedly (each instance
+    takes ~200MB RAM). The orchestrator is created once per module
+    and cleaned up after all tests in the module finish.
+    """
+    from src.core.orchestrator import TitanOrchestrator
+    orch = TitanOrchestrator()
+    yield orch
+    # Force cleanup to free memory
+    del orch
+    gc.collect()
 
 
 # ============================================================
@@ -338,12 +362,15 @@ class TestSmartMemorySessions:
 # ============================================================
 
 class TestOrchestratorPhase8:
-    """Tests for Orchestrator with Phase 8 Intelligence."""
+    """Tests for Orchestrator with Phase 8 Intelligence.
+
+    Uses the shared_orchestrator fixture to avoid OOM from loading
+    the semantic model multiple times.
+    """
 
     @pytest.fixture(autouse=True)
-    def setup(self):
-        from src.core.orchestrator import TitanOrchestrator
-        self.orch = TitanOrchestrator()
+    def setup(self, shared_orchestrator):
+        self.orch = shared_orchestrator
 
     @pytest.mark.asyncio
     async def test_system_status_has_phase8(self):
@@ -425,12 +452,15 @@ class TestOrchestratorPhase8:
 # ============================================================
 
 class TestCrossPhaseWiring:
-    """Verify all wiring between Phases 6, 7, and 8 is connected."""
+    """Verify all wiring between Phases 6, 7, and 8 is connected.
+
+    Uses the shared_orchestrator fixture to avoid OOM from loading
+    the semantic model multiple times.
+    """
 
     @pytest.fixture(autouse=True)
-    def setup(self):
-        from src.core.orchestrator import TitanOrchestrator
-        self.orch = TitanOrchestrator()
+    def setup(self, shared_orchestrator):
+        self.orch = shared_orchestrator
 
     def test_phase6_template_engine_exists(self):
         """Phase 6: TemplateEngine should be initialized."""

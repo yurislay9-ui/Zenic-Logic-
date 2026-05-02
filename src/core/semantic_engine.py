@@ -227,8 +227,11 @@ class SemanticEngine:
 
         try:
             from fastembed import TextEmbedding
+            import warnings
             start = time.time()
-            self._model = TextEmbedding(model_name=EMBEDDING_MODEL)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*mean pooling.*", category=UserWarning)
+                self._model = TextEmbedding(model_name=EMBEDDING_MODEL)
             self._load_time = time.time() - start
             self._loaded = True
 

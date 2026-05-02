@@ -10,7 +10,7 @@ Compatible con Termux + Android.
 
 import os, re, json, time, hashlib, hmac, secrets, sqlite3, threading, logging, base64
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Set, Callable, Any
 
 logger = logging.getLogger(__name__)
@@ -165,7 +165,7 @@ class AuthService:
             try:
                 return _pwd_context.verify(password, hashed)
             except Exception:
-                pass  # Fall through to pbkdf2/sha256
+                logger.debug("passlib verify failed, falling back to pbkdf2")
         if hashed.startswith("pbkdf2$"):
             try:
                 _, iters_s, salt, stored = hashed.split("$", 3)
@@ -189,7 +189,7 @@ class AuthService:
     def create_access_token(self, user_id: int, role: str, extra: Dict = None) -> str:
         """Create access token. JWT if jose available, HMAC-based otherwise."""
         jti = secrets.token_hex(16)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = {
             "sub": str(user_id), "role": role, "type": "access", "jti": jti,
             "iat": int(now.timestamp()),
@@ -204,7 +204,7 @@ class AuthService:
     def create_refresh_token(self, user_id: int) -> str:
         """Create refresh token with longer expiry."""
         jti = secrets.token_hex(16)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = {
             "sub": str(user_id), "type": "refresh", "jti": jti,
             "iat": int(now.timestamp()),
@@ -271,7 +271,7 @@ class AuthService:
             return False
         exp = payload.get("exp")
         expires_at = datetime.fromtimestamp(exp).isoformat() if exp else None
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
         try:
             c.execute("INSERT OR IGNORE INTO revoked_tokens (jti, user_id, revoked_at, expires_at) "
@@ -335,7 +335,7 @@ class AuthService:
 
     def cleanup_revoked_tokens(self) -> int:
         """Remove expired tokens from blacklist. Returns count removed."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
         try:
             n = c.execute("DELETE FROM revoked_tokens WHERE expires_at IS NOT NULL AND expires_at < ?",
@@ -359,7 +359,7 @@ class AuthService:
         if role not in ROLE_HIERARCHY:
             return {"error": f"Invalid role: {role}"}
         pw_hash = self.hash_password(password)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
         try:
             with self._lock:
@@ -396,7 +396,7 @@ class AuthService:
             if not self.verify_password(password, row["password_hash"]):
                 return {"error": "Invalid credentials"}
             uid, role = row["id"], row["role"]
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             c.execute("UPDATE users SET last_login = ?, login_count = login_count + 1, "
                       "updated_at = ? WHERE id = ?", (now, now, uid))
             c.commit()
@@ -431,7 +431,7 @@ class AuthService:
             return {"error": "No valid fields to update"}
         if "role" in updates and updates["role"] not in ROLE_HIERARCHY:
             return {"error": f"Invalid role: {updates['role']}"}
-        updates["updated_at"] = datetime.utcnow().isoformat()
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [user_id]
         c = self._conn()
@@ -454,7 +454,7 @@ class AuthService:
         try:
             with self._lock:
                 cur = c.execute("UPDATE users SET active = 0, updated_at = ? WHERE id = ?",
-                                (datetime.utcnow().isoformat(), user_id))
+                                (datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
                 return cur.rowcount > 0
         except sqlite3.Error as e:
@@ -489,7 +489,7 @@ class AuthService:
                 return False
             with self._lock:
                 c.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-                          (self.hash_password(new_password), datetime.utcnow().isoformat(), user_id))
+                          (self.hash_password(new_password), datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
             logger.info(f"AuthService: password changed for user {user_id}")
             return True
@@ -505,7 +505,7 @@ class AuthService:
         try:
             with self._lock:
                 cur = c.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-                                (self.hash_password(new_password), datetime.utcnow().isoformat(), user_id))
+                                (self.hash_password(new_password), datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
                 return cur.rowcount > 0
         except sqlite3.Error as e:
@@ -649,7 +649,7 @@ class AuthService:
         api_key = f"{API_KEY_PREFIX}{raw}"
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         key_id = secrets.token_hex(8)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         perms_json = json.dumps(permissions or [])
         c = self._conn()
         try:
@@ -681,7 +681,7 @@ class AuthService:
                     user = self.get_user(row["user_id"])
                     if not user or not user.get("active"):
                         return None
-                    now = datetime.utcnow().isoformat()
+                    now = datetime.now(timezone.utc).isoformat()
                     c.execute("UPDATE api_keys SET last_used = ?, usage_count = usage_count + 1 "
                               "WHERE id = ?", (now, row["id"]))
                     c.commit()

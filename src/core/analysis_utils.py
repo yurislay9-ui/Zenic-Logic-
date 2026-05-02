@@ -136,5 +136,5 @@ class AnalysisUtils:
                  intent.op, intent.goal, "", status, elapsed_ms,
                  solver_status, mcts_sims, int(cache_hit)))
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"AnalysisUtils: Failed to log request to database: {e}")

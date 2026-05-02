@@ -667,8 +667,8 @@ class Z3Solver:
                             z3_module.And(*z3_conds) if z3_conds
                             else z3_module.BoolVal(True)
                         )
-                except Exception:
-                    pass
+                except Exception as inv_err:
+                    logger.debug(f"Z3Solver: Invariant evaluation failed: {inv_err}")
                 return
 
             var_name = variables[idx]
@@ -787,8 +787,8 @@ class Z3Solver:
                     violations_found.append(assignment)
                     if len(violations_found) >= 3:
                         break
-            except Exception:
-                pass
+            except Exception as inv_err:
+                logger.debug(f"Z3Solver: Invariant sampling failed: {inv_err}")
 
         if violations_found:
             return {
@@ -1277,8 +1277,8 @@ class Z3Solver:
             elif domain_type == "BOOLEAN":
                 return bool(z3_val)
 
-        except Exception:
-            pass
+        except Exception as decode_err:
+            logger.debug(f"Z3Solver: Value decoding failed: {decode_err}")
 
         return str(z3_val)
 
@@ -1479,8 +1479,8 @@ class Z3Solver:
             for v in domain:
                 if self._encode_value(v) == int_val:
                     return v
-        except Exception:
-            pass
+        except Exception as decode_err:
+            logger.debug(f"Z3Solver: Domain lookup failed: {decode_err}")
         return str(z3_value)
 
     # ================================================================

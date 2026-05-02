@@ -1384,8 +1384,8 @@ class SymbolicExecutor:
                                                 f"Potential index out of bounds: '{var_name}' may be "
                                                 f"negative in function '{func_name}' (Z3 verified)"
                                             )
-                                except Exception:
-                                    pass
+                                except Exception as z3_err:
+                                    logger.debug(f"SymbolicExecutor: Z3 bounds check failed: {z3_err}")
 
     def _check_type_mismatches(self, path, func_name, violations):
         """Check for type mismatches in binary operations."""
@@ -1940,8 +1940,8 @@ class SymbolicExecutor:
                                     entry["concrete_inputs"][var_name] = str(val)
                             except Exception:
                                 entry["concrete_inputs"][var_name] = str(val)
-                except Exception:
-                    pass
+                except Exception as export_err:
+                    logger.debug(f"SymbolicExecutor: Path export failed: {export_err}")
 
             exported.append(entry)
 

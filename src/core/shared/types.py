@@ -5,6 +5,8 @@ Operation types, goal types, criticality levels, route paths,
 and data payloads for communication between pipeline levels.
 """
 
+from typing import Any, Dict, List, Optional
+
 
 # ============================================================
 #  OPERACIONES Y OBJETIVOS
@@ -48,9 +50,9 @@ class RoutePath:
 # ============================================================
 
 class IntentPayload:
-    def __init__(self, op=OperationType.SEARCH, target="unknown",
-                 goal=GoalType.FEATURE_ADD, scrap_query="", confidence=0.0,
-                 language="python", raw_code="", context=""):
+    def __init__(self, op: str = OperationType.SEARCH, target: str = "unknown",
+                 goal: str = GoalType.FEATURE_ADD, scrap_query: str = "", confidence: float = 0.0,
+                 language: str = "python", raw_code: str = "", context: str = "") -> None:
         self.op = op
         self.target = target
         self.goal = goal
@@ -62,8 +64,8 @@ class IntentPayload:
 
 
 class RoutingPayload:
-    def __init__(self, intent=None, criticality=CriticalityLevel.FAST_STANDARD,
-                 route=RoutePath.FAST_PATH, reason=""):
+    def __init__(self, intent: Optional[IntentPayload] = None, criticality: int = CriticalityLevel.FAST_STANDARD,
+                 route: str = RoutePath.FAST_PATH, reason: str = "") -> None:
         self.intent = intent or IntentPayload()
         self.criticality = criticality
         self.route = route
@@ -71,8 +73,8 @@ class RoutingPayload:
 
 
 class PlanStep:
-    def __init__(self, step_id=0, action="ANALYZE_CODE", target_node_name="",
-                 source="LOCAL_GRAPH", constraints=None):
+    def __init__(self, step_id: int = 0, action: str = "ANALYZE_CODE", target_node_name: str = "",
+                 source: str = "LOCAL_GRAPH", constraints: Optional[Dict[str, Any]] = None) -> None:
         self.step_id = step_id
         self.action = action
         self.target_node_name = target_node_name
@@ -81,8 +83,8 @@ class PlanStep:
 
 
 class ExecutionPlan:
-    def __init__(self, plan_id="", steps=None, solver_status="HEURISTIC_FALLBACK",
-                 solver_proof=None, mcts_simulations=0, mcts_depth_reached=0):
+    def __init__(self, plan_id: str = "", steps: Optional[List[PlanStep]] = None, solver_status: str = "HEURISTIC_FALLBACK",
+                 solver_proof: Optional[Any] = None, mcts_simulations: int = 0, mcts_depth_reached: int = 0) -> None:
         self.plan_id = plan_id
         self.steps = steps or []
         self.solver_status = solver_status
@@ -92,8 +94,9 @@ class ExecutionPlan:
 
 
 class SandboxResult:
-    def __init__(self, status="PASS", error_message="", error_node=None,
-                 warnings=None, metrics=None, paths_explored=0, paths_pruned=0):
+    def __init__(self, status: str = "PASS", error_message: str = "", error_node: Optional[str] = None,
+                 warnings: Optional[List[str]] = None, metrics: Optional[Dict[str, Any]] = None,
+                 paths_explored: int = 0, paths_pruned: int = 0) -> None:
         self.status = status
         self.error_message = error_message
         self.error_node = error_node
@@ -104,8 +107,8 @@ class SandboxResult:
 
 
 class MerkleNode:
-    def __init__(self, file_path="", hash_sha256="", parent_hash="",
-                 timestamp=0, operation=""):
+    def __init__(self, file_path: str = "", hash_sha256: str = "", parent_hash: str = "",
+                 timestamp: int = 0, operation: str = "") -> None:
         self.file_path = file_path
         self.hash_sha256 = hash_sha256
         self.parent_hash = parent_hash
@@ -114,14 +117,14 @@ class MerkleNode:
 
 
 class ChatMessage:
-    def __init__(self, role="user", content=""):
+    def __init__(self, role: str = "user", content: str = "") -> None:
         self.role = role
         self.content = content
 
 
 class ChatRequest:
-    def __init__(self, model="titan-omniscale-x", messages=None, temperature=0.1,
-                 max_tokens=2000, stream=False):
+    def __init__(self, model: str = "titan-omniscale-x", messages: Optional[List[ChatMessage]] = None, temperature: float = 0.1,
+                 max_tokens: int = 2000, stream: bool = False) -> None:
         self.model = model
         self.messages = messages or []
         self.temperature = temperature

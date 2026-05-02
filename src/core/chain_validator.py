@@ -79,12 +79,12 @@ class ValidationResult:
     warnings: List[ValidationError] = field(default_factory=list)
     can_execute: bool = True  # True if chain can be attempted even with warnings
 
-    def add_error(self, code: str, message: str, block_name: str = "", block_index: int = -1):
+    def add_error(self, code: str, message: str, block_name: str = "", block_index: int = -1) -> None:
         self.errors.append(ValidationError("error", code, message, block_name, block_index))
         self.is_valid = False
         self.can_execute = False
 
-    def add_warning(self, code: str, message: str, block_name: str = "", block_index: int = -1):
+    def add_warning(self, code: str, message: str, block_name: str = "", block_index: int = -1) -> None:
         self.warnings.append(ValidationError("warning", code, message, block_name, block_index))
 
 
@@ -137,8 +137,8 @@ class ChainValidator:
     def __init__(self, level: ValidationLevel = ValidationLevel.STANDARD):
         self._level = level
 
-    def validate(self, chain, initial_data: Dict[str, Any] = None,
-                 context: Dict[str, Any] = None) -> ValidationResult:
+    def validate(self, chain: Any, initial_data: Optional[Dict[str, Any]] = None,
+                 context: Optional[Dict[str, Any]] = None) -> ValidationResult:
         """
         Validate a LogicChain before execution.
         
@@ -174,8 +174,8 @@ class ChainValidator:
 
         return result
 
-    def _validate_block(self, block, index: int, initial_data: Dict,
-                        context: Dict, result: ValidationResult):
+    def _validate_block(self, block: Any, index: int, initial_data: Dict[str, Any],
+                        context: Dict[str, Any], result: ValidationResult) -> None:
         """Validate a single block."""
         block_name = block.name if hasattr(block, 'name') else f"block_{index}"
         
@@ -212,7 +212,7 @@ class ChainValidator:
                                  f"Email block '{block_name}' needs 'to' in data",
                                  block_name=block_name, block_index=index)
 
-    def _validate_compatibility(self, blocks, result: ValidationResult):
+    def _validate_compatibility(self, blocks: List[Any], result: ValidationResult) -> None:
         """Check that block outputs can feed into subsequent block inputs."""
         for i in range(len(blocks) - 1):
             current = blocks[i]
@@ -231,7 +231,7 @@ class ChainValidator:
                 if 'valid' in current_outputs and 'data' in next_inputs:
                     pass  # Good: validate then operate
 
-    def _validate_strict(self, blocks, initial_data: Dict, result: ValidationResult):
+    def _validate_strict(self, blocks: List[Any], initial_data: Dict[str, Any], result: ValidationResult) -> None:
         """Strict mode additional checks."""
         # Check chain length
         if len(blocks) > 10:
@@ -273,9 +273,9 @@ class ChainExecutor:
     This provides transactional semantics for logic chains.
     """
 
-    def __init__(self, validator: ChainValidator = None,
+    def __init__(self, validator: Optional[ChainValidator] = None,
                  default_recovery: RecoveryAction = RecoveryAction.ABORT,
-                 max_retries: int = 1):
+                 max_retries: int = 1) -> None:
         self._validator = validator or ChainValidator()
         self._default_recovery = default_recovery
         self._max_retries = max_retries
@@ -283,14 +283,14 @@ class ChainExecutor:
         self._fallback_values: Dict[str, Dict[str, Any]] = {}
 
     def set_recovery(self, block_name: str, action: RecoveryAction,
-                     fallback_value: Dict[str, Any] = None):
+                     fallback_value: Optional[Dict[str, Any]] = None) -> None:
         """Set recovery strategy for a specific block."""
         self._recovery_strategies[block_name] = action
         if fallback_value:
             self._fallback_values[block_name] = fallback_value
 
-    def execute(self, chain, initial_data: Dict[str, Any] = None,
-                context: Dict[str, Any] = None,
+    def execute(self, chain: Any, initial_data: Optional[Dict[str, Any]] = None,
+                context: Optional[Dict[str, Any]] = None,
                 validate_first: bool = True) -> ChainResult:
         """
         Execute a LogicChain with full safety guarantees.
@@ -408,7 +408,7 @@ class ChainExecutor:
         chain_result.total_duration_ms = (time.time() - start) * 1000
         return chain_result
 
-    def _execute_step(self, block, block_name: str, index: int,
+    def _execute_step(self, block: Any, block_name: str, index: int,
                       data: Dict[str, Any], context: Dict[str, Any]) -> StepResult:
         """Execute a single block with retry support."""
         step_start = time.time()
@@ -473,14 +473,16 @@ class ChainExecutor:
 #  CONVENIENCE FUNCTIONS
 # ============================================================
 
-def validate_chain(chain, initial_data: Dict = None, context: Dict = None,
+def validate_chain(chain: Any, initial_data: Optional[Dict[str, Any]] = None,
+                   context: Optional[Dict[str, Any]] = None,
                    level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
     """Quick validation of a LogicChain."""
     validator = ChainValidator(level=level)
     return validator.validate(chain, initial_data or {}, context or {})
 
 
-def execute_chain_safe(chain, initial_data: Dict = None, context: Dict = None,
+def execute_chain_safe(chain: Any, initial_data: Optional[Dict[str, Any]] = None,
+                       context: Optional[Dict[str, Any]] = None,
                        recovery: RecoveryAction = RecoveryAction.SKIP,
                        max_retries: int = 1) -> ChainResult:
     """Execute a LogicChain with safety guarantees."""
