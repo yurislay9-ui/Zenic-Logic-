@@ -1,0 +1,28 @@
+[project]
+name = "titan-omniscale-x"
+version = "13.0.0"
+description = "TITAN OMNISCALE X - Motor de IA Quirurgico Local v13"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "asyncio: mark a test as an asyncio test",
+    "integration: mark a test as an integration test",
+    "slow: mark a test as slow running",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 40
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__",
+    "pass",
+]
