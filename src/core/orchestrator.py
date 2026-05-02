@@ -59,6 +59,11 @@ from src.core.app_generator import AppGenerator
 from src.core.automation_engine import AutomationEngine
 from src.core.schema_designer import SchemaDesigner
 
+# Phase 7: Real Engines - ActionExecutor, LogicBuilder, AuthService
+from src.core.action_executor import ExecutorRegistry, get_default_registry
+from src.core.logic_builder import LogicBuilder
+from src.core.auth_service import AuthService
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,11 +115,40 @@ class TitanOrchestrator:
             semantic_engine=self._semantic,
             smart_memory=self._memory,
         )
-        self._app_gen = AppGenerator(thinking_engine=self._thinking)
-        self._automation = AutomationEngine(thinking_engine=self._thinking)
+
+        # TemplateEngine for Jinja2-based code generation
+        self._template_engine = None
+        try:
+            from src.core.template_engine import TemplateEngine
+            self._template_engine = TemplateEngine()
+        except ImportError:
+            logger.warning("Orchestrator: TemplateEngine not available")
+
+        # Phase 7: Real Engines
+        # ActionExecutor Registry - real action execution (no more logger.info stubs)
+        self._executor_registry = get_default_registry()
+
+        # LogicBuilder - composable business logic (replaces _process() placeholder)
+        self._logic_builder = LogicBuilder(template_engine=self._template_engine)
+
+        # AuthService - JWT + RBAC runtime authentication
+        self._auth = AuthService()
+
+        logger.info(f"Phase 7 Engines: ActionExecutor={len(self._executor_registry._executors)} types | LogicBuilder={len(self._logic_builder.list_blocks())} blocks | AuthService=ready")
+
+        self._app_gen = AppGenerator(
+            thinking_engine=self._thinking,
+            template_engine=self._template_engine,
+        )
+        self._automation = AutomationEngine(
+            thinking_engine=self._thinking,
+            template_engine=self._template_engine,
+            executor_registry=self._executor_registry,
+        )
         self._schema_designer = SchemaDesigner(thinking_engine=self._thinking)
 
-        logger.info(f"Extended Architecture: ThinkingEngine=ready | AppGenerator=ready | AutomationEngine=ready | SchemaDesigner=ready")
+        te_status = "ACTIVE" if self._template_engine else "legacy"
+        logger.info(f"Extended Architecture: ThinkingEngine=ready | TemplateEngine={te_status} | AppGenerator=ready | AutomationEngine=ready | SchemaDesigner=ready")
 
         # ============================================================
         #  DECOMPOSED SUB-MODULES (composition)
@@ -551,6 +585,79 @@ class TitanOrchestrator:
             "thinking_time_s": result.thinking_time_s,
         }
 
+    # ============================================================
+    #  PHASE 7: AUTH & LOGIC BUILDER API
+    # ============================================================
+
+    async def register_user(self, username: str, email: str, password: str,
+                           role: str = "user") -> Dict[str, Any]:
+        """Registra un nuevo usuario en el sistema de autenticación."""
+        if not self._auth:
+            return {"error": "AuthService not available"}
+        return self._auth.register_user(username, email, password, role)
+
+    async def login_user(self, username: str, password: str) -> Dict[str, Any]:
+        """Autentica un usuario y devuelve tokens JWT."""
+        if not self._auth:
+            return {"error": "AuthService not available"}
+        return self._auth.login_user(username, password)
+
+    async def verify_token(self, token: str) -> Dict[str, Any]:
+        """Verifica un token JWT."""
+        if not self._auth:
+            return {"error": "AuthService not available"}
+        try:
+            return self._auth.verify_token(token)
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def build_logic(self, description: str) -> Dict[str, Any]:
+        """
+        Construye una cadena de lógica de negocio a partir de una descripción.
+        
+        Usa LogicBuilder para componer bloques pre-construidos que
+        reemplazan el placeholder _process().
+        """
+        if not self._logic_builder:
+            return {"error": "LogicBuilder not available"}
+        chain = self._logic_builder.build_from_description(description)
+        blocks = [b.name for b in chain.blocks]
+        code = self._logic_builder.generate_process_method(blocks)
+        return {
+            "blocks": blocks,
+            "block_count": len(blocks),
+            "generated_code": code,
+            "description": description,
+        }
+
+    async def list_logic_blocks(self, category: str = "") -> List[Dict[str, Any]]:
+        """Lista bloques de lógica disponibles."""
+        if not self._logic_builder:
+            return []
+        blocks = self._logic_builder.list_blocks(category)
+        return [
+            {
+                "name": b.name,
+                "category": b.category,
+                "description": b.description,
+                "inputs": b.inputs,
+                "outputs": b.outputs,
+            }
+            for b in blocks
+        ]
+
+    async def execute_action(self, action_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Ejecuta una acción individual usando el ActionExecutor."""
+        if not self._executor_registry:
+            return {"error": "ExecutorRegistry not available"}
+        result = await self._executor_registry.execute_action(action_type, config, {})
+        return {
+            "success": result.success,
+            "data": result.data,
+            "error": result.error,
+            "duration_ms": result.duration_ms,
+        }
+
     async def get_system_status(self) -> Dict[str, Any]:
         """Obtiene estado completo del sistema."""
         return {
@@ -564,6 +671,11 @@ class TitanOrchestrator:
             "app_templates": AppGenerator.list_templates(),
             "automation_stats": self._automation.stats,
             "memory_stats": self._memory.enhanced_stats if self._memory else {},
+            "phase7_engines": {
+                "action_executors": len(self._executor_registry._executors) if self._executor_registry else 0,
+                "logic_blocks": len(self._logic_builder.list_blocks()) if self._logic_builder else 0,
+                "auth_available": self._auth is not None,
+            },
             "request_count": self.request_count,
         }
 

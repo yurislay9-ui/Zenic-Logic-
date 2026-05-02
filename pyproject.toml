@@ -3,6 +3,54 @@ name = "titan-omniscale-x"
 version = "13.0.0"
 description = "TITAN OMNISCALE X - Motor de IA Quirurgico Local v13"
 requires-python = ">=3.10"
+dependencies = [
+    # Core Web Framework
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.6",
+    "pydantic>=2.0.0",
+
+    # Database
+    "aiosqlite>=0.19.0",
+
+    # AI/ML
+    "llama-cpp-python>=0.3.0",
+    "numpy>=1.24.0",
+
+    # Scheduling & Async
+    "apscheduler>=3.10.0",
+    "aiohttp>=3.8.0",
+    "aiosmtplib>=3.0.0",
+
+    # Auth & Security
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+
+    # PDF & Reports
+    "weasyprint>=59.0",
+
+    # Integrations (optional - handled gracefully if missing)
+    # "stripe>=7.0.0",
+    # "gspread>=5.0.0",
+
+    # Utilities
+    "aiofiles>=23.0.0",
+]
+
+[project.optional-dependencies]
+z3 = ["z3-solver>=4.12.0"]
+kivy = ["kivy>=2.3.0"]
+embeddings = ["fastembed>=0.2.0"]
+stripe = ["stripe>=7.0.0"]
+sheets = ["gspread>=5.0.0", "oauth2client>=4.1.0"]
+all = [
+    "z3-solver>=4.12.0",
+    "fastembed>=0.2.0",
+    "stripe>=7.0.0",
+    "gspread>=5.0.0",
+    "oauth2client>=4.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

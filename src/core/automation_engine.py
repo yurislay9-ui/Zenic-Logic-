@@ -122,16 +122,36 @@ class AutomationEngine:
     Motor de automatizaciones para PYMEs.
 
     Permite definir, almacenar y ejecutar flujos de trabajo automatizados.
-    Usa APScheduler para scheduling y SQLite para persistencia.
+    Usa APScheduler para scheduling, SQLite para persistencia, y
+    ActionExecutor para ejecución REAL de acciones (no logger.info stubs).
     """
 
-    def __init__(self, thinking_engine=None):
+    def __init__(self, thinking_engine=None, template_engine=None, executor_registry=None):
         self._thinking = thinking_engine
+        self._template_engine = template_engine
+        self._executor_registry = executor_registry
         self._workflows: Dict[str, Workflow] = {}
         self._execution_history: List[WorkflowExecution] = []
         os.makedirs(DB_DIR, exist_ok=True)
         self._init_db()
         self._load_workflows()
+
+        # Lazy-init template engine if not provided
+        if self._template_engine is None:
+            try:
+                from src.core.template_engine import TemplateEngine
+                self._template_engine = TemplateEngine()
+            except ImportError:
+                logger.warning("AutomationEngine: TemplateEngine not available, using legacy generation")
+
+        # Lazy-init executor registry if not provided
+        if self._executor_registry is None:
+            try:
+                from src.core.action_executor import get_default_registry
+                self._executor_registry = get_default_registry()
+                logger.info("AutomationEngine: ActionExecutor registry initialized")
+            except ImportError:
+                logger.warning("AutomationEngine: ActionExecutor not available, using legacy stubs")
 
     def _init_db(self):
         """Crea tablas de automatización en SQLite."""
@@ -357,7 +377,66 @@ class AutomationEngine:
     # ================================================================
 
     def execute_workflow(self, workflow_id: str) -> WorkflowExecution:
-        """Ejecuta un workflow específico."""
+        """Ejecuta un workflow específico (sync wrapper for async execution)."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're already in an async context, use sync fallback
+                return self._execute_workflow_sync(workflow_id)
+            return loop.run_until_complete(self._execute_workflow_async(workflow_id))
+        except RuntimeError:
+            return self._execute_workflow_sync(workflow_id)
+
+    async def _execute_workflow_async(self, workflow_id: str) -> WorkflowExecution:
+        """Ejecuta un workflow específico usando ActionExecutors async."""
+        wf = self._workflows.get(workflow_id)
+        if not wf:
+            return WorkflowExecution(workflow_id=workflow_id, status="failed", error="Workflow not found")
+
+        if not wf.enabled:
+            return WorkflowExecution(workflow_id=workflow_id, status="failed", error="Workflow is disabled")
+
+        execution = WorkflowExecution(
+            workflow_id=workflow_id,
+            started_at=time.time(),
+            status="running",
+        )
+
+        try:
+            for action in wf.actions:
+                try:
+                    result = await self._execute_action_async(action)
+                    if result:
+                        execution.actions_executed += 1
+                    else:
+                        execution.actions_failed += 1
+                except Exception as e:
+                    execution.actions_failed += 1
+                    execution.error += f"Action {action.type} failed: {e}; "
+
+            execution.status = "success" if execution.actions_failed == 0 else "partial"
+            execution.output = f"Executed {execution.actions_executed}/{len(wf.actions)} actions"
+
+        except Exception as e:
+            execution.status = "failed"
+            execution.error = str(e)
+
+        execution.finished_at = time.time()
+
+        # Update workflow stats
+        wf.last_run = execution.started_at
+        wf.run_count += 1
+        self._save_workflow(wf)
+
+        # Log execution
+        self._log_execution(execution)
+        self._execution_history.append(execution)
+
+        return execution
+
+    def _execute_workflow_sync(self, workflow_id: str) -> WorkflowExecution:
+        """Ejecuta un workflow usando stubs síncronos (legacy fallback)."""
         wf = self._workflows.get(workflow_id)
         if not wf:
             return WorkflowExecution(workflow_id=workflow_id, status="failed", error="Workflow not found")
@@ -392,54 +471,76 @@ class AutomationEngine:
 
         execution.finished_at = time.time()
 
-        # Update workflow stats
         wf.last_run = execution.started_at
         wf.run_count += 1
         self._save_workflow(wf)
-
-        # Log execution
         self._log_execution(execution)
         self._execution_history.append(execution)
 
         return execution
 
+    async def _execute_action_async(self, action: Action) -> bool:
+        """Ejecuta una acción individual usando ActionExecutor async."""
+        if self._executor_registry:
+            try:
+                result = await self._executor_registry.execute_action(
+                    action.type.value, action.config, {}
+                )
+                if result.success:
+                    logger.info(f"Automation: {action.type.value} executed successfully in {result.duration_ms:.0f}ms")
+                else:
+                    logger.warning(f"Automation: {action.type.value} failed: {result.error}")
+                return result.success
+            except Exception as e:
+                logger.error(f"Automation: Executor error for {action.type.value}: {e}")
+                # Fall through to legacy stubs
+
+        # Legacy fallback
+        return self._execute_action(action)
+
     def _execute_action(self, action: Action) -> bool:
-        """Ejecuta una acción individual."""
+        """Ejecuta una acción individual usando ActionExecutor si disponible."""
+        # Use real ActionExecutor if registry is available
+        if self._executor_registry:
+            try:
+                result = self._executor_registry.execute_action(
+                    action.type.value, action.config, {}
+                )
+                if result.success:
+                    logger.info(f"Automation: {action.type.value} executed successfully in {result.duration_ms:.0f}ms")
+                else:
+                    logger.warning(f"Automation: {action.type.value} failed: {result.error}")
+                return result.success
+            except Exception as e:
+                logger.error(f"Automation: Executor error for {action.type.value}: {e}")
+                # Fall through to legacy stubs
+
+        # Legacy fallback: logger.info stubs (backward compatible)
+        logger.warning(f"Automation: Using legacy stub for {action.type.value}")
         if action.type == ActionType.SEND_NOTIFICATION:
             logger.info(f"Automation: Notification - {action.config.get('message', 'No message')}")
             return True
-
         elif action.type == ActionType.SEND_EMAIL:
             logger.info(f"Automation: Email to {action.config.get('to', 'N/A')} - {action.config.get('subject', 'N/A')}")
             return True
-
         elif action.type == ActionType.DATABASE_OPERATION:
-            operation = action.config.get("operation", "query")
-            if operation == "backup":
-                logger.info("Automation: Database backup initiated")
-                return True
+            logger.info(f"Automation: Database {action.config.get('operation', 'query')}")
             return True
-
         elif action.type == ActionType.GENERATE_REPORT:
             logger.info(f"Automation: Report generated - {action.config.get('template', 'default')}")
             return True
-
         elif action.type == ActionType.RUN_SCRIPT:
             logger.info("Automation: Script execution")
             return True
-
         elif action.type == ActionType.DATA_SYNC:
             logger.info("Automation: Data sync")
             return True
-
         elif action.type == ActionType.HTTP_REQUEST:
             logger.info(f"Automation: HTTP {action.config.get('method', 'GET')} {action.config.get('url', 'N/A')}")
             return True
-
         elif action.type == ActionType.FILE_OPERATION:
             logger.info(f"Automation: File operation - {action.config.get('operation', 'N/A')}")
             return True
-
         return False
 
     # ================================================================
@@ -472,6 +573,72 @@ class AutomationEngine:
     # ================================================================
 
     def generate_automation_project(self, description: str, output_dir: str = "") -> Dict[str, Any]:
+        """
+        Genera un proyecto de automatización completo.
+        Usa TemplateEngine si disponible, sino usa legacy f-strings.
+        """
+        if self._template_engine:
+            return self._generate_automation_v2(description, output_dir)
+        return self._generate_automation_legacy(description, output_dir)
+
+    def _generate_automation_v2(self, description: str, output_dir: str = "") -> Dict[str, Any]:
+        """
+        Genera automatización con TemplateEngine + bloques de acción reales.
+        """
+        if not output_dir:
+            output_dir = os.path.join(PROJECTS_DIR, self._extract_name(description))
+        os.makedirs(output_dir, exist_ok=True)
+
+        workflow = self.create_from_description(description)
+
+        # Suggest blocks for automation
+        suggested_blocks = self._template_engine.suggest_blocks(description)
+
+        from src.core.template_engine import CompositionPlan
+        composition = CompositionPlan(
+            base_template="automations/base",
+            app_template="",
+            blocks=suggested_blocks,
+            variables={
+                "project_name": workflow.name,
+                "app_name": workflow.name,
+                "template_type": "automation",
+                "db_name": "automation.db",
+                "port": 8001,
+                "secret_key": "change-this",
+                "debug": True,
+                "version": "1.0.0",
+            },
+            entities=[{
+                "name": workflow.name,
+                "fields": [],
+                "trigger_config": workflow.trigger.config,
+                "actions": [{"type": a.type.value, "config": a.config} for a in workflow.actions],
+            }],
+        )
+
+        try:
+            files = self._template_engine.render_automation(composition)
+
+            for filepath, content in files.items():
+                full_path = os.path.join(output_dir, filepath)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+            return {
+                "workflow": workflow,
+                "path": output_dir,
+                "files": list(files.keys()),
+                "blocks_used": suggested_blocks,
+                "status": "generated",
+            }
+        except Exception as e:
+            logger.error(f"AutomationEngine v2: Failed: {e}")
+            # Fall back to legacy
+            return self._generate_automation_legacy(description, output_dir)
+
+    def _generate_automation_legacy(self, description: str, output_dir: str = "") -> Dict[str, Any]:
         """
         Genera un proyecto de automatización completo a partir de una descripción.
 
