@@ -1513,10 +1513,12 @@ class DataTransformBlock(LogicBlock):
                             new_key = rename_map.get(k, k)
                             if include_fields is None or k in include_fields:
                                 mapped[new_key] = v
-                        # Apply computed fields
+                        # Apply computed fields (safe evaluation instead of eval())
                         for target_field, expression in field_map.items():
                             try:
-                                mapped[target_field] = eval(expression, {"__builtins__": {}}, item)
+                                # SECURITY FIX: Replace eval() with safe expression evaluation
+                                # Only supports simple arithmetic and item field access
+                                mapped[target_field] = self._safe_eval_expression(expression, item)
                             except Exception:
                                 mapped[target_field] = None
                         result_data.append(mapped)
@@ -1596,6 +1598,100 @@ class DataTransformBlock(LogicBlock):
         except (TypeError, ValueError):
             return False
         return False
+
+    @staticmethod
+    def _safe_eval_expression(expression: str, item: Dict[str, Any]) -> Any:
+        """
+        SECURITY FIX: Reemplaza eval() con evaluación segura de expresiones.
+
+        Solo soporta:
+        - Acceso a campos del item: {field_name}
+        - Aritmética simple: +, -, *, /
+        - Funciones seguras: len(), str(), int(), float(), round()
+        - Literales numéricos y strings
+
+        NO soporta:
+        - Importaciones, definiciones de funciones
+        - Acceso a atributos con puntos (excepto los de item)
+        - Cualquier código arbitrario
+        """
+        import re as _re
+
+        if not expression or not isinstance(expression, str):
+            return None
+
+        expr = expression.strip()
+
+        # Pattern 1: Simple field reference — "{field_name}" or just "field_name"
+        if _re.match(r'^[a-zA-Z_]\w*$', expr):
+            return item.get(expr)
+
+        # Pattern 2: Field reference with braces — "{field_name}"
+        brace_match = _re.match(r'^\{([a-zA-Z_]\w*)\}$', expr)
+        if brace_match:
+            return item.get(brace_match.group(1))
+
+        # Pattern 3: Simple arithmetic — "field * 0.16" or "field1 + field2"
+        # Allowed: field names, numbers, +, -, *, /, (, ), spaces
+        if _re.match(r'^[a-zA-Z_\d\s\+\-\*/\(\)\.\,]+$', expr):
+            # Replace field names with their values
+            safe_expr = expr
+            for field_name in sorted(item.keys(), key=len, reverse=True):
+                if _re.match(r'^[a-zA-Z_]\w*$', field_name):
+                    value = item.get(field_name, 0)
+                    if isinstance(value, (int, float)):
+                        safe_expr = safe_expr.replace(field_name, str(value))
+                    else:
+                        safe_expr = safe_expr.replace(field_name, repr(str(value)))
+
+            # Validate: only numbers, operators, and parens remain
+            if _re.match(r'^[\d\s\+\-\*/\(\)\.\'\"]+$', safe_expr):
+                try:
+                    result = eval(safe_expr, {"__builtins__": {}}, {})
+                    return result
+                except Exception:
+                    pass
+
+        # Pattern 4: Function call — "len(field)", "str(field)", etc.
+        safe_funcs = {
+            "len": lambda x: len(x) if x else 0,
+            "str": str,
+            "int": lambda x: int(x) if x else 0,
+            "float": lambda x: float(x) if x else 0.0,
+            "round": round,
+            "abs": abs,
+            "min": min,
+            "max": max,
+            "upper": lambda x: str(x).upper(),
+            "lower": lambda x: str(x).lower(),
+            "strip": lambda x: str(x).strip(),
+        }
+        func_match = _re.match(r'^(\w+)\(([^)]*)\)$', expr)
+        if func_match:
+            func_name = func_match.group(1)
+            func_args_str = func_match.group(2).strip()
+            if func_name in safe_funcs:
+                # Parse arguments
+                args = []
+                for arg in func_args_str.split(','):
+                    arg = arg.strip()
+                    if _re.match(r'^[a-zA-Z_]\w*$', arg):
+                        args.append(item.get(arg, arg))
+                    elif arg.startswith('"') or arg.startswith("'"):
+                        args.append(arg.strip('"\''))
+                    else:
+                        try:
+                            args.append(float(arg) if '.' in arg else int(arg))
+                        except ValueError:
+                            args.append(arg)
+                try:
+                    return safe_funcs[func_name](*args)
+                except Exception:
+                    pass
+
+        # Pattern 5: Conditional — "field if condition else default"
+        # Not supported safely — return None
+        return None
 
     @staticmethod
     def _aggregate(values: list, function: str):

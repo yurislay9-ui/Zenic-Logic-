@@ -27,6 +27,7 @@ Produce un AutomationOutput compatible con AutomationEngine.Workflow.
 """
 
 import re
+import json
 import time
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -168,12 +169,12 @@ class AutomationAgent(BaseAgent[AutomationOutput]):
                 if cached and cached.get("response"):
                     duration_ms = int((time.time() - start) * 1000)
                     self._update_stats("fallback", duration_ms)
-                    # Try to parse cached response as automation
+                    # Try to parse cached response as automation (safe parsing)
                     try:
-                        cached_data = eval(cached["response"])
+                        cached_data = json.loads(cached["response"])
                         if isinstance(cached_data, dict):
                             return self._json_to_automation_output(cached_data, source="fallback")
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         pass
             except Exception:
                 pass

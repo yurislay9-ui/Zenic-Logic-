@@ -628,8 +628,19 @@ class SmartMemory:
     #  UTILITY: Table eviction
     # ================================================================
 
+    # Whitelist of allowed table names to prevent SQL injection
+    _VALID_TABLES = frozenset({
+        "semantic_cache", "long_term_memory", "working_memory",
+        "episodic_memory", "procedural_memory", "project_memory",
+        "conversation_sessions",
+    })
+
     def _evict_table(self, table_name: str, max_entries: int):
         """Evict oldest/least important entries from a table."""
+        # SQL Injection protection: validate table_name against whitelist
+        if table_name not in self._VALID_TABLES:
+            logger.warning(f"SmartMemory._evict_table: Invalid table name '{table_name}' rejected")
+            return
         with sqlite3.connect(DB_PATH) as conn:
             count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
             if count > max_entries:

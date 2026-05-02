@@ -71,6 +71,7 @@ from src.core.chain_validator import ChainValidator, ChainExecutor, execute_chai
 # Agent Framework (Phase F1-F5) - AI-driven logic replaces hardcoded rules
 from src.core.agents import AgentRunner, AgentCache
 from src.core.agents.intent_agent import IntentAgent
+from src.core.agents.surgical_agent import SurgicalAgent
 from src.core.agents.reasoning_agent import ReasoningAgent
 from src.core.agents.business_logic_agent import BusinessLogicAgent
 from src.core.agents.code_agent import CodeAgent
@@ -207,14 +208,14 @@ class TitanOrchestrator:
         #  INTENT AGENT (Phase F2) - Replaces scattered intent classification
         #  Unifica: SemanticParser + SemanticEngine + MiniAI classify_intent
         # ============================================================
-        self._intent_agent = IntentAgent(
+        self._intent_agent = SurgicalAgent(
             semantic_engine=self._semantic,
             smart_memory=self._memory,
         )
 
         agent_status = "ACTIVE" if self._ai and self._ai.is_loaded else "fallback"
         intent_agent_status = f"ACTIVE (sem={self._semantic.is_loaded})" if self._semantic else "fallback"
-        logger.info(f"Agent Framework: AgentRunner={agent_status} | IntentAgent={intent_agent_status} | Cache=enabled | SemanticCache={'ACTIVE' if self._semantic and self._semantic.is_loaded else 'off'}")
+        logger.info(f"Agent Framework: AgentRunner={agent_status} | SurgicalAgent(F2)={intent_agent_status} | Cache=enabled | SemanticCache={'ACTIVE' if self._semantic and self._semantic.is_loaded else 'off'}")
 
         # ============================================================
         #  REASONING AGENT (Phase F3) - Replaces ReasoningEngine + ThinkingEngine
@@ -304,13 +305,13 @@ class TitanOrchestrator:
         intent = self._intent_agent.to_intent_payload(intent_output, context=msg)
 
         # Extraer código del mensaje (separado de la clasificación)
-        code_lang, raw_code = IntentAgent._extract_code_block(msg)
+        code_lang, raw_code = SurgicalAgent._extract_code_block(msg)
         if raw_code:
             intent.raw_code = raw_code
             if code_lang:
                 intent.language = code_lang
 
-        logger.info(f"IntentAgent: {intent_output.operation}/{intent_output.goal} "
+        logger.info(f"SurgicalAgent: {intent_output.operation}/{intent_output.goal} "
                     f"(source={intent_output.source}, conf={intent_output.confidence:.2f}, "
                     f"target={intent.target})")
 

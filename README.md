@@ -1,4 +1,4 @@
-# ZENIC LOGIC — TITAN OMNISCALE X v13
+# ZENIC LOGIC — TITAN OMNISCALE X v16
 
 <div align="center">
 
@@ -22,7 +22,8 @@ Funciona en **Android/Termux** sin GPU.
 - [Arquitectura del Sistema](#arquitectura-del-sistema)
   - [Pipeline de 8 Niveles](#pipeline-de-8-niveles)
   - [3 Capas de IA](#3-capas-de-ia)
-  - [6 Agentes IA (Framework de Agentes)](#6-agentes-ia-framework-de-agentes)
+  - [9 Agentes IA (Framework de Agentes)](#9-agentes-ia-framework-de-agentes)
+  - [5 Iniciativas Unificadas (F1–F5)](#5-iniciativas-unificadas-f1f5)
   - [Infraestructura Permanente](#infraestructura-permanente)
 - [Hardware y Modelo IA](#hardware-y-modelo-ia)
 - [Instalación](#instalación)
@@ -44,8 +45,13 @@ Funciona en **Android/Termux** sin GPU.
   - [Razonamiento](#razonamiento)
 - [Conectar con Cline/Aide/OpenCode](#conectar-con-clineaideopencode)
 - [Estructura del Proyecto](#estructura-del-proyecto)
+- [DAG Dinámico (F1) — Detalle](#dag-dinámico-f1--detalle)
 - [Sistema de Agentes IA — Detalle](#sistema-de-agentes-ia--detalle)
-  - [IntentAgent (F2)](#intentagent-f2)
+  - [TitanAgent (F1)](#titanagent-f1)
+  - [SurgicalAgent (F2)](#surgicalagent-f2)
+  - [ContextAgent (F3)](#contextagent-f3)
+  - [CriticalityAgent (F4)](#criticalityagent-f4)
+  - [IntentAgent (Legacy)](#intentagent-legacy)
   - [ReasoningAgent (F3)](#reasoningagent-f3)
   - [BusinessLogicAgent (F3)](#businesslogicagent-f3)
   - [CodeAgent (F4)](#codeagent-f4)
@@ -87,7 +93,11 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 | **Verificación Formal** | Z3 SMT Solver (con fallback AC-3 para Android) |
 | **Razonamiento Probabilístico** | MCTS real con UCB1, 4 fases, depth limit 5 |
 | **Ejecución Simbólica** | Estados simbólicos, path conditions, detección de violaciones |
-| **Agentes IA** | 6 agentes con Qwen3-0.6B + fallback determinista |
+| **9 Agentes IA** | 9 agentes con Qwen3-0.6B + fallback determinista |
+| **DAG Dinámico (F1)** | Orquestador basado en grafo acíclico con TitanAgent meta-router |
+| **Ruteo Quirúrgico (F2)** | Fusión multi-señal: Memory + Semantic + LLM + TF-IDF |
+| **Contexto Inteligente (F3)** | Compresión adaptativa + presupuesto de tokens + deduplicación |
+| **Criticalidad Dinámica (F4)** | Fusión ponderada 5-señal con retroalimentación histórica |
 | **API OpenAI-Compatible** | `/v1/chat/completions` para Cline, Aide, OpenCode |
 | **Memoria Inteligente** | SmartMemory con cache semántico y aprendizaje episódico |
 | **Caché de Teoremas** | Skeleton Hash para bypass O(1) en mutaciones repetidas |
@@ -100,43 +110,50 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 ## Arquitectura del Sistema
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    API OpenAI-Compatible                         │
-│            /v1/chat/completions  /v1/models  /health            │
-├─────────────────────────────────────────────────────────────────┤
-│                     TITAN ORCHESTRATOR                           │
-│          Enruta peticiones entre agentes y pipeline              │
-├──────────────────────┬──────────────────────────────────────────┤
-│   6 AGENTES IA       │         PIPELINE DE 8 NIVELES            │
-│                      │                                          │
-│  IntentAgent ────────│──→ L1 SemanticParser                     │
-│  ReasoningAgent ─────│──→ L2 MacroRouter MoE                    │
-│  BusinessLogicAgent ─│──→ L3 GraphAST Engine                    │
-│  CodeAgent ──────────│──→ L4 APA Planner (Z3+MCTS)             │
-│  AutomationAgent ────│──→ L5 Structural Swarm                   │
-│  ValidationAgent ────│──→ L6 Reflexion Sandbox                  │
-│                      │──→ L7 Merkle Ledger                      │
-│  AgentRunner ←───────│──→ L8 Theorem Cache                      │
-│  (LLM Bridge)        │                                          │
-├──────────────────────┴──────────────────────────────────────────┤
-│                    3 CAPAS DE IA                                 │
-│  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud)      │
-│  Capa 2: MiniAIEngine (Qwen3) → PIENSA (razonamiento)          │
-│  Capa 3: SmartMemory → RECUERDA (cache, contexto, aprendizaje)  │
-├─────────────────────────────────────────────────────────────────┤
-│                  INFRAESTRUCTURA PERMANENTE                      │
-│  Z3 Solver | AC-3 | Sandbox | Auth JWT/RBAC | ActionExecutor   │
-│  Merkle Ledger | Theorem Cache | Resource Governor | MCTS       │
-│  Symbolic Executor | K-Path Analyzer | Constraint Solver        │
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                    API OpenAI-Compatible                           │
+│            /v1/chat/completions  /v1/models  /health              │
+├───────────────────────────────────────────────────────────────────┤
+│                  DAG ORCHESTRATOR (F1)                             │
+│     Grafo acíclico con TitanAgent como meta-router                │
+│     CACHE_CHECK → INTENT → CONTEXT_PREPARE → AST_ANALYZE →       │
+│     THEOREM_CACHE → ROUTE → CRITICALITY_ROUTE → PLAN →           │
+│     SOLVER_VERIFY → EXECUTE_STEPS → SANDBOX → LEDGER →           │
+│     THEOREM_SAVE → MEMORY_SAVE → DONE                             │
+├──────────────────────┬────────────────────────────────────────────┤
+│   9 AGENTES IA       │         PIPELINE DE 8 NIVELES              │
+│                      │                                            │
+│  TitanAgent (F1) ────│──→ DAG Transitions + Criticality Paths     │
+│  SurgicalAgent (F2) ─│──→ L1 SemanticParser (multi-signal fusion)│
+│  ContextAgent (F3) ──│──→ Context Compression + Token Budget     │
+│  CriticalityAgent(F4)│──→ L2 MacroRouter (5-signal fusion)       │
+│  ReasoningAgent ─────│──→ L3 GraphAST Engine                     │
+│  BusinessLogicAgent ─│──→ L4 APA Planner (Z3+MCTS)              │
+│  CodeAgent ──────────│──→ L5 Structural Swarm                    │
+│  AutomationAgent ────│──→ L6 Reflexion Sandbox                   │
+│  ValidationAgent ────│──→ L7 Merkle Ledger                       │
+│                      │──→ L8 Theorem Cache                        │
+│  AgentRunner ←───────│                                            │
+│  (LLM Bridge)        │                                            │
+├──────────────────────┴────────────────────────────────────────────┤
+│                    3 CAPAS DE IA                                   │
+│  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud)       │
+│  Capa 2: MiniAIEngine (Qwen3) → PIENSA (razonamiento)           │
+│  Capa 3: SmartMemory → RECUERDA (cache, contexto, aprendizaje)   │
+├───────────────────────────────────────────────────────────────────┤
+│                  INFRAESTRUCTURA PERMANENTE                        │
+│  Z3 Solver | AC-3 | Sandbox | Auth JWT/RBAC | ActionExecutor     │
+│  Merkle Ledger | Theorem Cache | Resource Governor | MCTS         │
+│  Symbolic Executor | K-Path Analyzer | Constraint Solver          │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ### Pipeline de 8 Niveles
 
 | Nivel | Componente | Implementación |
 |-------|-----------|---------------|
-| L1 | Semantic Parser | TF-IDF + Cosine Similarity + IntentAgent |
-| L2 | Macro Router MoE | Clasificación de criticidad + firmas topológicas del AST |
+| L1 | Semantic Parser | TF-IDF + Cosine Similarity + SurgicalAgent (F2) |
+| L2 | Macro Router MoE | CriticalityAgent (F4) + firmas topológicas del AST |
 | L3 | Graph AST Engine | AST nativo (Python) + regex (multi-lenguaje) + SQLite |
 | L4 | APA Planner | Z3 SMT Solver (con fallback AC-3) + MCTS real |
 | L5 | Structural Swarm | AST Surgeon + GitHub Scrap Agent |
@@ -154,21 +171,52 @@ El sistema opera con tres capas complementarias de inteligencia artificial que t
 
 - **Capa 3 — SmartMemory (RECUERDA)**: Sistema de memoria inteligente con tres almacenes: **Working Memory** (contexto inmediato, TTL configurable), **Long-term Memory** (proyectos y episodios persistentes), y **Semantic Cache** (cache de consultas frecuentes con matching semántico). Aprende de interacciones exitosas y fallidas, calculando importancia dinámica basada en tipo de operación, longitud de respuesta y resultado.
 
-### 6 Agentes IA (Framework de Agentes)
+### 9 Agentes IA (Framework de Agentes)
 
 El framework de agentes reemplaza la lógica de negocio hardcodeada con agentes IA que siguen un patrón consistente: cada agente intenta primero usar el LLM (vía AgentRunner), y si falla o no está disponible, ejecuta un fallback determinista garantizado.
 
-| Agente | Fase | Reemplaza | Líneas Originales | Líneas Agente |
-|--------|------|-----------|-------------------:|--------------:|
-| **IntentAgent** | F2 | SemanticParser + SemanticEngine + MiniAI classify | ~1,400 | 593 |
-| **ReasoningAgent** | F3 | ReasoningEngine + ThinkingEngine.reason() | ~1,580 | 532 |
-| **BusinessLogicAgent** | F3 | LogicBuilder (30+ LogicBlocks) | ~2,764 | 567 |
-| **CodeAgent** | F4 | CodeGenerator + CodeTransformer + AppGenerator | ~2,690 | 870 |
-| **AutomationAgent** | F4 | AutomationEngine keyword inference | ~1,020 | 506 |
-| **ValidationAgent** | F5 | ChainValidator + code quality checks | ~490 | 599 |
-| | | | **~9,944** | **3,667** |
+| Agente | Fase | Líneas | Reemplaza | Cableado |
+|--------|------|-------:|-----------|----------|
+| **TitanAgent** | F1 | — | Dispatch estático if/elif (185+ líneas) | DAG transitions |
+| **SurgicalAgent** | F2 | 572 | SemanticParser + SemanticEngine + MiniAI classify | F1→F3→F4 |
+| **ContextAgent** | F3 | 752 | SmartMemory.get_working_context() + contexto disperso | F2→F4→downstream |
+| **CriticalityAgent** | F4 | 631 | MacroRouter + TitanAgent.CRITICALITY_PATHS + 3 sitios aislados | F1→F2→F3→agents |
+| **IntentAgent** | Legacy | 593 | SemanticParser + SemanticEngine + MiniAI | F2 lo reemplaza |
+| **ReasoningAgent** | F3 | 532 | ReasoningEngine + ThinkingEngine.reason() | F3 context |
+| **BusinessLogicAgent** | F3 | 636 | LogicBuilder (30+ LogicBlocks) | F4 adjustments |
+| **CodeAgent** | F4 | 1,043 | CodeGenerator + CodeTransformer + AppGenerator | F4 adjustments |
+| **AutomationAgent** | F4 | 507 | AutomationEngine keyword inference | F4 adjustments |
+| **ValidationAgent** | F5 | 599 | ChainValidator + code quality checks | F4 adjustments |
 
-**Reducción neta**: ~6,277 líneas de lógica de negocio reemplazadas por agentes IA con fallback determinista (-63%).
+### 5 Iniciativas Unificadas (F1–F5)
+
+Las iniciativas F1-F4 representan la evolución del orquestador estático hacia un sistema dinámico basado en DAG con agentes quirúrgicos. Cada iniciativa se "cablea" a las anteriores, creando un pipeline unificado donde la información fluye sin duplicación:
+
+| Iniciativa | Nombre | Agente Core | Estado | Cableado |
+|-----------|--------|-------------|--------|----------|
+| **F1** | TitanOrchestrator DAG Dinámico | TitanAgent + DAGOrchestrator | Completado | Backbone del pipeline |
+| **F2** | SurgicalAgent / IntentAgent | SurgicalAgent | Completado | F1 DAG → F3 context → F4 criticality |
+| **F3** | ContextAgent / ReasoningAgent | ContextAgent + ReasoningAgent | Completado | F2 intent → F4 budget → agents downstream |
+| **F4** | Dynamic Criticality Router | CriticalityAgent | Completado | F1 path + F2 signals + F3 budget + agents |
+| **F5** | ExplainAgent / ValidationAgent | ValidationAgent + AnalysisUtils | Pendiente | F4 adjustments → explain output |
+
+**Flujo unificado de información:**
+```
+User Query
+  → CACHE_CHECK (SmartMemory)
+  → INTENT (SurgicalAgent F2: multi-signal fusion)
+  → CONTEXT_PREPARE (ContextAgent F3: compression + budget)
+  → AST_ANALYZE (GraphASTEngine)
+  → THEOREM_CACHE (O(1) lookup)
+  → ROUTE (MacroRouter MoE)
+  → CRITICALITY_ROUTE (CriticalityAgent F4: 5-signal fusion → adjustments)
+  → PLAN (APA Planner: low_crit / standard / high_crit)
+  → SOLVER_VERIFY (Z3/AC-3 para criticalidad alta)
+  → EXECUTE_STEPS (CodeAgent, BusinessLogicAgent, etc.)
+  → SANDBOX (Reflexion validation)
+  → LEDGER_COMMIT / LEDGER_ROLLBACK
+  → THEOREM_SAVE → MEMORY_SAVE → DONE
+```
 
 ### Infraestructura Permanente
 
@@ -205,6 +253,7 @@ ZENIC LOGIC está diseñado para funcionar en hardware de consumo sin GPU:
 | **Motor de inferencia** | llama-cpp-python |
 | **Tiempo por inferencia** | ~2-5 segundos (CPU) |
 | **RAM del modelo** | ~500 MB en runtime |
+| **Token limit por agente** | 600 tokens máx por llamada |
 
 El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvil, pero suficientemente capaz para las tareas bounded de los agentes (clasificación de intención, razonamiento por pasos, generación de código estructurado).
 
@@ -309,7 +358,7 @@ Content-Type: application/json
 {
   "id": "zenith-logic-001",
   "object": "chat.completion",
-  "model": "zenith-v13-semantic-surgical",
+  "model": "zenith-v16-semantic-surgical",
   "choices": [{
     "index": 0,
     "message": {
@@ -426,24 +475,28 @@ Zenic-Logic-/
 │   └── qwen3-0.6b-q4_k_m.gguf      # Modelo IA Qwen3 (378MB)
 ├── src/
 │   ├── core/
-│   │   ├── orchestrator.py          # Orquestador principal (~1,180 líneas)
+│   │   ├── dag_orchestrator.py      # F1: DAG Dinámico + TitanAgent (1,454 líneas)
+│   │   ├── orchestrator.py          # Orquestador legacy (1,180 líneas, backward compat)
 │   │   ├── semantic_engine.py       # Capa 1: ENTIENDE
 │   │   ├── mini_ai_engine.py        # Capa 2: PIENSA (Qwen3)
-│   │   ├── smart_memory.py          # Capa 3: RECUERDA
+│   │   ├── smart_memory.py          # Capa 3: RECUERDA (807 líneas, SQL injection fixed)
 │   │   ├── agents/                  # Framework de Agentes IA
-│   │   │   ├── __init__.py          # Exports del módulo
-│   │   │   ├── base.py              # BaseAgent + AgentResult
-│   │   │   ├── runner.py            # AgentRunner (LLM bridge)
-│   │   │   ├── schemas.py           # Pydantic input/output schemas
-│   │   │   ├── prompts.py           # System prompts + PromptBuilder
-│   │   │   ├── cache.py             # AgentCache
-│   │   │   ├── intent_agent.py      # IntentAgent (F2)
-│   │   │   ├── reasoning_agent.py   # ReasoningAgent (F3)
-│   │   │   ├── business_logic_agent.py # BusinessLogicAgent (F3)
-│   │   │   ├── code_agent.py        # CodeAgent (F4)
-│   │   │   ├── automation_agent.py  # AutomationAgent (F4)
-│   │   │   └── validation_agent.py  # ValidationAgent (F5)
-│   │   ├── reasoning_engine.py      # ReasoningEngine (Legacy, Phase 8)
+│   │   │   ├── __init__.py          # Exports del módulo (9 agentes + schemas)
+│   │   │   ├── base.py              # BaseAgent + AgentResult (194 líneas)
+│   │   │   ├── runner.py            # AgentRunner (LLM bridge, 216 líneas)
+│   │   │   ├── schemas.py           # Pydantic input/output schemas (272 líneas)
+│   │   │   ├── prompts.py           # System prompts + PromptBuilder (245 líneas)
+│   │   │   ├── cache.py             # AgentCache (197 líneas)
+│   │   │   ├── surgical_agent.py    # F2: SurgicalAgent multi-signal (572 líneas)
+│   │   │   ├── context_agent.py     # F3: ContextAgent compression (752 líneas)
+│   │   │   ├── criticality_agent.py # F4: CriticalityAgent router (631 líneas)
+│   │   │   ├── intent_agent.py      # IntentAgent legacy (593 líneas)
+│   │   │   ├── reasoning_agent.py   # ReasoningAgent (532 líneas)
+│   │   │   ├── business_logic_agent.py # BusinessLogicAgent (636 líneas)
+│   │   │   ├── code_agent.py        # CodeAgent (1,043 líneas)
+│   │   │   ├── automation_agent.py  # AutomationAgent (507 líneas)
+│   │   │   └── validation_agent.py  # ValidationAgent (599 líneas)
+│   │   ├── reasoning_engine.py      # ReasoningEngine (Legacy)
 │   │   ├── thinking_engine.py       # ThinkingEngine (Legacy, Extended)
 │   │   ├── logic_builder.py         # LogicBuilder 30+ blocks (Legacy)
 │   │   ├── code_generator.py        # CodeGenerator (Legacy)
@@ -457,11 +510,11 @@ Zenic-Logic-/
 │   │   ├── abortive_protocol.py     # Auto-subdivision en timeout
 │   │   ├── partial_reasoning.py     # OpenAI-compatible partial response
 │   │   ├── schema_designer.py       # DB Schema Designer
-│   │   ├── analysis_utils.py        # Quality reports + explanations
+│   │   ├── analysis_utils.py        # Quality reports + explanations (F5 target)
 │   │   ├── subtask_descriptor.py    # Subtask description
 │   │   ├── local_engine.py          # Legacy local engine
 │   │   ├── level1_semantic_engine/  # L1: TF-IDF + semantic parsing
-│   │   ├── level2_macro_router/     # L2: Criticidad + AST signatures
+│   │   ├── level2_macro_router/     # L2: Criticality + AST signatures
 │   │   ├── level3_graph_ast/        # L3: AST analysis + SQLite
 │   │   ├── level4_apa_planner/      # L4: Z3 + MCTS planning
 │   │   ├── level5_structural_swarm/ # L5: AST Surgeon + Scrap
@@ -506,13 +559,15 @@ Zenic-Logic-/
 │   ├── conftest.py                  # Shared fixtures
 │   ├── integration/
 │   │   └── test_pipeline.py         # Integration tests
-│   └── unit/                        # 27 unit test files
+│   └── unit/                        # 30 unit test files
 │       ├── test_agent_framework.py  # Agent framework tests
+│       ├── test_surgical_agent.py   # F2: SurgicalAgent tests
+│       ├── test_context_agent.py    # F3: ContextAgent tests
 │       ├── test_intent_agent.py     # IntentAgent tests
 │       ├── test_reasoning_and_business_agents.py # F3 agent tests
 │       ├── test_f4_f5_agents.py     # F4/F5 agent tests
 │       ├── test_phase8_intelligence.py # Phase 8 tests
-│       └── ...                      # 22 more test files
+│       └── ...                      # 23 more test files
 ├── pyproject.toml                   # Project config + pytest
 ├── requirements.txt                 # Core dependencies
 ├── pytest.ini                       # Pytest configuration
@@ -525,24 +580,216 @@ Zenic-Logic-/
 
 ---
 
+## DAG Dinámico (F1) — Detalle
+
+### Arquitectura del DAG
+
+El DAGOrchestrator reemplaza el dispatch estático if/elif de 185+ líneas con un grafo dirigido acíclico donde cada nodo es un paso del pipeline y las transiciones son condicionales según el resultado del paso anterior. El grafo se define en ~30 líneas de `DAGNode` dataclasses:
+
+```
+CACHE_CHECK ──[hit]──→ DONE
+     │
+   [miss]
+     ↓
+   INTENT ──(dynamic)──→ CONTEXT_PREPARE
+     ↓
+CONTEXT_PREPARE ──→ AST_ANALYZE ──→ THEOREM_CACHE
+                                           │
+                                        [hit]──→ DONE
+                                        [miss]
+                                           ↓
+                                        ROUTE ──→ CRITICALITY_ROUTE ──→ PLAN
+                                                                       │
+                                                        ┌──────────────┼──────────────┐
+                                                        ↓              ↓              ↓
+                                                   [abortive]    [low_crit]    [high_crit]
+                                                        ↓              ↓              ↓
+                                                    ABORTIVE    EXECUTE_STEPS  SOLVER_VERIFY
+                                                        ↓              ↓              ↓
+                                                     DONE         ┌─────┘      [pass]──→ EXECUTE_STEPS
+                                                                  ↓
+                                                              SANDBOX
+                                                             ╱       ╲
+                                                        [PASS]     [FAIL]
+                                                           ↓         ↓
+                                                   LEDGER_COMMIT  LEDGER_ROLLBACK
+                                                           ↓         ↓
+                                                   THEOREM_SAVE    DONE
+                                                           ↓
+                                                   MEMORY_SAVE
+                                                           ↓
+                                                         DONE
+```
+
+### TitanAgent: Meta-Router del DAG
+
+TitanAgent es el agente F1 que decide las transiciones del DAG cuando son no triviales (nodos INTENT y PLAN). Funciona en dos modos:
+
+1. **LLM mode**: Envía contexto (nodo actual, resultado, operation, goal, criticality) al LLM y recibe el nombre del siguiente nodo
+2. **Fallback determinista**: Usa tablas estáticas de mapeo (operation → nodo, criticality → path) que reproducen exactamente el comportamiento del pipeline secuencial original
+
+### Ventajas sobre el Orquestador Original
+
+| Característica | Orquestador Original | DAGOrchestrator (F1) |
+|---------------|---------------------|---------------------|
+| Dispatch | if/elif 185+ líneas | DAG de 16 nodos |
+| Transiciones | Hardcodeadas | Condicionales + dinámicas |
+| Feedback loops | No soportados | Máx. 3 iteraciones por nodo |
+| Criticality routing | Estático | F4 CriticalityAgent dinámico |
+| Context prep | Sin compresión | F3 ContextAgent adaptativo |
+| Skip de nodos | No | criticality_skip por nodo |
+| Safety | Sin límite de pasos | Máx. 20 pasos totales |
+
+---
+
 ## Sistema de Agentes IA — Detalle
 
-### IntentAgent (F2)
+### TitanAgent (F1)
 
-**Rol**: Comprensión semántica unificada — clasifica la intención del usuario.
+**Rol**: Meta-router que decide transiciones del DAG dinámicamente.
+
+**Reemplaza**: El dispatch estático if/elif de 185+ líneas del orquestador original.
+
+**Flujo**:
+1. Si el nodo tiene transición directa en tabla → usar esa
+2. Si el nodo es INTENT o PLAN → TitanAgent decide usando LLM o fallback
+3. Fallback determinista: Tablas estáticas INTENT_TRANSITIONS y CRITICALITY_PATHS
+
+**Output**: Nombre del siguiente nodo del DAG (string válido de PIPELINE_DAG).
+
+### SurgicalAgent (F2)
+
+**Rol**: Comprensión semántica quirúrgica — clasifica la intención con fusión multi-señal.
 
 **Reemplaza**: `SemanticParser` (TF-IDF + keyword maps) + `SemanticEngine._fallback_classify` (keyword matching) + `MiniAIEngine.classify_intent` — 3 puntos dispersos de clasificación unificados en 1 agente.
 
-**Flujo**:
-1. `AgentRunner` → Qwen3-0.6B → `IntentOutput` (JSON con operación, objetivo, target, lenguaje, entidades, criticidad, confianza)
-2. Si LLM falla → `SemanticEngine.classify_intent` si embeddings disponibles
-3. Si todo falla → TF-IDF + regex determinista (bilingüe EN/ES)
+**Arquitectura 4-Cable** (orden de costo ascendente):
 
-**Salida**: `IntentOutput` → `to_intent_payload()` → compatible con el pipeline existente.
+```
+┌─────────────────────────────────────────────────┐
+│  CABLE 1: SmartMemory cache ──► hit? → return   │
+│  CABLE 2: SemanticEngine embed ──► high conf? →  │
+│  CABLE 3: LLM (AgentRunner) ──► valid JSON? →   │
+│  CABLE 4: TF-IDF determinista ──► always works   │
+└─────────────────────────────────────────────────┘
+```
+
+**Fusión multi-señal**:
+- Si LLM + SemanticEngine coinciden → confianza ALTA (0.7-1.0)
+- Si solo LLM o solo Semantic → confianza MEDIA (0.4-0.7)
+- Si solo TF-IDF → confianza BAJA (0.0-0.4)
+- Calibración adaptativa: Ajusta confianza según historial de aciertos por operación
+
+**Salida**: `IntentOutput` → `to_intent_payload()` → compatible con el pipeline existente (MacroRouter, APAPlanner, etc.)
 
 **Operaciones**: `CREATE`, `REFACTOR`, `DELETE`, `SEARCH`, `ANALYZE`, `EXPLAIN`, `DEBUG`, `OPTIMIZE`
 
 **Objetivos**: `COMPLEXITY_REDUCTION`, `MODERN_PATTERN`, `BUG_FIX`, `FEATURE_ADD`, `SECURITY_HARDEN`, `PERFORMANCE`, `READABILITY`
+
+**Cableado**: El DAGOrchestrator invoca `classify_with_runner()` en el nodo INTENT, y el resultado fluye a ContextAgent (F3) y CriticalityAgent (F4).
+
+### ContextAgent (F3)
+
+**Rol**: Gestión de ventana de contexto con compresión adaptativa y presupuesto de tokens.
+
+**Reemplaza**: `SmartMemory.get_working_context()` (truncación sin inteligencia) + `ReasoningAgent._get_memory_context()` (duplica lógica) + contexto disperso en cada agente.
+
+**Arquitectura 4-Cable**:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  CABLE 1: Compresión Adaptativa                      │
+│    LLM → resumen semántico (si Qwen disponible)     │
+│    TF-IDF → extracción de keywords (sin LLM)        │
+│    Raw → truncación inteligente (siempre funciona)   │
+│                                                       │
+│  CABLE 2: Scoring de Relevancia                      │
+│    Relevancia a intent (op/goal/criticality)         │
+│    Recencia temporal (decaimiento exponencial)       │
+│    Peso de importancia (SmartMemory.importance)      │
+│                                                       │
+│  CABLE 3: Presupuesto de Tokens                      │
+│    INTENT:50t | REASON:150t | CODE:200t              │
+│    VALIDATE:100t | RESERVE:100t                      │
+│                                                       │
+│  CABLE 4: Contexto Cross-Agent                       │
+│    Deduplicación entre llamadas de agentes           │
+│    Pre-fetch de memorias relevantes por intent       │
+│    Cache compartido de contexto comprimido           │
+└──────────────────────────────────────────────────────┘
+```
+
+**Presupuesto de tokens** (se ajusta por operation/goal):
+
+| Agente | Presupuesto Base | CREATE | DEBUG | EXPLAIN |
+|--------|----------------:|-------:|------:|--------:|
+| intent | 50t | 30t | 30t | 50t |
+| reasoning | 150t | 150t | 200t | 200t |
+| code | 200t | 250t | 150t | 100t |
+| validation | 100t | 70t | 100t | 100t |
+| reserve | 100t | 100t | 100t | 100t |
+
+**Cableado**: El DAGOrchestrator invoca `prepare_context()` en el nodo CONTEXT_PREPARE. El contexto comprimido y presupuesto se inyectan en todos los agentes downstream. F4 (CriticalityAgent) puede modificar el presupuesto con `context_budget_modifier`.
+
+### CriticalityAgent (F4)
+
+**Rol**: Ruteo Dinámico de Criticalidad — unifica la inferencia de criticalidad desde múltiples señales.
+
+**Reemplaza**: `MacroRouter.route()` (keywords + AST) + `TitanAgent.CRITICALITY_PATHS` (mapping estático) + `SurgicalAgent._infer_criticality()` (keywords) + `ContextAgent._allocate_budget()` (ajustes por goal) + `SmartMemory.compute_importance()` (peso por operación) — 5 sitios aislados unificados en 1 agente.
+
+**Resuelve**:
+- **Type mismatch**: IntentOutput.criticality=str vs RoutingPayload.criticality=int → siempre produce int (1/2/3)
+- **Criticalidad estática**: Se adapta al contexto semántico vía LLM
+- **Lógica duplicada**: 3 sitios infieren criticalidad independientemente → 1 fusión centralizada
+- **Sin retroalimentación**: Historial de evaluaciones para patrones recurrentes
+
+**Arquitectura 3-Cable**:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  CABLE 1: LLM Inference (si Qwen disponible)            │
+│    Prompt → "Rate criticality of {op}/{goal} on {target}"│
+│    Parse → level:int + reason:str + adjustments:dict     │
+│                                                          │
+│  CABLE 2: Semantic Engine (si embeddings disponibles)    │
+│    Comparar operación vs patrones críticos conocidos     │
+│    Similarity score → nivel de criticalidad              │
+│                                                          │
+│  CABLE 3: Deterministic Multi-Signal (siempre funciona) │
+│    5 señales con fusión ponderada:                       │
+│    ┌─────────────────────────────────────────────┐       │
+│    │ Signal 1: Keywords críticos    (peso: 0.30) │       │
+│    │ Signal 2: Operation/Goal map   (peso: 0.25) │       │
+│    │ Signal 3: MacroRouter topology (peso: 0.20) │       │
+│    │ Signal 4: SmartMemory importance (peso: 0.15)│      │
+│    │ Signal 5: Historical pattern   (peso: 0.10) │       │
+│    └─────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Output**: `CriticalityOutput` canónico que alimenta:
+
+| Consumidor | Qué usa | Cómo se cablea |
+|-----------|---------|---------------|
+| F1 (DAG) | `path` → "low_crit"/"standard"/"high_crit" | `_exec_plan()` usa `crit_output.path` |
+| F3 (Context) | `adjustments.context_budget_modifier` | `_exec_criticality_route()` modifica `context_output.token_budget` |
+| CodeAgent | `adjustments.code_agent` | `set_criticality_adjustments()` en CodeAgent |
+| BusinessLogicAgent | `adjustments.business_agent` | `set_criticality_adjustments()` en BusinessLogicAgent |
+| MacroRouter | No puede bajar criticalidad | `if crit_output.level > router_crit: routing.criticality = crit_output.level` |
+
+**Ajustes comportamentales por nivel**:
+
+| Nivel | CodeAgent | BusinessLogicAgent | Context Budget |
+|-------|-----------|-------------------|----------------|
+| 1 (FAST) | Sin validación extra, error handling básico, complejidad máx 15 | Sin auditoría, 1 capa validación, sin rollback | 0.8x (menos contexto) |
+| 2 (MODERATE) | Validación extra, error handling completo, complejidad máx 10 | Con auditoría, 2 capas, con rollback | 1.0x (estándar) |
+| 3 (SURGICAL) | Security checks + validación + error handling defensivo, complejidad máx 5 | Auditoría + 3 capas + rollback + idempotency | 1.3x (más contexto) |
+
+### IntentAgent (Legacy)
+
+**Rol**: Comprensión semántica original — clasifica la intención del usuario.
+
+**Estado**: Mantenido por compatibilidad. `SurgicalAgent` (F2) lo reemplaza como clasificador primario en el DAGOrchestrator.
 
 ### ReasoningAgent (F3)
 
@@ -569,14 +816,7 @@ Zenic-Logic-/
 - Lógica IA (LLM → JSON con datos, side effects, insights)
 - Fallback determinista completo (cálculos de impuestos, seguimiento de inventario, pipeline de ventas, priorización de tareas, etc.)
 
-**Ejemplo — Invoice**:
-```python
-# Fallback determinista:
-items = [{"quantity": 2, "price": 50.0}]
-tax_rate = 0.16
-discount = 10  # %
-# → subtotal=100, discount=10, tax=14.4, total=104.4
-```
+**Cableado F4**: Recibe `adjustments.business_agent` de CriticalityAgent para ajustar auditoría, capas de validación y rollback según criticalidad.
 
 ### CodeAgent (F4)
 
@@ -595,6 +835,8 @@ discount = 10  # %
 - Python: AST-based refactoring, type annotation addition, complexity analysis
 - Multi-lenguaje: Templates deterministas con patrón Manager
 - Scaffolding: Genera main.py, requirements.txt, config.py, tests/
+
+**Cableado F4**: Recibe `adjustments.code_agent` de CriticalityAgent para ajustar validación extra, security checks, error handling y docstring level según criticalidad.
 
 ### AutomationAgent (F4)
 
@@ -645,7 +887,10 @@ Cada agente implementa un fallback 100% determinista que funciona sin LLM, sin e
 
 | Agente | Fallback Strategy |
 |--------|------------------|
-| IntentAgent | TF-IDF + regex bilingüe (EN/ES) |
+| TitanAgent | Tablas estáticas INTENT_TRANSITIONS + CRITICALITY_PATHS |
+| SurgicalAgent | SmartMemory cache → SemanticEngine → TF-IDF + regex bilingüe (EN/ES) |
+| ContextAgent | Scoring de relevancia + TF-IDF compression + raw truncation |
+| CriticalityAgent | Fusión ponderada 5-señal (keywords + op/goal + router + memory + history) |
 | ReasoningAgent | Templates por tipo de problema |
 | BusinessLogicAgent | Cálculos directos por operación |
 | CodeAgent | Templates deterministas por lenguaje |
@@ -658,11 +903,11 @@ Cada agente implementa un fallback 100% determinista que funciona sin LLM, sin e
 
 ### Nivel 1: Semantic Parser
 
-El primer nivel del pipeline analiza la petición del usuario utilizando TF-IDF y cosine similarity para identificar la operación solicitada, el objetivo y el contexto. Integra el `IntentAgent` (F2) como clasificador primario, con fallback al parser TF-IDF original cuando el agente IA no está disponible. El parser soporta extracción de bloques de código markdown, detección de lenguaje por extensión de archivo, y mapeo de entidades nombradas (funciones, clases, archivos).
+El primer nivel del pipeline analiza la petición del usuario utilizando TF-IDF y cosine similarity para identificar la operación solicitada, el objetivo y el contexto. Integra el `SurgicalAgent` (F2) como clasificador primario con fusión multi-señal, con fallback al parser TF-IDF original cuando el agente IA no está disponible. El parser soporta extracción de bloques de código markdown, detección de lenguaje por extensión de archivo, y mapeo de entidades nombradas (funciones, clases, archivos).
 
 ### Nivel 2: Macro Router MoE
 
-El Macro Router aplica un modelo de expertos (MoE) para clasificar la criticidad de la petición y determinar qué niveles del pipeline deben activarse. Utiliza firmas topológicas del AST para identificar nodos críticos (autenticación, cifrado, base de datos, pagos) y nodos de baja criticidad (UI, configuración). La regla del 80/20 aplica: el 80% de las peticiones se resuelven en ~50ms (criticidad baja, ruta directa), mientras que el 100% de la capacidad libre se dedica al 20% crítico.
+El Macro Router aplica un modelo de expertos (MoE) para clasificar la criticidad de la petición y determinar qué niveles del pipeline deben activarse. El `CriticalityAgent` (F4) unifica la inferencia de criticalidad desde 5 señales: keywords críticos, operation/goal baseline, MacroRouter AST topology, SmartMemory importance, y patrones históricos. La regla del 80/20 aplica: el 80% de las peticiones se resuelven en ~50ms (criticidad baja, ruta directa), mientras que el 100% de la capacidad libre se dedica al 20% crítico. F4 puede elevar la criticalidad del MacroRouter pero nunca la baja.
 
 ### Nivel 3: Graph AST Engine
 
@@ -713,6 +958,8 @@ El **Principio de Aislamiento Quirúrgico (PAQ)** es la filosofía central de ZE
 | Pasarela de pagos / Auth | Nivel 2 detecta alta criticidad → Z3 + ejecución simbólica | ~80% | 12-15s |
 | Mutaciones repetitivas (ORM) | Primera: verificación completa → Nivel 8 hashea | ~60% → ~2% | 10s → 3ms |
 
+El `CriticalityAgent` (F4) automatiza este triaje con fusión multi-señal, determinando dinámicamente qué nivel de verificación se necesita para cada operación. Las operaciones de baja criticalidad (FAST_STANDARD) saltan SOLVER_VERIFY, las moderadas (DEEP_MODERATE) ejecutan el pipeline estándar, y las críticas (SURGICAL_CRITICAL) activan Z3 + security checks + error handling defensivo.
+
 **Protocolo Abortivo**: Si Z3 excede el timeout de 15 segundos, el sistema hace rollback atómico y subdivide automáticamente la tarea en unidades independientes manejables.
 
 **Razonamiento Parcial**: Si K-Paths excede el límite (10), el sistema devuelve una respuesta OpenAI-compatible con `tool_calls` describiendo la subdivisión, permitiendo al cliente reanudar la ejecución parcial.
@@ -757,19 +1004,22 @@ pytest tests/unit/
 # Solo tests de integración
 pytest tests/integration/
 
-# Solo tests de agentes
-pytest tests/unit/test_agent_framework.py tests/unit/test_intent_agent.py \
+# Solo tests de agentes F1-F4
+pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
+       tests/unit/test_context_agent.py tests/unit/test_intent_agent.py \
        tests/unit/test_reasoning_and_business_agents.py tests/unit/test_f4_f5_agents.py
 ```
 
-**Cobertura de tests**: 28 archivos de test, ~7,685 líneas de tests, 570+ tests pasados.
+**Cobertura de tests**: 30 archivos de test, ~8,314 líneas de tests, 570+ tests pasados.
 
 | Suite de Tests | Archivo | Líneas | Enfoque |
 |---------------|---------|-------:|---------|
 | Agent Framework | `test_agent_framework.py` | 736 | BaseAgent, AgentRunner, AgentCache |
+| SurgicalAgent (F2) | `test_surgical_agent.py` | 513 | Multi-signal fusion, calibración |
+| ContextAgent (F3) | `test_context_agent.py` | 500 | Compresión, scoring, presupuesto |
 | IntentAgent | `test_intent_agent.py` | 541 | Clasificación de intención (EN/ES) |
 | Reasoning + Business | `test_reasoning_and_business_agents.py` | 493 | ReasoningAgent + BusinessLogicAgent |
-| F4 + F5 Agents | `test_f4_f5_agents.py` | 971 | CodeAgent + AutomationAgent + ValidationAgent |
+| F4 + F5 Agents | `test_f4_f5_agents.py` | 971 | CodeAgent + AutomationAgent + ValidationAgent + CriticalityAgent |
 | Phase 8 Intelligence | `test_phase8_intelligence.py` | 531 | ReasoningEngine + ChainValidator |
 | Integration | `test_pipeline.py` | 326 | Pipeline completo end-to-end |
 
@@ -850,7 +1100,7 @@ MIT License — Ver archivo [LICENSE](LICENSE) para detalles.
 
 <div align="center">
 
-**ZENIC LOGIC — TITAN OMNISCALE X v13**
+**ZENIC LOGIC — TITAN OMNISCALE X v16**
 
 *Ingeniería de software algorítmica 100% local, libre de alucinaciones sintácticas, inmaculada a nivel de compilación y totalmente funcional incluso bajo hardware Edge de mínimos recursos.*
 

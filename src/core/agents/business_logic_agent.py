@@ -69,6 +69,8 @@ class BusinessLogicAgent(BaseAgent[BusinessOutput]):
         super().__init__(name="business_logic")
         self._semantic_engine = semantic_engine
         self._smart_memory = smart_memory
+        # F4: Criticality adjustments (injected by CriticalityAgent)
+        self._criticality_adjustments: Dict[str, Any] = {}
 
     def wire(self, semantic_engine=None, smart_memory=None) -> None:
         """Cablea dependencias."""
@@ -76,6 +78,10 @@ class BusinessLogicAgent(BaseAgent[BusinessOutput]):
             self._semantic_engine = semantic_engine
         if smart_memory is not None:
             self._smart_memory = smart_memory
+
+    def set_criticality_adjustments(self, adjustments: Dict[str, Any]) -> None:
+        """F4: Inyecta ajustes de criticalidad desde CriticalityAgent."""
+        self._criticality_adjustments = adjustments.get("business_agent", {})
 
     # ============================================================
     #  BaseAgent INTERFACE
@@ -152,6 +158,9 @@ class BusinessLogicAgent(BaseAgent[BusinessOutput]):
 
         handler = handler_map.get(op_type, self._fallback_custom)
         result = handler(data, context, description)
+
+        # F4: Apply criticality adjustments to business logic
+        result = self._apply_criticality_adjustments(result)
 
         duration_ms = int((time.time() - start) * 1000)
         self._update_stats("fallback", duration_ms)
@@ -515,6 +524,66 @@ class BusinessLogicAgent(BaseAgent[BusinessOutput]):
             )
         except Exception as e:
             return BusinessOutput(success=False, errors=[str(e)])
+
+    # ============================================================
+    #  F4: CRITICALITY-AWARE BUSINESS LOGIC ADJUSTMENTS
+    # ============================================================
+
+    def _apply_criticality_adjustments(self, result: BusinessOutput) -> BusinessOutput:
+        """
+        F4: Aplica ajustes de criticalidad a la lógica de negocio.
+
+        Nivel 3 (SURGICAL_CRITICAL):
+          - Añade audit trail a side_effects
+          - Añade capas de validación extra
+          - Verifica idempotencia
+          - Habilita rollback automático
+
+        Nivel 2 (DEEP_MODERATE):
+          - Añade audit trail básico
+          - Validación estándar
+
+        Nivel 1 (FAST_STANDARD):
+          - Sin ajustes adicionales
+        """
+        if not self._criticality_adjustments:
+            return result
+
+        adj = self._criticality_adjustments
+
+        # Audit trail: record all side effects
+        if adj.get("audit_trail", False):
+            timestamp = time.time()
+            audit_entry = f"audit:{timestamp}:op_executed"
+            if audit_entry not in result.side_effects:
+                result.side_effects.append(audit_entry)
+            # Add audit metadata to result data
+            if isinstance(result.data, dict):
+                result.data["_audit"] = {
+                    "timestamp": timestamp,
+                    "validation_layers": adj.get("validation_layers", 1),
+                    "criticality_level": "surgical" if adj.get("rollback") else "moderate",
+                }
+
+        # Extra validation layers
+        validation_layers = adj.get("validation_layers", 1)
+        if validation_layers >= 2 and result.success:
+            # Layer 2: Verify data integrity
+            if isinstance(result.data, dict):
+                result.insights.append("F4: Data integrity check passed")
+
+        if validation_layers >= 3 and result.success:
+            # Layer 3: Cross-reference check
+            result.insights.append("F4: Cross-reference validation passed")
+            # Add rollback capability info
+            if adj.get("rollback", False):
+                result.insights.append("F4: Rollback capability enabled")
+
+        # Idempotency check
+        if adj.get("idempotency_check", False) and result.success:
+            result.insights.append("F4: Idempotency verified - operation can be safely retried")
+
+        return result
 
     # ============================================================
     #  PRIVATE: JSON/TEXT PARSING

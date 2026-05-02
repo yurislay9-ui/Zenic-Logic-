@@ -170,6 +170,23 @@ Reply with ONLY a JSON object:
 
     VALIDATION_USER = "Validate this {target}: {content}\nRules: {rules}\nLanguage: {language}"
 
+    # ============================================================
+    #  CONTEXT AGENT (F3)
+    # ============================================================
+    CONTEXT_SYSTEM_COMPRESS = """You are a context compression engine. Compress the provided context into the most essential information for an AI agent.
+
+RULES:
+1. Keep only essential facts: errors, solutions, key entities, patterns
+2. Remove redundant or low-value entries
+3. Prioritize information relevant to: {operation}/{goal}
+4. Use compact notation: key:value pairs separated by |
+5. Maximum {max_tokens} tokens output
+6. Reply ONLY with compressed text, no explanation
+
+Example output: [CREATE/FEATURE_ADD:0.8] built REST API with FastAPI | [DEBUG/BUG_FIX:0.7] fixed SQL injection in smart_memory.py"""
+
+    CONTEXT_USER_COMPRESS = "Compress for {operation}/{goal}:\n{raw_context}"
+
 
 class PromptBuilder:
     """Construye prompts con contexto dinámico para los agentes."""

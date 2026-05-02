@@ -205,3 +205,68 @@ class ValidationOutput:
     suggestions: List[str] = field(default_factory=list)
     risk_score: float = 0.0
     source: str = "fallback"
+
+
+# ============================================================
+#  CONTEXT AGENT SCHEMAS (F3)
+# ============================================================
+
+@dataclass
+class ContextInput:
+    """Input para ContextAgent (F3)."""
+    message: str = ""
+    intent_output: Optional[Any] = None   # IntentOutput from SurgicalAgent (F2)
+    max_tokens: int = 500                 # Total context budget
+
+
+@dataclass
+class ContextEntry:
+    """Entrada de contexto con score de relevancia."""
+    content: str = ""
+    source: str = ""          # "working", "long_term", "episodic", "procedural"
+    operation: str = ""
+    goal: str = ""
+    importance: float = 0.5
+    recency: float = 1.0      # 0.0-1.0, 1.0 = most recent
+    relevance_score: float = 0.0
+    token_estimate: int = 0
+
+
+@dataclass
+class ContextOutput:
+    """Output de ContextAgent (F3)."""
+    compressed_context: str = ""            # Compressed context to inject
+    relevant_memories: List[Dict[str, Any]] = field(default_factory=list)
+    token_budget: Dict[str, int] = field(default_factory=dict)
+    context_scores: Dict[str, float] = field(default_factory=dict)
+    entries_used: int = 0
+    entries_total: int = 0
+    compression_ratio: float = 1.0
+    source: str = "fallback"
+    duration_ms: int = 0
+
+
+# ============================================================
+#  CRITICALITY AGENT SCHEMAS (F4)
+# ============================================================
+
+@dataclass
+class CriticalityInput:
+    """Input para CriticalityAgent (F4)."""
+    operation: str = "SEARCH"        # CREATE|REFACTOR|DELETE|SEARCH|ANALYZE|EXPLAIN|DEBUG|OPTIMIZE
+    goal: str = "FEATURE_ADD"        # COMPLEXITY_REDUCTION|MODERN_PATTERN|BUG_FIX|FEATURE_ADD|SECURITY_HARDEN|PERFORMANCE|READABILITY
+    target: str = ""                 # File name, function name, or component
+    context: str = ""                # Additional context (user message, etc.)
+    code_snippet: str = ""           # Code snippet if available
+    existing_level: Optional[int] = None  # Pre-existing criticality from MacroRouter
+
+
+@dataclass
+class CriticalityOutput:
+    """Output de CriticalityAgent (F4)."""
+    level: int = 2                    # 1=FAST_STANDARD, 2=DEEP_MODERATE, 3=SURGICAL_CRITICAL
+    path: str = "standard"            # DAG path: low_crit|standard|high_crit
+    reason: str = ""                  # Explanation of why this level
+    confidence: float = 0.0           # How confident in this assessment
+    source: str = "fallback"          # "llm" or "fallback"
+    adjustments: Dict[str, Any] = field(default_factory=dict)  # Behavioral adjustments for downstream agents
