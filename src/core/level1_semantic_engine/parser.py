@@ -9,6 +9,8 @@ Compatible con Android.
 import re
 from collections import Counter
 from src.core.shared.contracts import IntentPayload, OperationType, GoalType
+from src.core.semantic_engine import SemanticEngine
+from src.core.smart_memory import SmartMemory
 
 
 class SemanticParser:
@@ -19,6 +21,8 @@ class SemanticParser:
     """
 
     def __init__(self):
+        self._semantic_engine = None  # Optional SemanticEngine for better classification
+        self._smart_memory = None     # Optional SmartMemory for caching parsed results
         self.op_corpus = {
             OperationType.CREATE: [
                 "create new file implement function add feature",
@@ -189,7 +193,57 @@ class SemanticParser:
             scores[key] = max_sim
         return scores
 
+    def set_semantic_engine(self, engine):
+        """Inyecta un SemanticEngine para clasificacion basada en embeddings."""
+        self._semantic_engine = engine
+
+    def set_smart_memory(self, memory):
+        """Inyecta SmartMemory para almacenar/recuperar resultados parseados."""
+        self._smart_memory = memory
+
     def parse(self, text):
+        # Try SmartMemory cache first
+        if self._smart_memory:
+            cached = self._smart_memory.check_cache(text)
+            if cached and cached.get("operation") and cached.get("goal"):
+                try:
+                    return IntentPayload(
+                        op=OperationType(cached["operation"]),
+                        goal=GoalType(cached["goal"]),
+                        target=cached.get("target", "unknown"),
+                        confidence=cached.get("importance", 0.5),
+                        language=cached.get("language", "python"),
+                        context=text,
+                    )
+                except (ValueError, KeyError):
+                    pass  # Fall through to normal parsing
+
+        # Try SemanticEngine for better classification if available
+        if self._semantic_engine and self._semantic_engine.is_loaded:
+            try:
+                classification = self._semantic_engine.classify_intent(text)
+                if classification and classification.get("op"):
+                    # SemanticEngine gave us a result — use it
+                    result = IntentPayload(
+                        op=OperationType(classification["op"]),
+                        goal=GoalType(classification.get("goal", "FEATURE_ADD")),
+                        confidence=classification.get("confidence", 0.8),
+                        context=text,
+                    )
+                    # Cache the result in SmartMemory
+                    if self._smart_memory:
+                        self._smart_memory.save_to_cache(
+                            query=text,
+                            response=f"op={result.op},goal={result.goal}",
+                            operation=result.op,
+                            goal=result.goal,
+                            importance=result.confidence,
+                        )
+                    return result
+            except Exception:
+                pass  # Fall back to TF-IDF
+
+        # Fallback: existing TF-IDF classification
         tokens = self._tokenize(text)
         if not tokens:
             return IntentPayload(op=OperationType.SEARCH, confidence=0.0)
@@ -219,12 +273,27 @@ class SemanticParser:
             scrap_query = f"modern {best_goal} {best_op} {lang}"
 
         confidence = round((best_op_score + best_goal_score) / 2, 3)
-        return IntentPayload(
+        result = IntentPayload(
             op=best_op, target=target, goal=best_goal,
             scrap_query=scrap_query, confidence=confidence,
             language=code_lang or lang, raw_code=raw_code or "",
             context=text
         )
+
+        # Cache the TF-IDF result in SmartMemory for future lookups
+        if self._smart_memory:
+            try:
+                self._smart_memory.save_to_cache(
+                    query=text,
+                    response=f"op={result.op},goal={result.goal}",
+                    operation=result.op,
+                    goal=result.goal,
+                    importance=result.confidence,
+                )
+            except Exception:
+                pass
+
+        return result
 
     def _extract_code(self, text):
         """Extrae bloques de codigo de un mensaje."""

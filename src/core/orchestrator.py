@@ -64,6 +64,10 @@ from src.core.action_executor import ExecutorRegistry, get_default_registry
 from src.core.logic_builder import LogicBuilder
 from src.core.auth_service import AuthService
 
+# Phase 8: Intelligence - ReasoningEngine, ChainValidator
+from src.core.reasoning_engine import ReasoningEngine, ReasoningMode, ReasoningResult
+from src.core.chain_validator import ChainValidator, ChainExecutor, execute_chain_safe, validate_chain, RecoveryAction
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,6 +106,12 @@ class TitanOrchestrator:
         self._ai = MiniAIEngine(auto_load=True)
         self._memory = SmartMemory(semantic_engine=self._semantic)
 
+        # Wire SemanticEngine into L1 parser (Phase 8.2)
+        if self._semantic and self._semantic.is_loaded:
+            self.parser.set_semantic_engine(self._semantic)
+        if self._memory:
+            self.parser.set_smart_memory(self._memory)
+
         # Log AI status
         sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
         ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
@@ -135,6 +145,17 @@ class TitanOrchestrator:
         self._auth = AuthService()
 
         logger.info(f"Phase 7 Engines: ActionExecutor={len(self._executor_registry._executors)} types | LogicBuilder={len(self._logic_builder.list_blocks())} blocks | AuthService=ready")
+
+        # Phase 8: Intelligence - ReasoningEngine + ChainValidator
+        self._reasoning = ReasoningEngine(
+            mini_ai=self._ai,
+            semantic_engine=self._semantic,
+            smart_memory=self._memory,
+        )
+        self._chain_validator = ChainValidator()
+        self._chain_executor = ChainExecutor(default_recovery=RecoveryAction.SKIP, max_retries=1)
+
+        logger.info(f"Phase 8 Intelligence: ReasoningEngine=3 modes | ChainValidator=ready | ChainExecutor=rollback+recovery")
 
         self._app_gen = AppGenerator(
             thinking_engine=self._thinking,
@@ -658,6 +679,113 @@ class TitanOrchestrator:
             "duration_ms": result.duration_ms,
         }
 
+    # ============================================================
+    #  PHASE 8: INTELLIGENCE API
+    # ============================================================
+
+    async def reason(self, query: str, mode: str = "auto",
+                     context: str = "") -> Dict[str, Any]:
+        """
+        Razonamiento avanzado usando ReasoningEngine.
+
+        Modes: step_by_step, self_reflect, with_context, auto
+        """
+        if not self._reasoning:
+            return {"error": "ReasoningEngine not available"}
+
+        result = self._reasoning.reason(query, mode=mode, context=context)
+        return {
+            "answer": result.answer,
+            "confidence": result.confidence,
+            "mode": result.mode.value,
+            "steps": len(result.steps),
+            "refinements": result.refinements,
+            "context_used": result.context_used,
+            "memory_hits": result.memory_hits,
+            "source": result.source,
+            "duration_ms": result.total_duration_ms,
+        }
+
+    async def validate_logic_chain(self, description: str) -> Dict[str, Any]:
+        """
+        Valida una cadena de lógica antes de ejecutarla.
+        """
+        if not self._logic_builder:
+            return {"error": "LogicBuilder not available"}
+        chain = self._logic_builder.build_from_description(description)
+        validation = self._chain_validator.validate(chain)
+        return {
+            "is_valid": validation.is_valid,
+            "can_execute": validation.can_execute,
+            "errors": [{"code": e.code, "message": e.message, "block": e.block_name}
+                       for e in validation.errors],
+            "warnings": [{"code": e.code, "message": e.message, "block": e.block_name}
+                         for e in validation.warnings],
+            "block_count": len(chain.blocks),
+        }
+
+    async def execute_logic_chain(self, description: str,
+                                   data: Dict[str, Any] = None,
+                                   recovery: str = "skip") -> Dict[str, Any]:
+        """
+        Ejecuta una cadena de lógica con validación, rollback y recovery.
+
+        Recovery modes: retry, skip, fallback, abort, rollback
+        """
+        if not self._logic_builder:
+            return {"error": "LogicBuilder not available"}
+
+        chain = self._logic_builder.build_from_description(description)
+        recovery_map = {
+            "retry": RecoveryAction.RETRY,
+            "skip": RecoveryAction.SKIP,
+            "fallback": RecoveryAction.FALLBACK,
+            "abort": RecoveryAction.ABORT,
+            "rollback": RecoveryAction.ROLLBACK,
+        }
+        recovery_action = recovery_map.get(recovery, RecoveryAction.SKIP)
+
+        executor = ChainExecutor(default_recovery=recovery_action, max_retries=1)
+        result = executor.execute(chain, data or {}, validate_first=True)
+
+        return {
+            "status": result.status.value,
+            "steps_completed": result.steps_completed,
+            "steps_failed": result.steps_failed,
+            "steps_skipped": result.steps_skipped,
+            "rollback_count": result.rollback_count,
+            "total_duration_ms": result.total_duration_ms,
+            "final_data": result.final_data,
+            "error": result.error,
+            "validation_passed": result.validation.is_valid if result.validation else None,
+        }
+
+    async def get_intelligence_status(self) -> Dict[str, Any]:
+        """Obtiene estado del sistema de inteligencia (Phase 8)."""
+        return {
+            "reasoning_engine": self._reasoning.stats if self._reasoning else {},
+            "ai_layers": {
+                "layer1_semantic": {
+                    "available": self._semantic.is_loaded if self._semantic else False,
+                    "model": "paraphrase-multilingual-MiniLM-L12-v2",
+                },
+                "layer2_qwen": {
+                    "available": self._ai.is_loaded if self._ai else False,
+                    "model": "Qwen3-0.6B Q4_K_M",
+                },
+                "layer3_memory": {
+                    "available": self._memory is not None,
+                    "stats": self._memory.enhanced_stats if self._memory else {},
+                },
+            },
+            "thinking_engine": self._thinking.stats,
+            "phase8_modes": {
+                "reasoning": ["step_by_step", "self_reflect", "with_context", "auto"],
+                "chain_validation": True,
+                "chain_recovery": ["retry", "skip", "fallback", "abort", "rollback"],
+            },
+        }
+
     async def get_system_status(self) -> Dict[str, Any]:
         """Obtiene estado completo del sistema."""
         return {
@@ -675,6 +803,11 @@ class TitanOrchestrator:
                 "action_executors": len(self._executor_registry._executors) if self._executor_registry else 0,
                 "logic_blocks": len(self._logic_builder.list_blocks()) if self._logic_builder else 0,
                 "auth_available": self._auth is not None,
+            },
+            "phase8_intelligence": {
+                "reasoning_available": self._reasoning is not None,
+                "chain_validation": True,
+                "chain_recovery_modes": 5,
             },
             "request_count": self.request_count,
         }

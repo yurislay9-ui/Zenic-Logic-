@@ -9,9 +9,13 @@ Nuevos endpoints para generacion de apps y automatizaciones:
   POST /v1/generate/automation - Generar automatizacion
   POST /v1/design/schema     - Disenar esquema de BD
   POST /v1/think             - Razonar con ThinkingEngine
+  POST /v1/reason            - Razonamiento avanzado (Phase 8)
+  POST /v1/chain/validate    - Validar cadena de logica
+  POST /v1/chain/execute     - Ejecutar cadena con rollback
   GET  /v1/projects          - Listar proyectos generados
   GET  /v1/automations       - Listar automatizaciones
   GET  /v1/system/status     - Estado completo del sistema
+  GET  /v1/intelligence/status - Estado de inteligencia (Phase 8)
   GET  /v1/templates         - Templates disponibles
 """
 
@@ -85,6 +89,8 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._handle_list_templates()
         elif path == '/v1/system/status':
             self._handle_system_status()
+        elif path == '/v1/intelligence/status':
+            self._handle_intelligence_status()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -102,6 +108,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             "Partial_Reasoning", "Contextual_CodeGen",
             "ThinkingEngine", "AppGenerator", "AutomationEngine",
             "SchemaDesigner", "SmartMemory_Enhanced",
+            "ReasoningEngine", "ChainValidator", "ChainExecutor",
         ]
         if gov:
             features.append("Resource_Governor")
@@ -113,9 +120,11 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             "endpoints": [
                 "/v1/chat/completions", "/v1/models", "/health",
                 "/v1/generate/app", "/v1/generate/automation",
-                "/v1/design/schema", "/v1/think",
+                "/v1/design/schema", "/v1/think", "/v1/reason",
+                "/v1/chain/validate", "/v1/chain/execute",
                 "/v1/projects", "/v1/automations",
                 "/v1/templates", "/v1/system/status",
+                "/v1/intelligence/status",
             ],
             "pipeline_levels": 8,
             "solver": solver_name,
@@ -211,6 +220,12 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._handle_design_schema()
         elif self.path == '/v1/think':
             self._handle_think()
+        elif self.path == '/v1/reason':
+            self._handle_reason()
+        elif self.path == '/v1/chain/validate':
+            self._handle_chain_validate()
+        elif self.path == '/v1/chain/execute':
+            self._handle_chain_execute()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -405,6 +420,102 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._send_json(result)
         except Exception as e:
             logger.error(f"Thinking error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_reason(self):
+        """POST /v1/reason - Razonamiento avanzado (Phase 8)."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        query = data.get("query", "")
+        if not query:
+            self._send_json({"error": "Missing 'query' field"}, status=400)
+            return
+
+        mode = data.get("mode", "auto")
+        context = data.get("context", "")
+
+        try:
+            loop = asyncio.new_event_loop()
+            result = loop.run_until_complete(
+                self.orchestrator.reason(query, mode, context)
+            )
+            loop.close()
+            self._send_json(result)
+        except Exception as e:
+            logger.error(f"Reasoning error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_chain_validate(self):
+        """POST /v1/chain/validate - Validar cadena de logica."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        description = data.get("description", "")
+        if not description:
+            self._send_json({"error": "Missing 'description' field"}, status=400)
+            return
+
+        try:
+            loop = asyncio.new_event_loop()
+            result = loop.run_until_complete(
+                self.orchestrator.validate_logic_chain(description)
+            )
+            loop.close()
+            self._send_json(result)
+        except Exception as e:
+            logger.error(f"Chain validation error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_chain_execute(self):
+        """POST /v1/chain/execute - Ejecutar cadena con rollback y recovery."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        description = data.get("description", "")
+        if not description:
+            self._send_json({"error": "Missing 'description' field"}, status=400)
+            return
+
+        chain_data = data.get("data", {})
+        recovery = data.get("recovery", "skip")
+
+        try:
+            loop = asyncio.new_event_loop()
+            result = loop.run_until_complete(
+                self.orchestrator.execute_logic_chain(description, chain_data, recovery)
+            )
+            loop.close()
+            self._send_json(result)
+        except Exception as e:
+            logger.error(f"Chain execution error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_intelligence_status(self):
+        """GET /v1/intelligence/status - Estado de inteligencia (Phase 8)."""
+        try:
+            loop = asyncio.new_event_loop()
+            status = loop.run_until_complete(
+                self.orchestrator.get_intelligence_status()
+            )
+            loop.close()
+            self._send_json(status)
+        except Exception as e:
             self._send_json({"error": str(e)}, status=500)
 
     # ============================================================
