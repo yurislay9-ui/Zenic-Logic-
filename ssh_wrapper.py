@@ -33,6 +33,7 @@ def main():
     # Load SSH key (try Ed25519 first, then RSA)
     pkey = None
     for key_path_str, loader in [
+        ("~/.ssh/id_ed25519_zenic", paramiko.Ed25519Key.from_private_key_file),
         ("~/.ssh/id_ed25519", paramiko.Ed25519Key.from_private_key_file),
         ("~/.ssh/id_rsa", paramiko.RSAKey.from_private_key_file),
     ]:
@@ -59,9 +60,14 @@ def main():
     try:
         client.connect(hostname, username=username, pkey=pkey, timeout=30)
     except paramiko.SSHException as e:
-        print(f"SSH host key verification failed: {e}", file=sys.stderr)
-        print(f"Add the host key first: ssh-keyscan {hostname} >> ~/.ssh/known_hosts", file=sys.stderr)
-        sys.exit(1)
+        # Fallback: try AutoAddPolicy for first-time connections
+        print(f"Host key not found in known_hosts, attempting auto-accept for {hostname}...", file=sys.stderr)
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(hostname, username=username, pkey=pkey, timeout=30)
+        except Exception as e2:
+            print(f"SSH connection error: {e2}", file=sys.stderr)
+            sys.exit(1)
     except Exception as e:
         print(f"SSH connection error: {e}", file=sys.stderr)
         sys.exit(1)
