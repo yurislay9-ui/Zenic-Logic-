@@ -50,10 +50,18 @@ def main():
 
     # Connect
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # SECURITY: Use RejectPolicy instead of AutoAddPolicy to prevent MITM attacks
+    known_hosts = os.path.expanduser("~/.ssh/known_hosts")
+    if os.path.exists(known_hosts):
+        client.load_host_keys(known_hosts)
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     try:
         client.connect(hostname, username=username, pkey=pkey, timeout=30)
+    except paramiko.SSHException as e:
+        print(f"SSH host key verification failed: {e}", file=sys.stderr)
+        print(f"Add the host key first: ssh-keyscan {hostname} >> ~/.ssh/known_hosts", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"SSH connection error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -72,12 +80,12 @@ def main():
                 if not data:
                     break
                 ch.sendall(data)
-        except:
+        except (OSError, IOError):
             pass
         finally:
             try:
                 ch.shutdown_write()
-            except:
+            except (OSError, IOError):
                 pass
 
     def pipe_from_channel(ch, out):
@@ -88,7 +96,7 @@ def main():
                 if not data:
                     break
                 os.write(out, data)
-        except:
+        except (OSError, IOError):
             pass
 
     # Start threads for piping

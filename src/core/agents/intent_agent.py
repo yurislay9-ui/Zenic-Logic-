@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - IntentAgent
+TITAN OMNISCALE X - IntentAgent (Legacy)
 
 Agente IA que UNIFICA la comprensión semántica del usuario.
 Reemplaza la lógica de clasificación de intención dispersa en 3 sitios:
@@ -8,13 +8,9 @@ Reemplaza la lógica de clasificación de intención dispersa en 3 sitios:
   2. SemanticEngine._fallback_classify (keyword matching) — semantic_engine.py
   3. MiniAIEngine.classify_intent + _fallback_classify — mini_ai_engine.py
 
-Arquitectura del IntentAgent:
-  - LLM path: AgentRunner → Qwen3-0.6B → parse_response → IntentOutput
-  - SemanticEngine path: Si embeddings disponibles → classify_intent → merge
-  - Fallback path: TF-IDF determinista + regex (sin LLM, sin embeddings)
-
-Siempre produce un IntentOutput compatible con el pipeline existente.
-El Orchestrator puede convertir IntentOutput → IntentPayload directamente.
+NOTE: SurgicalAgent (F2) is the primary intent classifier in the DAG pipeline.
+This IntentAgent is maintained for backward compatibility. All shared constants
+and utility functions are now in intent_shared.py to eliminate duplication.
 """
 
 import re
@@ -24,86 +20,20 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.core.agents.base import BaseAgent, AgentResult
 from src.core.agents.schemas import IntentInput, IntentOutput
 from src.core.agents.prompts import AgentPrompts, PromptBuilder
+from src.core.agents.intent_shared import (
+    VALID_OPERATIONS, VALID_GOALS, VALID_LANGUAGES,
+    OP_KEYWORDS, GOAL_KEYWORDS,
+    EXT_LANG_MAP, FENCE_LANG_MAP,
+    extract_target_and_language, extract_code_block,
+    extract_entities, infer_criticality, infer_template_type,
+)
 
 logger = logging.getLogger(__name__)
 
+# Constants are now imported from intent_shared.py (single source of truth)
+# OP_KEYWORDS, GOAL_KEYWORDS, EXT_LANG_MAP, FENCE_LANG_MAP, etc.
 
-# ============================================================
-#  VALID CONSTANTS (shared with MiniAIEngine for consistency)
-# ============================================================
-
-VALID_OPERATIONS = frozenset({
-    "CREATE", "REFACTOR", "DELETE", "SEARCH",
-    "ANALYZE", "EXPLAIN", "DEBUG", "OPTIMIZE",
-})
-
-VALID_GOALS = frozenset({
-    "COMPLEXITY_REDUCTION", "MODERN_PATTERN", "BUG_FIX",
-    "FEATURE_ADD", "SECURITY_HARDEN", "PERFORMANCE", "READABILITY",
-})
-
-VALID_LANGUAGES = frozenset({
-    "python", "kotlin", "go", "javascript", "typescript",
-    "java", "rust", "c", "cpp", "ruby",
-})
-
-# Extension → language mapping
-EXT_LANG_MAP: Dict[str, str] = {
-    ".py": "python", ".kt": "kotlin", ".go": "go",
-    ".js": "javascript", ".ts": "typescript", ".java": "java",
-    ".rs": "rust", ".rb": "ruby", ".cpp": "cpp", ".c": "c", ".h": "c",
-}
-
-# Code fence lang → language mapping
-FENCE_LANG_MAP: Dict[str, str] = {
-    "python": "python", "py": "python",
-    "kotlin": "kotlin", "kt": "kotlin",
-    "go": "go", "golang": "go",
-    "javascript": "javascript", "js": "javascript",
-    "typescript": "typescript", "ts": "typescript",
-    "java": "java", "rust": "rust", "rs": "rust",
-    "c": "c", "cpp": "cpp", "c++": "cpp",
-    "ruby": "ruby", "rb": "ruby",
-}
-
-# Keyword maps for fallback classification (EN + ES)
-OP_KEYWORDS: Dict[str, List[str]] = {
-    "CREATE": ["create", "new", "add", "implement", "build", "make",
-               "crear", "nuevo", "agregar", "generar", "construir"],
-    "REFACTOR": ["refactor", "restructure", "reorganize", "clean", "simplify",
-                 "refactorizar", "reestructurar", "reorganizar", "limpiar"],
-    "DELETE": ["delete", "remove", "eliminate", "drop", "prune",
-               "eliminar", "borrar", "quitar"],
-    "SEARCH": ["search", "find", "where", "locate", "grep",
-               "buscar", "encontrar", "donde", "localizar"],
-    "ANALYZE": ["analyze", "review", "check", "examine", "inspect", "audit",
-                "analizar", "revisar", "verificar", "inspeccionar"],
-    "EXPLAIN": ["explain", "describe", "what does", "how does", "why",
-                "explicar", "describir", "como funciona", "que hace"],
-    "DEBUG": ["debug", "fix", "correct", "bug", "error", "crash",
-              "depurar", "corregir", "arreglar", "fallo"],
-    "OPTIMIZE": ["optimize", "improve", "faster", "performance", "accelerate",
-                 "optimizar", "mejorar", "acelerar", "rendimiento"],
-}
-
-GOAL_KEYWORDS: Dict[str, List[str]] = {
-    "BUG_FIX": ["bug", "fix", "error", "wrong", "broken", "crash",
-                "corregir", "arreglar", "fallo", "falla"],
-    "FEATURE_ADD": ["add", "new", "feature", "implement", "extend",
-                    "agregar", "nueva", "implementar", "extender"],
-    "SECURITY_HARDEN": ["security", "auth", "login", "token", "crypto", "vulnerability",
-                        "seguridad", "autenticacion", "vulnerabilidad"],
-    "PERFORMANCE": ["optimize", "fast", "slow", "performance", "latency", "speed",
-                    "optimizar", "rapido", "lento", "velocidad"],
-    "MODERN_PATTERN": ["modern", "update", "upgrade", "migrate", "latest",
-                       "moderno", "actualizar", "migrar"],
-    "COMPLEXITY_REDUCTION": ["simplify", "reduce", "complex", "shorter",
-                             "simplificar", "reducir", "complejo"],
-    "READABILITY": ["readable", "clean", "comment", "document", "clear",
-                    "legible", "limpio", "documentar", "claro"],
-}
-
-# Criticality keywords
+# Criticality keywords (local to IntentAgent)
 CRITICALITY_KEYWORDS = {
     "critical": ["auth", "login", "password", "token", "jwt", "secret", "crypto",
                  "ssl", "tls", "certificate", "permission", "privilege",

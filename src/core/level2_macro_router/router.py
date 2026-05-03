@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - Macro Router v13 (MoE Clasificador con Firmas Topologicas)
+TITAN OMNISCALE X - Macro Router v16 (MoE Clasificador con Firmas Topologicas)
 
 Router de criticidad con clasificacion MoE (Mixture of Experts).
 Implementa el Principio de Aislamiento Quirurgico (PAQ).
 
-MEJORAS v13:
+MEJORAS v16:
 - Lee el Grafo AST del Nivel 3 para firmas topologicas reales
 - Lee patrones criticos desde configuracion YAML
 - Consulta complejidad y conexiones de nodos desde SQLite

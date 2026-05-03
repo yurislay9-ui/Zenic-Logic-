@@ -1,5 +1,5 @@
 # ============================================================
-#  TITAN OMNISCALE X v13 - Core Dependencies
+#  TITAN OMNISCALE X v16 - Core Dependencies
 # ============================================================
 
 # Web Framework

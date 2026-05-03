@@ -8,6 +8,7 @@ Evita llamadas repetidas al LLM para consultas similares.
 import hashlib
 import time
 import logging
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class AgentCache:
 
     def __init__(self, ttl_seconds: int = DEFAULT_TTL_SECONDS,
                  max_size: int = MAX_CACHE_SIZE) -> None:
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._ttl = ttl_seconds
         self._max_size = max_size
         self._hits = 0
@@ -71,6 +72,8 @@ class AgentCache:
         if entry is not None:
             if not self._is_expired(entry):
                 self._hits += 1
+                # Move to end for LRU behavior (most recently used at end)
+                self._cache.move_to_end(key)
                 return entry["result"]
             else:
                 # Expirado, eliminar
@@ -139,21 +142,16 @@ class AgentCache:
         return age > self._ttl
 
     def _evict_oldest(self) -> None:
-        """Elimina la entrada más antigua (LRU)."""
+        """Elimina la entrada más antigua (LRU) — O(1) con OrderedDict.
+        
+        OrderedDict maintains insertion order; oldest items are at the front.
+        Since we move accessed items to the end via move_to_end(), this
+        naturally implements LRU eviction.
+        """
         if not self._cache:
             return
-
-        oldest_key = None
-        oldest_time = float('inf')
-
-        for key, entry in self._cache.items():
-            ts = entry.get("timestamp", 0)
-            if ts < oldest_time:
-                oldest_time = ts
-                oldest_key = key
-
-        if oldest_key:
-            del self._cache[oldest_key]
+        # Pop the first (oldest/least recently used) item — O(1)
+        self._cache.popitem(last=False)
 
     def _semantic_lookup(self, agent_name: str,
                          input_data: Any) -> Optional[Any]:

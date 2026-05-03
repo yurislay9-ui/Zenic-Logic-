@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - K-Path Analyzer v13
+TITAN OMNISCALE X - K-Path Analyzer v16
 
 Analizador de K-Paths basado en el grafo de dependencias real.
 

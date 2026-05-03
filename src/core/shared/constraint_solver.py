@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Constraint Solver (AC-3 + Backtracking) v13
+TITAN OMNISCALE X - Constraint Solver (AC-3 + Backtracking) v16
 
 Implements a Constraint Satisfaction Problem solver using:
 - AC-3 algorithm for arc consistency

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Semantic Parser v13 (TF-IDF Real)
+TITAN OMNISCALE X - Semantic Parser v16 (TF-IDF Real)
 
 Parser de intenciones basado en TF-IDF con similitud coseno.
 Soporta ingles y espanol. Sin dependencias externas (no numpy, no fastembed).

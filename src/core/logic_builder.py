@@ -1633,24 +1633,14 @@ class DataTransformBlock(LogicBlock):
 
         # Pattern 3: Simple arithmetic — "field * 0.16" or "field1 + field2"
         # Allowed: field names, numbers, +, -, *, /, (, ), spaces
+        # SECURITY: Replaced eval() with safe AST-based expression parser
         if _re.match(r'^[a-zA-Z_\d\s\+\-\*/\(\)\.\,]+$', expr):
-            # Replace field names with their values
-            safe_expr = expr
-            for field_name in sorted(item.keys(), key=len, reverse=True):
-                if _re.match(r'^[a-zA-Z_]\w*$', field_name):
-                    value = item.get(field_name, 0)
-                    if isinstance(value, (int, float)):
-                        safe_expr = safe_expr.replace(field_name, str(value))
-                    else:
-                        safe_expr = safe_expr.replace(field_name, repr(str(value)))
-
-            # Validate: only numbers, operators, and parens remain
-            if _re.match(r'^[\d\s\+\-\*/\(\)\.\'\"]+$', safe_expr):
-                try:
-                    result = eval(safe_expr, {"__builtins__": {}}, {})
+            try:
+                result = self._safe_eval_arithmetic(expr, item, _re)
+                if result is not None:
                     return result
-                except Exception:
-                    pass
+            except Exception:
+                pass
 
         # Pattern 4: Function call — "len(field)", "str(field)", etc.
         safe_funcs = {
@@ -1692,6 +1682,76 @@ class DataTransformBlock(LogicBlock):
         # Pattern 5: Conditional — "field if condition else default"
         # Not supported safely — return None
         return None
+
+    @staticmethod
+    def _safe_eval_arithmetic(expr: str, item: Dict[str, Any], _re) -> Any:
+        """
+        SECURITY: Evaluador aritmético seguro basado en AST.
+
+        Reemplaza eval() con análisis sintáctico del árbol AST de Python.
+        Solo permite: operaciones BinOp (+, -, *, /), Num/Constant, y
+        nombres de campos del item que se resuelven a valores numéricos.
+
+        Cualquier nodo AST no permitido causa que la expresión retorne None.
+        """
+        import ast as _ast
+
+        # Primero, reemplazar nombres de campos con sus valores numéricos
+        safe_expr = expr
+        for field_name in sorted(item.keys(), key=len, reverse=True):
+            if _re.match(r'^[a-zA-Z_]\w*$', field_name):
+                value = item.get(field_name, 0)
+                if isinstance(value, (int, float)):
+                    safe_expr = safe_expr.replace(field_name, str(value))
+                else:
+                    safe_expr = safe_expr.replace(field_name, repr(str(value)))
+
+        # Validar que solo queden números, operadores y paréntesis
+        if not _re.match(r'^[\d\s\+\-\*/\(\)\.\'\"]+$', safe_expr):
+            return None
+
+        try:
+            tree = _ast.parse(safe_expr, mode='eval')
+        except SyntaxError:
+            return None
+
+        # Definir los nodos AST permitidos
+        allowed_nodes = (
+            _ast.Expression, _ast.BinOp, _ast.UnaryOp, _ast.Num, _ast.Constant,
+            _ast.Add, _ast.Sub, _ast.Mult, _ast.Div, _ast.USub, _ast.UAdd,
+        )
+
+        # Verificar que todos los nodos del árbol sean seguros
+        for node in _ast.walk(tree):
+            if not isinstance(node, allowed_nodes):
+                return None
+
+        # Evaluar el árbol AST de forma segura
+        def _eval_node(node):
+            if isinstance(node, _ast.Constant):
+                return node.value
+            if isinstance(node, _ast.Num):  # Python < 3.8 compat
+                return node.n
+            if isinstance(node, _ast.UnaryOp):
+                operand = _eval_node(node.operand)
+                if isinstance(node.op, _ast.USub):
+                    return -operand
+                if isinstance(node.op, _ast.UAdd):
+                    return +operand
+            if isinstance(node, _ast.BinOp):
+                left = _eval_node(node.left)
+                right = _eval_node(node.right)
+                if isinstance(node.op, _ast.Add):
+                    return left + right
+                if isinstance(node.op, _ast.Sub):
+                    return left - right
+                if isinstance(node.op, _ast.Mult):
+                    return left * right
+                if isinstance(node.op, _ast.Div):
+                    return left / right if right != 0 else 0
+            return None
+
+        return _eval_node(tree.body)
 
     @staticmethod
     def _aggregate(values: list, function: str):

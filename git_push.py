@@ -30,8 +30,18 @@ def main():
 
     # Connect
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(host, username="git", pkey=pkey)
+    # SECURITY: Use RejectPolicy instead of AutoAddPolicy to prevent MITM attacks
+    # Load known_hosts file if available; otherwise reject unknown hosts
+    known_hosts = os.path.expanduser("~/.ssh/known_hosts")
+    if os.path.exists(known_hosts):
+        client.load_host_keys(known_hosts)
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    try:
+        client.connect(host, username="git", pkey=pkey)
+    except paramiko.SSHException as e:
+        print(f"SSH host key verification failed: {e}", file=sys.stderr)
+        print(f"Add the host key to ~/.ssh/known_hosts first: ssh-keyscan {host} >> ~/.ssh/known_hosts", file=sys.stderr)
+        sys.exit(1)
 
     # Execute git command
     stdin, stdout, stderr = client.get_transport().open_session().exec_command(git_command)
@@ -51,7 +61,7 @@ def main():
         fd = sys.stdin.fileno()
         fl = fcntl.fcntl(fd, fcntl.F_GETFL)
         fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-    except:
+    except (OSError, IOError):
         pass
 
     while not chan.exit_status_ready():
@@ -69,7 +79,7 @@ def main():
             data = sys.stdin.buffer.read(4096)
             if data:
                 chan.send(data)
-        except:
+        except (OSError, IOError):
             pass
 
     # Flush remaining

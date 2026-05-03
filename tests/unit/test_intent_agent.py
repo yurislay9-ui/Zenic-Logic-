@@ -125,7 +125,7 @@ class TestIntentAgentFallback:
 
     def test_optimize_operation_en(self, agent):
         """Should detect OPTIMIZE from English messages."""
-        result = agent.fallback(IntentInput(message="optimize the slow query"))
+        result = agent.fallback(IntentInput(message="optimize performance of the module"))
         assert result.operation == "OPTIMIZE"
 
     def test_search_operation_es(self, agent):

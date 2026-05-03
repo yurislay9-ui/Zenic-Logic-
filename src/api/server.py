@@ -17,11 +17,15 @@ except ImportError:
     FastAPI = None
     HTTPException = None
 
-from src.core.orchestrator import TitanOrchestrator
+# Use DAGOrchestrator (v16) as primary, with TitanOrchestrator (v16) as fallback
+try:
+    from src.core.dag_orchestrator import DAGOrchestrator as _Orchestrator
+except ImportError:
+    from src.core.orchestrator import TitanOrchestrator as _Orchestrator
 
 if HAS_FASTAPI:
     app = FastAPI()
-    orch = TitanOrchestrator()
+    orch = _Orchestrator()
 
     @app.post("/v1/chat/completions")
     async def openai_mock(req):

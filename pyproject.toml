@@ -1,7 +1,7 @@
 [project]
 name = "titan-omniscale-x"
-version = "13.0.0"
-description = "TITAN OMNISCALE X - Motor de IA Quirurgico Local v13"
+version = "16.0.0"
+description = "TITAN OMNISCALE X - Motor de IA Quirurgico Local v16"
 requires-python = ">=3.10"
 dependencies = [
     # Core Web Framework

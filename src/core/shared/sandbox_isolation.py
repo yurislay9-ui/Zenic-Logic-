@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Sandbox Isolation v13
+TITAN OMNISCALE X - Sandbox Isolation v16
 
 Sistema de aislamiento completo para el sandbox. Garantiza que:
 1. Todo codigo ejecutado por el sandbox corre en un workspace SEPARADO
@@ -50,22 +50,24 @@ class SandboxWorkspace:
     - Las bases de datos son independientes
     """
 
-    def __init__(self, sandbox_id=None, auto_cleanup=True, ttl_seconds=3600):
+    def __init__(self, sandbox_id=None, auto_cleanup=True, ttl_seconds=3600, client_id='default'):
         """
         Args:
             sandbox_id: ID unico del workspace. Si None, se genera uno.
             auto_cleanup: Si True, elimina el workspace al hacer close().
             ttl_seconds: Tiempo de vida maximo antes de cleanup automatico.
+            client_id: Brecha B: Client identifier for multi-client isolation.
         """
         self.sandbox_id = sandbox_id or uuid.uuid4().hex[:12]
         self.auto_cleanup = auto_cleanup
         self.ttl_seconds = ttl_seconds
         self._closed = False
         self._created_at = time.time()
+        self.client_id = client_id  # Brecha B: Multi-client isolation
 
         # Directorio raiz del sandbox
         self.sandbox_root = self._get_sandbox_root()
-        self.workspace_dir = self.sandbox_root / f"workspace_{self.sandbox_id}"
+        self.workspace_dir = self.sandbox_root / f"workspace_{self.sandbox_id}_{self.client_id}"
 
         # Subdirectorios del workspace
         self.code_dir = self.workspace_dir / "code"
@@ -80,8 +82,8 @@ class SandboxWorkspace:
         # Lock para operaciones concurrentes
         self._lock = threading.Lock()
 
-        logger.info("SandboxWorkspace creado: %s (auto_cleanup=%s)",
-                     self.sandbox_id, auto_cleanup)
+        logger.info("SandboxWorkspace creado: %s (client_id=%s, auto_cleanup=%s)",
+                     self.sandbox_id, self.client_id, auto_cleanup)
 
     def _get_sandbox_root(self) -> Path:
         """Obtiene el directorio raiz del sandbox (separado de data/)."""
@@ -102,6 +104,7 @@ class SandboxWorkspace:
         # Escribir archivo de metadatos del workspace
         meta = {
             "sandbox_id": self.sandbox_id,
+            "client_id": self.client_id,
             "created_at": self._created_at,
             "ttl_seconds": self.ttl_seconds,
             "pid": os.getpid(),
@@ -282,7 +285,7 @@ class SandboxIsolationManager:
         (base_dir / "logs").mkdir(exist_ok=True)
         (base_dir / "tmp").mkdir(exist_ok=True)
 
-    def create_workspace(self, sandbox_id=None, ttl_seconds=3600) -> SandboxWorkspace:
+    def create_workspace(self, sandbox_id=None, ttl_seconds=3600, client_id='default') -> SandboxWorkspace:
         """
         Crea un nuevo workspace aislado para ejecucion de sandbox.
 
@@ -324,7 +327,8 @@ class SandboxIsolationManager:
             workspace = SandboxWorkspace(
                 sandbox_id=sandbox_id,
                 auto_cleanup=False,  # El manager controla el ciclo de vida
-                ttl_seconds=ttl_seconds
+                ttl_seconds=ttl_seconds,
+                client_id=client_id,  # Brecha B: Pass client_id to workspace
             )
             self._active_workspaces[workspace.sandbox_id] = workspace
 
@@ -359,6 +363,7 @@ class SandboxIsolationManager:
         for ws in self._active_workspaces.values():
             result.append({
                 "sandbox_id": ws.sandbox_id,
+                "client_id": ws.client_id,
                 "path": str(ws.workspace_dir),
                 "size_mb": ws.get_size_mb(),
                 "age_seconds": int(time.time() - ws._created_at),
@@ -366,6 +371,37 @@ class SandboxIsolationManager:
                 "closed": ws._closed,
             })
         return result
+
+    def list_client_workspaces(self, client_id: str) -> list[dict]:
+        """Brecha B: Lista todos los workspaces activos para un client_id especifico."""
+        result = []
+        for ws in self._active_workspaces.values():
+            if ws.client_id == client_id:
+                result.append({
+                    "sandbox_id": ws.sandbox_id,
+                    "client_id": ws.client_id,
+                    "path": str(ws.workspace_dir),
+                    "size_mb": ws.get_size_mb(),
+                    "age_seconds": int(time.time() - ws._created_at),
+                    "expired": ws.is_expired(),
+                    "closed": ws._closed,
+                })
+        return result
+
+    def release_client_workspaces(self, client_id: str):
+        """Brecha B: Libera todos los workspaces de un client_id especifico."""
+        with self._lock:
+            client_sids = [
+                sid for sid, ws in self._active_workspaces.items()
+                if ws.client_id == client_id
+            ]
+            for sid in client_sids:
+                self._release_unsafe(sid)
+            if client_sids:
+                logger.info(
+                    "Released %d workspaces for client_id='%s'",
+                    len(client_sids), client_id
+                )
 
     def cleanup_forced(self):
         """
@@ -549,6 +585,24 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
 
         # Importacion restringida
         '__import__': _sandbox_import,
+
+        # SECURITY: Explicitly block dangerous builtins even if referenced
+        'eval': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: eval() is blocked for security")),
+        'exec': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: exec() is blocked for security")),
+        'compile': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: compile() is blocked for security")),
+        'breakpoint': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: breakpoint() is blocked for security")),
+        'input': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: input() is blocked for security")),
+        'exit': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: exit() is blocked for security")),
+        'quit': lambda *a, **kw: (_ for _ in ()).throw(
+            ImportError("Sandbox: quit() is blocked for security")),
+        'globals': lambda *a, **kw: {},
+        'locals': lambda *a, **kw: {},
     }
 
     return safe_builtins

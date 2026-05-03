@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Unified HTTP Handler
+TITAN OMNISCALE X v16 - Unified HTTP Handler
 
 Handler HTTP compatible con la API de OpenAI. Unifica la logica
 que antes estaba duplicada entre main.py (Kivy) y main_headless.py (Termux).
@@ -7,6 +7,7 @@ que antes estaba duplicada entre main.py (Kivy) y main_headless.py (Termux).
 Nuevos endpoints para generacion de apps y automatizaciones:
   POST /v1/generate/app      - Generar app completa
   POST /v1/generate/automation - Generar automatizacion
+  POST /v1/generate/niche     - Generar app desde nicho predefinido
   POST /v1/design/schema     - Disenar esquema de BD
   POST /v1/think             - Razonar con ThinkingEngine
   POST /v1/reason            - Razonamiento avanzado (Phase 8)
@@ -14,6 +15,9 @@ Nuevos endpoints para generacion de apps y automatizaciones:
   POST /v1/chain/execute     - Ejecutar cadena con rollback
   GET  /v1/projects          - Listar proyectos generados
   GET  /v1/automations       - Listar automatizaciones
+  GET  /v1/niches            - Listar nichos disponibles
+  GET  /v1/niches/domains    - Listar dominios de nichos
+  GET  /v1/niches/search     - Buscar nichos por descripcion
   GET  /v1/system/status     - Estado completo del sistema
   GET  /v1/intelligence/status - Estado de inteligencia (Phase 8)
   GET  /v1/templates         - Templates disponibles
@@ -36,6 +40,31 @@ from src.server.response_builder import (
 )
 
 logger = logging.getLogger("TITAN")
+
+# ============================================================
+#  PERSISTENT ASYNCIO EVENT LOOP (performance optimization)
+#  Replaces creating a new event loop per request, which is
+#  expensive and can cause issues with asyncio-based resources.
+# ============================================================
+
+_shared_loop = None
+_loop_lock = __import__('threading').Lock()
+
+
+def _get_shared_loop():
+    """Get or create the shared asyncio event loop (thread-safe)."""
+    global _shared_loop
+    if _shared_loop is None or _shared_loop.is_closed():
+        with _loop_lock:
+            if _shared_loop is None or _shared_loop.is_closed():
+                _shared_loop = asyncio.new_event_loop()
+    return _shared_loop
+
+
+def _run_async(coro):
+    """Run an async coroutine on the shared event loop (blocking)."""
+    loop = _get_shared_loop()
+    return loop.run_until_complete(coro)
 
 
 class TitanHTTPHandler(BaseHTTPRequestHandler):
@@ -87,10 +116,26 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._handle_list_automations()
         elif path == '/v1/templates':
             self._handle_list_templates()
+        elif path == '/v1/niches':
+            self._handle_list_niches(params)
+        elif path == '/v1/niches/domains':
+            self._handle_list_domains()
+        elif path == '/v1/niches/search':
+            self._handle_search_niches(params)
         elif path == '/v1/system/status':
             self._handle_system_status()
         elif path == '/v1/intelligence/status':
             self._handle_intelligence_status()
+        elif path == '/v1/system/power-mode':
+            self._handle_power_mode()
+        elif path == '/v1/system/context-index':
+            self._handle_context_index()
+        elif path == '/v1/system/auto-evolve':
+            self._handle_auto_evolve(params)
+        elif path == '/v1/dna/modules':
+            self._handle_dna_modules(params)
+        elif path == '/v1/dna/domain-rules':
+            self._handle_dna_domain_rules(params)
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -116,20 +161,21 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         response = {
             "status": "active",
             "model": "titan-omniscale-x",
-            "version": f"13.0{version_suffix}",
+            "version": f"16.0{version_suffix}",
             "endpoints": [
                 "/v1/chat/completions", "/v1/models", "/health",
-                "/v1/generate/app", "/v1/generate/automation",
+                "/v1/generate/app", "/v1/generate/automation", "/v1/generate/niche",
                 "/v1/design/schema", "/v1/think", "/v1/reason",
                 "/v1/chain/validate", "/v1/chain/execute",
                 "/v1/projects", "/v1/automations",
+                "/v1/niches", "/v1/niches/domains", "/v1/niches/search",
                 "/v1/templates", "/v1/system/status",
                 "/v1/intelligence/status",
             ],
             "pipeline_levels": 8,
             "solver": solver_name,
             "features": features,
-            "description": f"TITAN OMNISCALE X v13 - Local Surgical AI Engine ({solver_name}) + App & Automation Generator",
+            "description": f"TITAN OMNISCALE X v16 - Local Surgical AI Engine ({solver_name}) + App & Automation Generator",
         }
         if self.platform_tag:
             response["platform"] = self.platform_tag
@@ -147,6 +193,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             "status": "healthy",
             "solver": solver_name,
             "has_z3": HAS_Z3,
+            "mode": "hybrid_lazy",  # New: indicates hybrid lazy loading mode
         }
         if self.start_time:
             health["uptime_s"] = int(time.time() - self.start_time)
@@ -157,17 +204,17 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
                 health["status"] = "degraded"
                 health["reason"] = f"RAM critical: {gov._ram_usage_mb:.0f}MB"
 
+        # Model Manager status
+        if hasattr(self.orchestrator, '_model_mgr'):
+            health["models"] = self.orchestrator._model_mgr.get_status()
+
         self._send_json(health)
 
     def _handle_list_projects(self, params):
         """GET /v1/projects - Lista proyectos generados."""
         try:
             status_filter = params.get("status", [""])[0]
-            loop = asyncio.new_event_loop()
-            projects = loop.run_until_complete(
-                self.orchestrator.list_projects(status_filter)
-            )
-            loop.close()
+            projects = _run_async(self.orchestrator.list_projects(status_filter))
             self._send_json({"projects": projects, "total": len(projects)})
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
@@ -175,11 +222,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
     def _handle_list_automations(self):
         """GET /v1/automations - Lista automatizaciones."""
         try:
-            loop = asyncio.new_event_loop()
-            automations = loop.run_until_complete(
-                self.orchestrator.list_automations()
-            )
-            loop.close()
+            automations = _run_async(self.orchestrator.list_automations())
             self._send_json({"automations": automations, "total": len(automations)})
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
@@ -189,18 +232,70 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         try:
             from src.core.app_generator import AppGenerator
             templates = AppGenerator.list_templates()
+            # Add niche templates info
+            try:
+                from src.core.template_engine import TemplateEngine
+                engine = TemplateEngine()
+                templates["niche_templates"] = engine.list_niches()
+                templates["niche_domains"] = engine.list_domains()
+            except Exception:
+                pass
             self._send_json(templates)
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_list_niches(self, params):
+        """GET /v1/niches - Lista nichos disponibles."""
+        try:
+            domain = params.get("domain", [""])[0]
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            niches = engine.list_niches(domain)
+            result = []
+            for name in niches:
+                plan = engine.get_niche_plan(name)
+                if plan:
+                    result.append({
+                        "name": name,
+                        "entities": len(plan.entities),
+                        "blocks": plan.blocks,
+                    })
+            self._send_json({"niches": result, "total": len(result), "domain": domain or "all"})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_list_domains(self):
+        """GET /v1/niches/domains - Lista dominios de nichos."""
+        try:
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            domains = engine.list_domains()
+            result = []
+            for d in domains:
+                niches = engine.list_niches(d)
+                result.append({"domain": d, "niche_count": len(niches), "niches": niches})
+            self._send_json({"domains": result, "total": len(result)})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_search_niches(self, params):
+        """GET /v1/niches/search - Buscar nichos por descripcion."""
+        try:
+            query = params.get("q", [""])[0]
+            if not query:
+                self._send_json({"error": "Missing 'q' parameter"}, status=400)
+                return
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            results = engine.search_niches(query)
+            self._send_json({"results": results, "total": len(results), "query": query})
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
 
     def _handle_system_status(self):
         """GET /v1/system/status - Estado completo del sistema."""
         try:
-            loop = asyncio.new_event_loop()
-            status = loop.run_until_complete(
-                self.orchestrator.get_system_status()
-            )
-            loop.close()
+            status = _run_async(self.orchestrator.get_system_status())
             self._send_json(status)
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
@@ -216,6 +311,8 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._handle_generate_app()
         elif self.path == '/v1/generate/automation':
             self._handle_generate_automation()
+        elif self.path == '/v1/generate/niche':
+            self._handle_generate_niche()
         elif self.path == '/v1/design/schema':
             self._handle_design_schema()
         elif self.path == '/v1/think':
@@ -226,6 +323,14 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             self._handle_chain_validate()
         elif self.path == '/v1/chain/execute':
             self._handle_chain_execute()
+        elif self.path == '/v1/system/context-index':
+            self._handle_context_index_post()
+        elif self.path == '/v1/system/auto-evolve/trigger':
+            self._handle_auto_evolve_trigger()
+        elif self.path == '/v1/dna/validate':
+            self._handle_dna_validate()
+        elif self.path == '/v1/dna/polish':
+            self._handle_dna_polish()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -287,9 +392,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
 
         try:
             # Ejecutar pipeline
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(self.orchestrator.execute(user_msg))
-            loop.close()
+            result = _run_async(self.orchestrator.execute(user_msg))
 
             # Razonamiento Parcial
             if result.get("partial_reasoning"):
@@ -330,11 +433,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         output_dir = data.get("output_dir", "")
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.generate_app(description, project_name, output_dir)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.generate_app(description, project_name, output_dir))
             self._send_json(result)
         except Exception as e:
             logger.error(f"App generation error: {e}", exc_info=True)
@@ -358,14 +457,62 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         output_dir = data.get("output_dir", "")
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.generate_automation(description, output_dir)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.generate_automation(description, output_dir))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Automation generation error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_generate_niche(self):
+        """POST /v1/generate/niche - Generar app desde nicho predefinido."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        niche_name = data.get("niche", "")
+        if not niche_name:
+            # Try to auto-detect niche from description
+            description = data.get("description", "")
+            if not description:
+                self._send_json({"error": "Missing 'niche' or 'description' field"}, status=400)
+                return
+            try:
+                from src.core.template_engine import TemplateEngine
+                engine = TemplateEngine()
+                results = engine.search_niches(description, limit=1)
+                if results:
+                    niche_name = results[0].get("name", "")
+                else:
+                    self._send_json({"error": f"No niche found matching: {description}"}, status=404)
+                    return
+            except Exception as e:
+                self._send_json({"error": str(e)}, status=500)
+                return
+
+        output_dir = data.get("output_dir", "")
+
+        try:
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            plan = engine.get_niche_plan(niche_name)
+            if not plan:
+                self._send_json({"error": f"Niche '{niche_name}' not found"}, status=404)
+                return
+
+            files = engine.render_niche(niche_name)
+            self._send_json({
+                "niche": niche_name,
+                "files_generated": len(files),
+                "files": list(files.keys()),
+                "entities": len(plan.entities),
+                "blocks": plan.blocks,
+            })
+        except Exception as e:
+            logger.error(f"Niche generation error: {e}", exc_info=True)
             self._send_json({"error": str(e)}, status=500)
 
     def _handle_design_schema(self):
@@ -384,11 +531,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.design_schema(description)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.design_schema(description))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Schema design error: {e}", exc_info=True)
@@ -412,11 +555,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         context = data.get("context", "")
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.think(query, context)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.think(query, context))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Thinking error: {e}", exc_info=True)
@@ -441,11 +580,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         context = data.get("context", "")
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.reason(query, mode, context)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.reason(query, mode, context))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Reasoning error: {e}", exc_info=True)
@@ -467,11 +602,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.validate_logic_chain(description)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.validate_logic_chain(description))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Chain validation error: {e}", exc_info=True)
@@ -496,11 +627,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         recovery = data.get("recovery", "skip")
 
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self.orchestrator.execute_logic_chain(description, chain_data, recovery)
-            )
-            loop.close()
+            result = _run_async(self.orchestrator.execute_logic_chain(description, chain_data, recovery))
             self._send_json(result)
         except Exception as e:
             logger.error(f"Chain execution error: {e}", exc_info=True)
@@ -509,13 +636,197 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
     def _handle_intelligence_status(self):
         """GET /v1/intelligence/status - Estado de inteligencia (Phase 8)."""
         try:
-            loop = asyncio.new_event_loop()
-            status = loop.run_until_complete(
-                self.orchestrator.get_intelligence_status()
-            )
-            loop.close()
+            status = _run_async(self.orchestrator.get_intelligence_status())
             self._send_json(status)
         except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_power_mode(self):
+        """GET /v1/system/power-mode - Estado del modo Low-Power Sequential."""
+        try:
+            lpm = getattr(self.orchestrator, '_low_power_mode', None)
+            if lpm:
+                self._send_json(lpm.stats)
+            else:
+                self._send_json({"mode": "unavailable", "reason": "LowPowerSequentialMode not initialized"})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_context_index(self, params=None):
+        """GET /v1/system/context-index - Estado del índice de Context Pointers."""
+        try:
+            cpe = getattr(self.orchestrator, '_context_pointer_engine', None)
+            if cpe:
+                query = (params or {}).get("q", [""])[0] if params else ""
+                if query:
+                    pointers = cpe.search(query, top_k=10)
+                    result = {
+                        "stats": cpe.stats,
+                        "query": query,
+                        "results": [p.to_model_context() for p in pointers],
+                    }
+                else:
+                    result = cpe.stats
+                self._send_json(result)
+            else:
+                self._send_json({"status": "unavailable", "reason": "ContextPointerEngine not initialized"})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_context_index_post(self):
+        """POST /v1/system/context-index - Indexar código para Context Pointers."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        code = data.get("code", "")
+        file_path = data.get("file_path", "input.py")
+        if not code:
+            self._send_json({"error": "Missing 'code' field"}, status=400)
+            return
+
+        try:
+            cpe = getattr(self.orchestrator, '_context_pointer_engine', None)
+            if cpe:
+                count = cpe.index_code(code, file_path)
+                compact_ctx, pointers = cpe.build_compact_context(data.get("query", ""), max_tokens=2000)
+                self._send_json({
+                    "indexed_signatures": count,
+                    "compact_context": compact_ctx,
+                    "pointers_count": len(pointers),
+                    "stats": cpe.stats,
+                })
+            else:
+                self._send_json({"error": "ContextPointerEngine not available"}, status=503)
+        except Exception as e:
+            logger.error(f"Context index error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_auto_evolve(self, params):
+        """GET /v1/system/auto-evolve - Estado del Auto-Scraping YAML."""
+        try:
+            cron = getattr(self.orchestrator, '_niche_cron', None)
+            updater = getattr(self.orchestrator, '_niche_auto_scraper', None)
+            result = {
+                "auto_scraper": updater.stats if updater else {"status": "unavailable"},
+                "cron_scheduler": cron.stats if cron else {"status": "unavailable"},
+            }
+            self._send_json(result)
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_auto_evolve_trigger(self):
+        """POST /v1/system/auto-evolve/trigger - Forzar ciclo de auto-evolución."""
+        try:
+            cron = getattr(self.orchestrator, '_niche_cron', None)
+            if cron:
+                result = cron.trigger_now()
+                self._send_json(result)
+            else:
+                self._send_json({"error": "AutoEvolve cron not available"}, status=503)
+        except Exception as e:
+            logger.error(f"Auto-evolve trigger error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_dna_modules(self, params):
+        """GET /v1/dna/modules - Listar módulos de lógica atómica."""
+        try:
+            from src.core.dna_loader import get_dna_loader
+            dna = get_dna_loader()
+            domain = params.get("domain", [""])[0]
+            query = params.get("q", [""])[0]
+            if query:
+                modules = dna.search_modules(query, limit=20)
+            elif domain:
+                modules = dna.get_modules_by_domain(domain)
+            else:
+                modules = list(dna._logic_modules.values())
+            result = [
+                {"id": m.id, "domain": m.domain, "description": m.description,
+                 "dependencies": m.dependencies, "verification_rule": m.verification_rule}
+                for m in modules
+            ]
+            self._send_json({"modules": result, "total": len(result)})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_dna_domain_rules(self, params):
+        """GET /v1/dna/domain-rules - Obtener reglas de negocio por industria."""
+        try:
+            from src.core.dna_loader import get_dna_loader
+            dna = get_dna_loader()
+            industry = params.get("industry", [""])[0]
+            if industry:
+                rules = dna.get_domain_rules(industry)
+                if rules:
+                    self._send_json({
+                        "industry": rules.name,
+                        "display_name": rules.display_name,
+                        "mandatory_logic": rules.mandatory_logic,
+                        "compliance": rules.compliance_requirements,
+                        "invariants": rules.business_invariants,
+                    })
+                else:
+                    self._send_json({"error": f"Industry '{industry}' not found"}, status=404)
+            else:
+                industries = [{"name": r.name, "display_name": r.display_name,
+                               "mandatory_count": len(r.mandatory_logic)}
+                              for r in dna._domain_rules.values()]
+                self._send_json({"industries": industries, "total": len(industries)})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_dna_validate(self):
+        """POST /v1/dna/validate - Validar código contra gates de calidad."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        code = data.get("code", "")
+        niche_name = data.get("niche", "")
+        if not code:
+            self._send_json({"error": "Missing 'code' field"}, status=400)
+            return
+
+        try:
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            result = engine.validate_niche_code(code, niche_name)
+            self._send_json(result)
+        except Exception as e:
+            logger.error(f"DNA validate error: {e}", exc_info=True)
+            self._send_json({"error": str(e)}, status=500)
+
+    def _handle_dna_polish(self):
+        """POST /v1/dna/polish - Pulir texto técnico a corporativo."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._send_json({"error": f"Invalid JSON: {e}"}, status=400)
+            return
+
+        text = data.get("text", "")
+        if not text:
+            self._send_json({"error": "Missing 'text' field"}, status=400)
+            return
+
+        try:
+            from src.core.template_engine import TemplateEngine
+            engine = TemplateEngine()
+            polished = engine.polish_output(text)
+            self._send_json({"original": text, "polished": polished})
+        except Exception as e:
+            logger.error(f"DNA polish error: {e}", exc_info=True)
             self._send_json({"error": str(e)}, status=500)
 
     # ============================================================

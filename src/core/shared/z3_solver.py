@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Z3 SMT Solver Wrapper v13
+TITAN OMNISCALE X - Z3 SMT Solver Wrapper v16
 
 Wrapper del SMT Solver Z3 con import condicional y verificacion
 semantica profunda de codigo.

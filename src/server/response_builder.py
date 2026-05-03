@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Response Builder
+TITAN OMNISCALE X v16 - Response Builder
 
 Construye respuestas OpenAI-compatible para el servidor HTTP.
 Centraliza el formateo de respuestas normales, partial reasoning y errores,
@@ -30,7 +30,7 @@ def build_normal_response(data, result, user_msg, governor=None):
     Returns:
         Dict con la respuesta OpenAI-compatible
     """
-    content_parts = [f"TITAN OMNISCALE X v13 - {result['status']}"]
+    content_parts = [f"TITAN OMNISCALE X v16 - {result['status']}"]
 
     if result.get("explanations"):
         for exp in result["explanations"]:
@@ -181,7 +181,7 @@ def build_error_response(error_msg):
         Dict con la respuesta OpenAI-compatible de error
     """
     error_content = (
-        f"TITAN OMNISCALE X v13 - Internal Error\n"
+        f"TITAN OMNISCALE X v16 - Internal Error\n"
         f"{error_msg}\n\nTry reformulating your request."
     )
     return {

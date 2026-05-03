@@ -136,6 +136,7 @@ class AuthService:
                 "CREATE INDEX IF NOT EXISTS idx_revoked_expires ON revoked_tokens(expires_at)",
                 "CREATE INDEX IF NOT EXISTS idx_apikeys_user ON api_keys(user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_apikeys_active ON api_keys(active)",
+                "CREATE INDEX IF NOT EXISTS idx_apikeys_hash ON api_keys(key_hash, active)",
             ]:
                 c.execute(idx)
             c.commit()
@@ -668,30 +669,34 @@ class AuthService:
             c.close()
 
     def verify_api_key(self, api_key: str) -> Optional[Dict]:
-        """Verify API key. Returns identity dict or None."""
+        """Verify API key. Returns identity dict or None.
+        
+        PERFORMANCE: Uses indexed key_hash lookup instead of O(n) scan.
+        """
         if not api_key or not api_key.startswith(API_KEY_PREFIX):
             return None
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         c = self._conn()
         try:
-            rows = c.execute("SELECT id, user_id, name, key_hash, permissions, active "
-                             "FROM api_keys WHERE active = 1").fetchall()
-            for row in rows:
-                if secrets.compare_digest(row["key_hash"], key_hash):
-                    user = self.get_user(row["user_id"])
-                    if not user or not user.get("active"):
-                        return None
-                    now = datetime.now(timezone.utc).isoformat()
-                    c.execute("UPDATE api_keys SET last_used = ?, usage_count = usage_count + 1 "
-                              "WHERE id = ?", (now, row["id"]))
-                    c.commit()
-                    try:
-                        perms = json.loads(row["permissions"])
-                    except (json.JSONDecodeError, TypeError):
-                        perms = []
-                    all_perms = self.get_user_permissions(row["user_id"]) | set(perms)
-                    return {"key_id": row["id"], "user_id": row["user_id"], "name": row["name"],
-                            "role": user.get("role", "viewer"), "permissions": list(all_perms)}
+            # PERFORMANCE: Query by key_hash directly with index (O(1) instead of O(n))
+            row = c.execute("SELECT id, user_id, name, key_hash, permissions, active "
+                             "FROM api_keys WHERE key_hash = ? AND active = 1",
+                             (key_hash,)).fetchone()
+            if row and secrets.compare_digest(row["key_hash"], key_hash):
+                user = self.get_user(row["user_id"])
+                if not user or not user.get("active"):
+                    return None
+                now = datetime.now(timezone.utc).isoformat()
+                c.execute("UPDATE api_keys SET last_used = ?, usage_count = usage_count + 1 "
+                          "WHERE id = ?", (now, row["id"]))
+                c.commit()
+                try:
+                    perms = json.loads(row["permissions"])
+                except (json.JSONDecodeError, TypeError):
+                    perms = []
+                all_perms = self.get_user_permissions(row["user_id"]) | set(perms)
+                return {"key_id": row["id"], "user_id": row["user_id"], "name": row["name"],
+                        "role": user.get("role", "viewer"), "permissions": list(all_perms)}
             return None
         finally:
             c.close()

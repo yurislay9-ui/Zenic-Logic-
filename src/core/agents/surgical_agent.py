@@ -41,66 +41,30 @@ from dataclasses import dataclass, field
 from src.core.agents.base import BaseAgent, AgentResult
 from src.core.agents.schemas import IntentInput, IntentOutput
 from src.core.agents.prompts import AgentPrompts
+from src.core.agents.intent_shared import (
+    VALID_OPERATIONS, VALID_GOALS, VALID_LANGUAGES,
+    OP_KEYWORDS, GOAL_KEYWORDS,
+    EXT_LANG_MAP, FENCE_LANG_MAP,
+    extract_target_and_language, extract_code_block,
+    extract_entities, infer_criticality, infer_template_type,
+)
 
 logger = logging.getLogger(__name__)
 
-# ── Constantes compartidas (reutilizadas desde IntentAgent original) ──
+# ── Compact keyword maps for surgical routing (EN + ES) ──
+# Uses the shared OP_KEYWORDS/GOAL_KEYWORDS as base, with compact aliases
 
-VALID_OPERATIONS = frozenset({
-    "CREATE", "REFACTOR", "DELETE", "SEARCH",
-    "ANALYZE", "EXPLAIN", "DEBUG", "OPTIMIZE",
-})
-
-VALID_GOALS = frozenset({
-    "COMPLEXITY_REDUCTION", "MODERN_PATTERN", "BUG_FIX",
-    "FEATURE_ADD", "SECURITY_HARDEN", "PERFORMANCE", "READABILITY",
-})
-
-VALID_LANGUAGES = frozenset({
-    "python", "kotlin", "go", "javascript", "typescript",
-    "java", "rust", "c", "cpp", "ruby",
-})
-
-# ── Mapas de keywords quirúrgicos (EN + ES, ultra-compactos) ──
-
-OP_KW: Dict[str, List[str]] = {
-    "CREATE":   ["create","new","add","build","make","crear","nuevo","generar"],
-    "REFACTOR": ["refactor","restructure","clean","simplify","refactorizar","limpiar"],
-    "DELETE":   ["delete","remove","eliminate","drop","eliminar","borrar","quitar"],
-    "SEARCH":   ["search","find","where","locate","buscar","encontrar","donde"],
-    "ANALYZE":  ["analyze","review","check","inspect","audit","analizar","revisar","verificar"],
-    "EXPLAIN":  ["explain","describe","how does","why","explicar","describir","como funciona"],
-    "DEBUG":    ["debug","fix","correct","bug","error","depurar","corregir","arreglar","fallo"],
-    "OPTIMIZE": ["optimize","improve","faster","performance","optimizar","mejorar","acelerar"],
-}
-
-GOAL_KW: Dict[str, List[str]] = {
-    "BUG_FIX":           ["bug","fix","error","broken","crash","corregir","fallo","falla"],
-    "FEATURE_ADD":       ["add","new","feature","implement","agregar","nueva","implementar"],
-    "SECURITY_HARDEN":   ["security","auth","token","crypto","vulnerability","seguridad"],
-    "PERFORMANCE":       ["optimize","fast","slow","latency","optimizar","rapido","lento"],
-    "COMPLEXITY_REDUCTION":["simplify","reduce","complex","simplificar","reducir","complejo"],
-    "MODERN_PATTERN":    ["modern","update","migrate","moderno","actualizar","migrar"],
-    "READABILITY":       ["readable","clean","document","legible","limpio","documentar"],
-}
+OP_KW: Dict[str, List[str]] = OP_KEYWORDS
+GOAL_KW: Dict[str, List[str]] = GOAL_KEYWORDS
 
 CRIT_KW: Dict[str, List[str]] = {
     "critical": ["auth","login","password","token","jwt","secret","crypto","ssl","permiso"],
     "moderate": ["database","db","migration","config","base de datos","migracion"],
 }
 
-# Extension → language (compacto)
-EXT_LANG = {
-    ".py":"python",".kt":"kotlin",".go":"go",".js":"javascript",".ts":"typescript",
-    ".java":"java",".rs":"rust",".rb":"ruby",".cpp":"cpp",".c":"c",".h":"c",
-}
-
-FENCE_LANG = {
-    "python":"python","py":"python","kotlin":"kotlin","kt":"kotlin",
-    "go":"go","javascript":"javascript","js":"javascript",
-    "typescript":"typescript","ts":"typescript","java":"java",
-    "rust":"rust","rs":"rust","c":"c","cpp":"cpp","ruby":"ruby","rb":"ruby",
-}
+# Extension/language maps — now imported from intent_shared
+EXT_LANG = EXT_LANG_MAP
+FENCE_LANG = FENCE_LANG_MAP
 
 
 class SurgicalAgent(BaseAgent[IntentOutput]):

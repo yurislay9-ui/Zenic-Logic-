@@ -1,0 +1,1038 @@
+"""
+TITAN OMNISCALE X - FractalGenerator v16
+
+Generación Fractal (Top-Down) para apps avanzadas de múltiples archivos.
+
+El límite de 600 tokens por llamada a Qwen3-0.6B impide generar una
+app completa de una vez. FractalGenerator divide el trabajo en 3 fases:
+
+  Fase 1 (Estructural): La IA solo genera el árbol de directorios y
+    los nombres de archivos (main.py, models.py, auth.py, etc.).
+    Output: Estructura del proyecto como FractalSpec.
+
+  Fase 2 (Esqueletos): Usando el AST Surgeon (Nivel 5), inyecta las
+    clases y funciones vacías con sus docstrings. Cada archivo se
+    procesa individualmente, respetando el límite de tokens.
+    Output: Archivos con esqueletos de código.
+
+  Fase 3 (Relleno): El LLM toma archivo por archivo, lee el docstring
+    de cada función/clase, y rellena la lógica paso a paso. Cada
+    llamada al LLM se enfoca en UNA función o UNA clase.
+    Output: Archivos completos con lógica implementada.
+
+Integración con DAGOrchestrator:
+  - Se invoca via acción SCAFFOLD_FRACTAL en _execute_step()
+  - Usa CodeAgent + ASTSurgeon como componentes subyacentes
+  - Compatible con F5 (ValidationAgent valida cada fase)
+  - Compatible con F4 (CriticalityAgent ajusta defensividad)
+
+Restricciones de diseño:
+  - Cada llamada LLM ≤ 600 tokens (ventana de Qwen3-0.6B)
+  - Todo tiene fallback determinista
+  - Compatible con Android/Termux, 500MB RAM
+"""
+
+import os
+import ast
+import json
+import time
+import logging
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+#  DATA STRUCTURES - Especificaciones de la generación fractal
+# ============================================================
+
+@dataclass
+class FileBlueprint:
+    """Blueprint de un archivo individual en el proyecto."""
+    path: str = ""                     # Ruta relativa (ej: "src/models.py")
+    language: str = "python"           # Lenguaje del archivo
+    description: str = ""              # Descripción breve del propósito
+    classes: List[Dict[str, str]] = field(default_factory=list)
+        # [{"name": "User", "docstring": "Modelo de usuario", "bases": "Base"}]
+    functions: List[Dict[str, str]] = field(default_factory=list)
+        # [{"name": "create_user", "docstring": "Crea un usuario", "params": "data: dict"}]
+    imports: List[str] = field(default_factory=list)
+        # ["from sqlalchemy import Column, Integer, String"]
+
+
+@dataclass
+class FractalSpec:
+    """Especificación completa del proyecto a generar."""
+    project_name: str = ""
+    project_type: str = ""             # auth_system, crud_dashboard, etc.
+    language: str = "python"
+    description: str = ""
+    directories: List[str] = field(default_factory=list)
+        # ["src/", "src/models/", "src/routes/", "tests/"]
+    files: List[FileBlueprint] = field(default_factory=list)
+    config_files: Dict[str, str] = field(default_factory=dict)
+        # {"requirements.txt": "flask\nsqlalchemy", ".env": "SECRET=xxx"}
+    phase: int = 0                     # 1=structural, 2=skeletons, 3=filled
+    current_file_index: int = 0        # Archivo actual en procesamiento
+    current_item_index: int = 0        # Item actual dentro del archivo
+
+
+@dataclass
+class FractalResult:
+    """Resultado de la generación fractal."""
+    status: str = "pending"            # pending|structural|skeletons|filled|complete
+    project_name: str = ""
+    spec: Optional[FractalSpec] = None
+    files_generated: List[str] = field(default_factory=list)
+    total_files: int = 0
+    current_phase: int = 0
+    items_completed: int = 0
+    items_total: int = 0
+    error: str = ""
+
+
+# ============================================================
+#  PLANTILLAS DE PROYECTOS - Fallback determinista por tipo
+# ============================================================
+
+PROJECT_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "auth_system": {
+        "directories": ["src/", "src/models/", "src/routes/", "src/services/", "src/middleware/", "tests/"],
+        "files": [
+            {
+                "path": "src/__init__.py",
+                "language": "python",
+                "description": "Package init",
+                "classes": [],
+                "functions": [],
+                "imports": [],
+            },
+            {
+                "path": "src/models/user.py",
+                "language": "python",
+                "description": "User model with authentication fields",
+                "classes": [
+                    {"name": "User", "docstring": "User model with password hashing and JWT token generation", "bases": "Base"},
+                ],
+                "functions": [
+                    {"name": "hash_password", "docstring": "Hash a plaintext password using bcrypt", "params": "password: str"},
+                    {"name": "verify_password", "docstring": "Verify a plaintext password against a hash", "params": "password: str, hashed: str"},
+                ],
+                "imports": ["from sqlalchemy import Column, Integer, String, Boolean", "from datetime import datetime"],
+            },
+            {
+                "path": "src/routes/auth.py",
+                "language": "python",
+                "description": "Authentication routes: login, register, refresh",
+                "classes": [],
+                "functions": [
+                    {"name": "register", "docstring": "Register a new user with validated input", "params": "request"},
+                    {"name": "login", "docstring": "Authenticate user and return JWT tokens", "params": "request"},
+                    {"name": "refresh_token", "docstring": "Refresh an expired access token", "params": "request"},
+                    {"name": "logout", "docstring": "Invalidate the current refresh token", "params": "request"},
+                ],
+                "imports": ["from fastapi import APIRouter, Depends, HTTPException", "from jose import jwt"],
+            },
+            {
+                "path": "src/services/auth_service.py",
+                "language": "python",
+                "description": "Business logic for authentication",
+                "classes": [
+                    {"name": "AuthService", "docstring": "Service handling all authentication operations", "bases": ""},
+                ],
+                "functions": [
+                    {"name": "create_tokens", "docstring": "Create access and refresh JWT tokens", "params": "user_id: int"},
+                    {"name": "validate_token", "docstring": "Validate a JWT token and return payload", "params": "token: str"},
+                    {"name": "revoke_token", "docstring": "Add token to revocation list", "params": "token: str"},
+                ],
+                "imports": ["from datetime import timedelta", "from jose import jwt, JWTError"],
+            },
+            {
+                "path": "src/middleware/auth_middleware.py",
+                "language": "python",
+                "description": "Authentication middleware for request validation",
+                "classes": [
+                    {"name": "AuthMiddleware", "docstring": "Middleware that validates JWT tokens on protected routes", "bases": ""},
+                ],
+                "functions": [],
+                "imports": ["from starlette.middleware.base import BaseHTTPMiddleware"],
+            },
+            {
+                "path": "src/main.py",
+                "language": "python",
+                "description": "Application entry point with FastAPI setup",
+                "classes": [],
+                "functions": [
+                    {"name": "create_app", "docstring": "Create and configure the FastAPI application", "params": ""},
+                ],
+                "imports": ["from fastapi import FastAPI", "from src.routes.auth import router as auth_router"],
+            },
+            {
+                "path": "tests/test_auth.py",
+                "language": "python",
+                "description": "Authentication tests",
+                "classes": [
+                    {"name": "TestAuth", "docstring": "Test suite for authentication flow", "bases": ""},
+                ],
+                "functions": [
+                    {"name": "test_register", "docstring": "Test user registration with valid data", "params": "client"},
+                    {"name": "test_login", "docstring": "Test user login with correct credentials", "params": "client"},
+                    {"name": "test_invalid_token", "docstring": "Test that invalid tokens are rejected", "params": "client"},
+                ],
+                "imports": ["import pytest", "from fastapi.testclient import TestClient"],
+            },
+        ],
+        "config_files": {
+            "requirements.txt": "fastapi\nuvicorn\nsqlalchemy\npython-jose[cryptography]\npasslib[bcrypt]\npython-multipart\npytest\nhttpx",
+            ".env.example": "SECRET_KEY=change-me-in-production\nALGORITHM=HS256\nACCESS_TOKEN_EXPIRE_MINUTES=30",
+            "config.py": "import os\n\nSECRET_KEY = os.getenv('SECRET_KEY', 'dev-key-change-in-prod')\nALGORITHM = os.getenv('ALGORITHM', 'HS256')\nACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '30'))",
+        },
+    },
+    "crud_dashboard": {
+        "directories": ["src/", "src/models/", "src/routes/", "src/services/", "src/templates/", "static/", "tests/"],
+        "files": [
+            {
+                "path": "src/__init__.py",
+                "language": "python",
+                "description": "Package init",
+                "classes": [],
+                "functions": [],
+                "imports": [],
+            },
+            {
+                "path": "src/models/entities.py",
+                "language": "python",
+                "description": "Database models for the dashboard entities",
+                "classes": [
+                    {"name": "Item", "docstring": "Dashboard item model with CRUD fields", "bases": "Base"},
+                ],
+                "functions": [],
+                "imports": ["from sqlalchemy import Column, Integer, String, Float, DateTime", "from datetime import datetime"],
+            },
+            {
+                "path": "src/routes/dashboard.py",
+                "language": "python",
+                "description": "Dashboard CRUD routes",
+                "classes": [],
+                "functions": [
+                    {"name": "list_items", "docstring": "List all items with optional filtering and pagination", "params": "request"},
+                    {"name": "create_item", "docstring": "Create a new dashboard item", "params": "request"},
+                    {"name": "update_item", "docstring": "Update an existing dashboard item", "params": "item_id: int, request"},
+                    {"name": "delete_item", "docstring": "Delete a dashboard item by ID", "params": "item_id: int"},
+                ],
+                "imports": ["from fastapi import APIRouter, HTTPException"],
+            },
+            {
+                "path": "src/services/crud_service.py",
+                "language": "python",
+                "description": "CRUD business logic service",
+                "classes": [
+                    {"name": "CRUDService", "docstring": "Generic CRUD service with validation and error handling", "bases": ""},
+                ],
+                "functions": [],
+                "imports": ["from sqlalchemy.orm import Session"],
+            },
+            {
+                "path": "src/main.py",
+                "language": "python",
+                "description": "Dashboard application entry point",
+                "classes": [],
+                "functions": [
+                    {"name": "create_app", "docstring": "Create and configure the dashboard application", "params": ""},
+                ],
+                "imports": ["from fastapi import FastAPI", "from src.routes.dashboard import router"],
+            },
+            {
+                "path": "tests/test_crud.py",
+                "language": "python",
+                "description": "CRUD operation tests",
+                "classes": [
+                    {"name": "TestCRUD", "docstring": "Test suite for CRUD operations", "bases": ""},
+                ],
+                "functions": [
+                    {"name": "test_create", "docstring": "Test item creation", "params": "client"},
+                    {"name": "test_list", "docstring": "Test item listing", "params": "client"},
+                    {"name": "test_update", "docstring": "Test item update", "params": "client"},
+                    {"name": "test_delete", "docstring": "Test item deletion", "params": "client"},
+                ],
+                "imports": ["import pytest"],
+            },
+        ],
+        "config_files": {
+            "requirements.txt": "fastapi\nuvicorn\nsqlalchemy\njinja2\npytest\nhttpx",
+            ".env.example": "DATABASE_URL=sqlite:///./dashboard.db\nDEBUG=True",
+        },
+    },
+    "inventory": {
+        "directories": ["src/", "src/models/", "src/routes/", "src/services/", "tests/"],
+        "files": [
+            {
+                "path": "src/__init__.py",
+                "language": "python",
+                "description": "Package init",
+                "classes": [],
+                "functions": [],
+                "imports": [],
+            },
+            {
+                "path": "src/models/product.py",
+                "language": "python",
+                "description": "Product and inventory models",
+                "classes": [
+                    {"name": "Product", "docstring": "Product model with pricing and category", "bases": "Base"},
+                    {"name": "InventoryEntry", "docstring": "Inventory stock entry with quantity tracking", "bases": "Base"},
+                ],
+                "functions": [],
+                "imports": ["from sqlalchemy import Column, Integer, String, Float, ForeignKey"],
+            },
+            {
+                "path": "src/routes/inventory.py",
+                "language": "python",
+                "description": "Inventory management routes",
+                "classes": [],
+                "functions": [
+                    {"name": "add_product", "docstring": "Add a new product to inventory", "params": "request"},
+                    {"name": "update_stock", "docstring": "Update stock quantity for a product", "params": "product_id: int, request"},
+                    {"name": "check_stock", "docstring": "Check current stock level for a product", "params": "product_id: int"},
+                    {"name": "low_stock_alert", "docstring": "List products below minimum stock threshold", "params": "threshold: int = 10"},
+                ],
+                "imports": ["from fastapi import APIRouter, HTTPException"],
+            },
+            {
+                "path": "src/main.py",
+                "language": "python",
+                "description": "Inventory application entry point",
+                "classes": [],
+                "functions": [
+                    {"name": "create_app", "docstring": "Create and configure the inventory application", "params": ""},
+                ],
+                "imports": ["from fastapi import FastAPI", "from src.routes.inventory import router"],
+            },
+        ],
+        "config_files": {
+            "requirements.txt": "fastapi\nuvicorn\nsqlalchemy\npytest\nhttpx",
+        },
+    },
+}
+
+# Default template for unknown types
+DEFAULT_TEMPLATE = {
+    "directories": ["src/", "tests/"],
+    "files": [
+        {
+            "path": "src/__init__.py",
+            "language": "python",
+            "description": "Package init",
+            "classes": [],
+            "functions": [],
+            "imports": [],
+        },
+        {
+            "path": "src/main.py",
+            "language": "python",
+            "description": "Application entry point",
+            "classes": [],
+            "functions": [
+                {"name": "main", "docstring": "Main entry point for the application", "params": ""},
+            ],
+            "imports": [],
+        },
+        {
+            "path": "tests/test_main.py",
+            "language": "python",
+            "description": "Basic test file",
+            "classes": [],
+            "functions": [
+                {"name": "test_placeholder", "docstring": "Placeholder test", "params": ""},
+            ],
+            "imports": ["import pytest"],
+        },
+    ],
+    "config_files": {
+        "requirements.txt": "fastapi\nuvicorn\npytest\nhttpx",
+    },
+}
+
+
+# ============================================================
+#  FractalGenerator - Motor de generación fractal
+# ============================================================
+
+class FractalGenerator:
+    """
+    Generador Fractal (Top-Down) para proyectos de múltiples archivos.
+
+    Divide la generación de una app completa en 3 fases, respetando
+    el límite de 600 tokens por llamada al LLM:
+
+    Fase 1 (Estructural): Genera el árbol de directorios + nombres
+      de archivos + descripciones. Output: FractalSpec completo.
+
+    Fase 2 (Esqueletos): Para cada archivo en el FractalSpec, inyecta
+      imports, clases vacías y funciones vacías con docstrings usando
+      AST Surgeon. Output: Archivos con esqueletos compilables.
+
+    Fase 3 (Relleno): Para cada función/clase vacía, el LLM lee el
+      docstring y genera la lógica. Se procesa item por item.
+      Output: Archivos completos con lógica implementada.
+    """
+
+    def __init__(self, code_agent=None, ast_surgeon=None,
+                 agent_runner=None, mini_ai=None) -> None:
+        self._code_agent = code_agent
+        self._ast_surgeon = ast_surgeon
+        self._agent_runner = agent_runner
+        self._mini_ai = mini_ai
+
+    # ============================================================
+    #  FASE 1: ESTRUCTURAL - Generar árbol de directorios y archivos
+    # ============================================================
+
+    def generate_structure(self, description: str, project_type: str = "",
+                           project_name: str = "",
+                           language: str = "python") -> FractalSpec:
+        """
+        Fase 1: Genera la estructura del proyecto.
+
+        Intenta usar LLM para generar una estructura personalizada.
+        Si el LLM no está disponible, usa templates predefinidos.
+
+        Returns: FractalSpec con directorios, archivos y blueprints.
+        """
+        spec = FractalSpec(
+            project_name=project_name or "generated_project",
+            project_type=project_type,
+            language=language,
+            description=description,
+            phase=1,
+        )
+
+        # Intentar LLM para estructura personalizada
+        if self._agent_runner and self._mini_ai and self._mini_ai.is_loaded:
+            try:
+                llm_spec = self._generate_structure_llm(
+                    description, project_type, project_name, language
+                )
+                if llm_spec:
+                    return llm_spec
+            except Exception as e:
+                logger.debug(f"FractalGenerator Fase 1 LLM failed: {e}")
+
+        # Fallback: usar template predefinido
+        template = PROJECT_TEMPLATES.get(project_type, DEFAULT_TEMPLATE)
+        spec.directories = template["directories"]
+        spec.files = [
+            FileBlueprint(**f) for f in template["files"]
+        ]
+        spec.config_files = template.get("config_files", {})
+
+        logger.info(
+            f"FractalGenerator Fase 1 (template): {len(spec.files)} files, "
+            f"{len(spec.directories)} directories for '{project_type}'"
+        )
+        return spec
+
+    def _generate_structure_llm(self, description: str, project_type: str,
+                                 project_name: str,
+                                 language: str) -> Optional[FractalSpec]:
+        """Intenta generar estructura via LLM."""
+        system = (
+            "You are a software architect. Given a project description, "
+            "generate a JSON structure with directories and files. "
+            "Each file needs: path, language, description, classes (name, docstring, bases), "
+            "functions (name, docstring, params), imports. "
+            "Reply ONLY with valid JSON, no markdown."
+        )
+        user = (
+            f"Project: {project_name}\n"
+            f"Type: {project_type}\n"
+            f"Language: {language}\n"
+            f"Description: {description[:300]}\n"
+            f"Generate the project structure as JSON with keys: "
+            f"directories, files, config_files"
+        )
+
+        response = self._mini_ai.generate(f"{system}\n\n{user}", max_tokens=500)
+        if response:
+            try:
+                # Try to parse JSON from response
+                text = response.strip()
+                # Remove markdown code blocks if present
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+                data = json.loads(text)
+
+                spec = FractalSpec(
+                    project_name=project_name,
+                    project_type=project_type,
+                    language=language,
+                    description=description,
+                    phase=1,
+                )
+                spec.directories = data.get("directories", [])
+                spec.files = [
+                    FileBlueprint(**f) for f in data.get("files", [])
+                ]
+                spec.config_files = data.get("config_files", {})
+
+                logger.info(
+                    f"FractalGenerator Fase 1 (LLM): {len(spec.files)} files, "
+                    f"{len(spec.directories)} directories"
+                )
+                return spec
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                logger.debug(f"FractalGenerator LLM JSON parse failed: {e}")
+
+        return None
+
+    # ============================================================
+    #  FASE 2: ESQUELETOS - Inyectar clases y funciones vacías
+    # ============================================================
+
+    def generate_skeletons(self, spec: FractalSpec) -> FractalSpec:
+        """
+        Fase 2: Genera esqueletos de código para cada archivo.
+
+        Para cada FileBlueprint en el spec:
+        1. Genera los imports
+        2. Genera las clases vacías con docstrings
+        3. Genera las funciones vacías con docstrings
+        4. Valida que el código compila (AST parse para Python)
+
+        Returns: FractalSpec actualizado con contenido en cada FileBlueprint.
+        """
+        spec.phase = 2
+        total_items = 0
+        completed_items = 0
+
+        for file_bp in spec.files:
+            if file_bp.language == "python":
+                skeleton_code = self._generate_python_skeleton(file_bp)
+            elif file_bp.language in ("javascript", "typescript"):
+                skeleton_code = self._generate_js_skeleton(file_bp)
+            elif file_bp.language == "kotlin":
+                skeleton_code = self._generate_kotlin_skeleton(file_bp)
+            else:
+                skeleton_code = self._generate_generic_skeleton(file_bp)
+
+            # Para archivos __init__.py vacíos
+            if not skeleton_code.strip() and file_bp.path.endswith("__init__.py"):
+                skeleton_code = ""
+
+            # Validar sintaxis Python via AST
+            if file_bp.language == "python" and skeleton_code.strip():
+                try:
+                    ast.parse(skeleton_code)
+                except SyntaxError as e:
+                    logger.warning(
+                        f"FractalGenerator Fase 2: Syntax error in {file_bp.path}: {e}. "
+                        f"Attempting fix..."
+                    )
+                    skeleton_code = self._fix_python_skeleton(skeleton_code)
+
+            # Almacenar contenido generado en el FileBlueprint
+            # Usamos un campo temporal para no modificar la estructura original
+            if not hasattr(file_bp, '_generated_content'):
+                file_bp._generated_content = ""
+            file_bp._generated_content = skeleton_code
+
+            total_items += len(file_bp.classes) + len(file_bp.functions)
+            completed_items += len(file_bp.classes) + len(file_bp.functions)
+
+        logger.info(
+            f"FractalGenerator Fase 2: Generated skeletons for "
+            f"{len(spec.files)} files, {completed_items}/{total_items} items"
+        )
+        return spec
+
+    def _generate_python_skeleton(self, bp: FileBlueprint) -> str:
+        """Genera esqueleto Python con imports, clases y funciones vacías."""
+        lines = []
+
+        # Docstring del archivo
+        if bp.description:
+            lines.append(f'"""{bp.description}"""')
+            lines.append("")
+
+        # Imports
+        for imp in bp.imports:
+            lines.append(imp)
+        if bp.imports:
+            lines.append("")
+
+        # Clases
+        for cls in bp.classes:
+            name = cls.get("name", "Unnamed")
+            docstring = cls.get("docstring", "")
+            bases = cls.get("bases", "")
+
+            if bases and bases.strip():
+                lines.append(f"class {name}({bases}):")
+            else:
+                lines.append(f"class {name}:")
+
+            if docstring:
+                lines.append(f'    """{docstring}"""')
+            else:
+                lines.append("    pass")
+            lines.append("")
+
+        # Funciones
+        for func in bp.functions:
+            name = func.get("name", "unnamed")
+            docstring = func.get("docstring", "")
+            params = func.get("params", "")
+
+            if params:
+                lines.append(f"def {name}({params}):")
+            else:
+                lines.append(f"def {name}():")
+
+            if docstring:
+                lines.append(f'    """{docstring}"""')
+            lines.append("    pass  # TODO: Implement")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _generate_js_skeleton(self, bp: FileBlueprint) -> str:
+        """Genera esqueleto JavaScript/TypeScript."""
+        lines = []
+
+        if bp.description:
+            lines.append(f"// {bp.description}")
+            lines.append("")
+
+        # Imports
+        for imp in bp.imports:
+            lines.append(imp)
+        if bp.imports:
+            lines.append("")
+
+        # Classes
+        for cls in bp.classes:
+            name = cls.get("name", "Unnamed")
+            docstring = cls.get("docstring", "")
+            lines.append(f"class {name} {{")
+            if docstring:
+                lines.append(f"  // {docstring}")
+            lines.append("  constructor() {")
+            lines.append("    // TODO: Implement")
+            lines.append("  }")
+            lines.append("}")
+            lines.append("")
+
+        # Functions
+        for func in bp.functions:
+            name = func.get("name", "unnamed")
+            docstring = func.get("docstring", "")
+            params = func.get("params", "")
+            lines.append(f"function {name}({params}) {{")
+            if docstring:
+                lines.append(f"  // {docstring}")
+            lines.append("  // TODO: Implement")
+            lines.append("}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _generate_kotlin_skeleton(self, bp: FileBlueprint) -> str:
+        """Genera esqueleto Kotlin."""
+        lines = []
+
+        if bp.description:
+            lines.append(f"// {bp.description}")
+            lines.append("")
+
+        # Imports
+        for imp in bp.imports:
+            lines.append(imp)
+        if bp.imports:
+            lines.append("")
+
+        # Classes
+        for cls in bp.classes:
+            name = cls.get("name", "Unnamed")
+            docstring = cls.get("docstring", "")
+            lines.append(f"/** {docstring} */")
+            lines.append(f"class {name} {{")
+            lines.append("    // TODO: Implement")
+            lines.append("}}")
+            lines.append("")
+
+        # Functions
+        for func in bp.functions:
+            name = func.get("name", "unnamed")
+            docstring = func.get("docstring", "")
+            params = func.get("params", "")
+            lines.append(f"/** {docstring} */")
+            lines.append(f"fun {name}({params}) {{")
+            lines.append("    // TODO: Implement")
+            lines.append("}}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _generate_generic_skeleton(self, bp: FileBlueprint) -> str:
+        """Genera esqueleto genérico para lenguajes no específicos."""
+        lines = []
+        if bp.description:
+            lines.append(f"# {bp.description}")
+        lines.append("# TODO: Implement")
+        return "\n".join(lines)
+
+    def _fix_python_skeleton(self, code: str) -> str:
+        """Intenta arreglar errores de sintaxis en esqueletos Python."""
+        # Estrategia simple: si hay error, agregar pass donde falte
+        lines = code.split("\n")
+        fixed_lines = []
+        for i, line in enumerate(lines):
+            fixed_lines.append(line)
+            stripped = line.rstrip()
+            # Si la línea termina en : y la siguiente no está indentada
+            if stripped.endswith(":") and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if not next_line.strip() or not next_line[0].isspace():
+                    # Verificar que no es la última línea o que la siguiente es vacía
+                    if not next_line.strip():
+                        fixed_lines.append("    pass")
+        return "\n".join(fixed_lines)
+
+    # ============================================================
+    #  FASE 3: RELLENO - Llenar lógica item por item
+    # ============================================================
+
+    def fill_logic(self, spec: FractalSpec,
+                    output_dir: str = "") -> FractalResult:
+        """
+        Fase 3: Rellena la lógica de cada archivo item por item.
+
+        Para cada función/clase con 'pass  # TODO: Implement':
+        1. Lee el docstring para entender qué implementar
+        2. Genera la lógica via LLM o fallback
+        3. Reemplaza el 'pass' con la implementación
+        4. Valida que el código sigue compilando
+
+        Returns: FractalResult con el resultado de la generación.
+        """
+        spec.phase = 3
+        result = FractalResult(
+            status="filled",
+            project_name=spec.project_name,
+            spec=spec,
+            total_files=len(spec.files),
+            current_phase=3,
+        )
+
+        for file_bp in spec.files:
+            content = getattr(file_bp, '_generated_content', '')
+            if not content:
+                continue
+
+            # Rellenar lógica para funciones con 'pass  # TODO'
+            if file_bp.language == "python" and "pass  # TODO: Implement" in content:
+                content = self._fill_python_logic(content, file_bp, spec)
+
+            # Guardar archivo si se especificó output_dir
+            if output_dir and content:
+                file_path = os.path.join(output_dir, file_bp.path)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                result.files_generated.append(file_bp.path)
+
+            # Actualizar contenido
+            file_bp._generated_content = content
+            result.items_completed += len(file_bp.classes) + len(file_bp.functions)
+
+        result.items_total = result.items_completed
+        result.current_phase = 3
+
+        # Escribir config files
+        if output_dir:
+            for fname, fcontent in spec.config_files.items():
+                fpath = os.path.join(output_dir, fname)
+                os.makedirs(os.path.dirname(fpath) if os.path.dirname(fpath) else output_dir, exist_ok=True)
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    f.write(fcontent)
+                result.files_generated.append(fname)
+
+            # Crear directorios
+            for d in spec.directories:
+                os.makedirs(os.path.join(output_dir, d), exist_ok=True)
+
+        result.status = "complete"
+        logger.info(
+            f"FractalGenerator Fase 3: {len(result.files_generated)} files generated, "
+            f"{result.items_completed} items completed"
+        )
+        return result
+
+    def _fill_python_logic(self, content: str, bp: FileBlueprint,
+                            spec: FractalSpec) -> str:
+        """Rellena la lógica de funciones Python una por una."""
+        # Intentar LLM para rellenar
+        if self._mini_ai and self._mini_ai.is_loaded:
+            try:
+                filled = self._fill_python_logic_llm(content, bp, spec)
+                if filled:
+                    return filled
+            except Exception as e:
+                logger.debug(f"FractalGenerator Fase 3 LLM failed: {e}")
+
+        # Fallback: generar lógica determinista basada en docstrings
+        return self._fill_python_logic_fallback(content, bp, spec)
+
+    def _fill_python_logic_llm(self, content: str, bp: FileBlueprint,
+                                spec: FractalSpec) -> Optional[str]:
+        """Intenta rellenar lógica via LLM item por item."""
+        lines = content.split("\n")
+        result_lines = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            result_lines.append(line)
+
+            # Detectar funciones con 'pass  # TODO: Implement'
+            if "pass  # TODO: Implement" in line:
+                # Encontrar la función y su docstring
+                func_start = i - 1
+                while func_start >= 0 and not lines[func_start].strip().startswith("def "):
+                    func_start -= 1
+
+                if func_start >= 0:
+                    # Extraer docstring
+                    docstring = ""
+                    docstring_line = func_start + 1
+                    if docstring_line < i and '"""' in lines[docstring_line]:
+                        ds = lines[docstring_line].strip()
+                        if ds.startswith('"""') and ds.endswith('"""') and len(ds) > 6:
+                            docstring = ds[3:-3].strip()
+                        elif ds.startswith('"""'):
+                            # Multi-line docstring
+                            docstring = ds[3:]
+                            docstring_line += 1
+                            while docstring_line < i:
+                                if '"""' in lines[docstring_line]:
+                                    break
+                                docstring += " " + lines[docstring_line].strip()
+                                docstring_line += 1
+
+                    # Extraer signature
+                    func_signature = lines[func_start].strip()
+
+                    # Generar implementación via LLM
+                    system = (
+                        "You are a Python developer. Implement the function. "
+                        "Reply ONLY with the function body (indented code), no signature. "
+                        "Max 10 lines."
+                    )
+                    user = (
+                        f"Function: {func_signature}\n"
+                        f"Docstring: {docstring}\n"
+                        f"Project: {spec.project_name} ({spec.project_type})\n"
+                        f"File: {bp.path}\n"
+                        f"Implement the function body:"
+                    )
+
+                    response = self._mini_ai.generate(
+                        f"{system}\n\n{user}", max_tokens=150
+                    )
+
+                    if response:
+                        # Reemplazar 'pass  # TODO' con la implementación
+                        indent = "    "
+                        impl_lines = response.strip().split("\n")
+                        # Filtrar líneas vacías y agregar indentación
+                        clean_impl = []
+                        for il in impl_lines:
+                            il_stripped = il.strip()
+                            if il_stripped and not il_stripped.startswith("def "):
+                                clean_impl.append(f"{indent}{il_stripped}")
+
+                        if clean_impl:
+                            result_lines.pop()  # Remove the 'pass # TODO' line
+                            result_lines.extend(clean_impl)
+                            i += 1
+                            continue
+
+            i += 1
+
+        return "\n".join(result_lines)
+
+    def _fill_python_logic_fallback(self, content: str, bp: FileBlueprint,
+                                     spec: FractalSpec) -> str:
+        """Fallback determinista: genera lógica básica basada en patrones."""
+        lines = content.split("\n")
+        result_lines = []
+
+        for line in lines:
+            if "pass  # TODO: Implement" in line:
+                # Determinar qué tipo de función es por el contexto
+                indent = line[:len(line) - len(line.lstrip())]
+
+                # Buscar la función más cercana hacia arriba
+                func_idx = len(result_lines) - 1
+                while func_idx >= 0:
+                    if result_lines[func_idx].strip().startswith("def "):
+                        break
+                    func_idx -= 1
+
+                func_line = result_lines[func_idx] if func_idx >= 0 else ""
+                func_name = func_line.strip()
+
+                # Generar implementación basada en patrones comunes
+                impl = self._generate_pattern_implementation(
+                    func_name, bp, spec, indent
+                )
+                result_lines.extend(impl)
+            else:
+                result_lines.append(line)
+
+        return "\n".join(result_lines)
+
+    def _generate_pattern_implementation(self, func_signature: str,
+                                           bp: FileBlueprint,
+                                           spec: FractalSpec,
+                                           indent: str) -> List[str]:
+        """Genera implementación basada en patrones comunes de nombres."""
+        name = func_signature.lower()
+        impl_lines = []
+
+        # Patrones comunes de implementación
+        if "create" in name or "add" in name or "register" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Add validation",
+                f"{indent}    # TODO: Save to database",
+                f"{indent}    return {{'status': 'created'}}",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "get" in name or "list" in name or "find" in name or "check" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Query database",
+                f"{indent}    return []",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "update" in name or "modify" in name or "refresh" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Validate input",
+                f"{indent}    # TODO: Update database",
+                f"{indent}    return {{'status': 'updated'}}",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "delete" in name or "remove" in name or "revoke" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Verify existence",
+                f"{indent}    # TODO: Delete from database",
+                f"{indent}    return {{'status': 'deleted'}}",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "validate" in name or "verify" in name or "authenticate" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Implement validation logic",
+                f"{indent}    return True",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "hash" in name:
+            impl_lines = [
+                f"{indent}import hashlib",
+                f"{indent}return hashlib.sha256(password.encode()).hexdigest()",
+            ]
+        elif "login" in name:
+            impl_lines = [
+                f"{indent}try:",
+                f"{indent}    # TODO: Verify credentials",
+                f"{indent}    # TODO: Generate tokens",
+                f"{indent}    return {{'access_token': '', 'token_type': 'bearer'}}",
+                f"{indent}except Exception as e:",
+                f"{indent}    raise ValueError(str(e))",
+            ]
+        elif "main" in name or "create_app" in name:
+            impl_lines = [
+                f"{indent}app = FastAPI(title='{spec.project_name}')",
+                f"{indent}return app",
+            ]
+        elif "test_" in name:
+            impl_lines = [
+                f"{indent}# TODO: Implement test",
+                f"{indent}assert True",
+            ]
+        else:
+            impl_lines = [
+                f"{indent}# TODO: Implement",
+                f"{indent}raise NotImplementedError('Not yet implemented')",
+            ]
+
+        return impl_lines
+
+    # ============================================================
+    #  PIPELINE COMPLETO - Ejecutar las 3 fases secuencialmente
+    # ============================================================
+
+    def generate_project(self, description: str,
+                          project_type: str = "",
+                          project_name: str = "",
+                          language: str = "python",
+                          output_dir: str = "") -> FractalResult:
+        """
+        Ejecuta las 3 fases de generación fractal secuencialmente.
+
+        Fase 1 → Fase 2 → Fase 3 → Resultado final.
+
+        Este es el método principal llamado desde el DAGOrchestrator
+        cuando la acción es SCAFFOLD_FRACTAL.
+        """
+        start_time = time.time()
+
+        # Fase 1: Estructural
+        spec = self.generate_structure(
+            description, project_type, project_name, language
+        )
+
+        # Fase 2: Esqueletos
+        spec = self.generate_skeletons(spec)
+
+        # Fase 3: Relleno
+        result = self.fill_logic(spec, output_dir)
+
+        elapsed = time.time() - start_time
+        logger.info(
+            f"FractalGenerator: Project '{project_name}' generated in "
+            f"{elapsed:.2f}s - {len(result.files_generated)} files, "
+            f"phase={result.current_phase}"
+        )
+        return result
+
+    # ============================================================
+    #  UTILIDADES
+    # ============================================================
+
+    def get_template_types(self) -> List[str]:
+        """Retorna los tipos de template disponibles."""
+        return list(PROJECT_TEMPLATES.keys())
+
+    def get_spec_summary(self, spec: FractalSpec) -> Dict[str, Any]:
+        """Retorna un resumen del FractalSpec para logging/monitoring."""
+        return {
+            "project_name": spec.project_name,
+            "project_type": spec.project_type,
+            "language": spec.language,
+            "directories": len(spec.directories),
+            "files": len(spec.files),
+            "classes": sum(len(f.classes) for f in spec.files),
+            "functions": sum(len(f.functions) for f in spec.files),
+            "config_files": len(spec.config_files),
+            "phase": spec.phase,
+        }

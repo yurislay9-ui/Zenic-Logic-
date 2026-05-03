@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Contratos de Datos v13 (Facade Module)
+TITAN OMNISCALE X - Contratos de Datos v16 (Facade Module)
 
 This module re-exports all contracts from their dedicated sub-modules
 for backward compatibility. The original monolith has been decomposed into:
@@ -20,6 +20,9 @@ from .types import (
     OperationType, GoalType, CriticalityLevel, RoutePath,
     IntentPayload, RoutingPayload, PlanStep, ExecutionPlan,
     SandboxResult, MerkleNode, ChatMessage, ChatRequest,
+    criticality_to_int, criticality_to_path, criticality_to_str,
+    CRITICALITY_INT_TO_STR, CRITICALITY_INT_TO_PATH,
+    CRITICALITY_STR_TO_INT, CRITICALITY_PATH_TO_INT,
 )
 from .mcts import MCTSNode, MCTSPlanner
 from .constraint_solver import Constraint, ConstraintSolver
@@ -33,6 +36,9 @@ __all__ = [
     "OperationType", "GoalType", "CriticalityLevel", "RoutePath",
     "IntentPayload", "RoutingPayload", "PlanStep", "ExecutionPlan",
     "SandboxResult", "MerkleNode", "ChatMessage", "ChatRequest",
+    "criticality_to_int", "criticality_to_path", "criticality_to_str",
+    "CRITICALITY_INT_TO_STR", "CRITICALITY_INT_TO_PATH",
+    "CRITICALITY_STR_TO_INT", "CRITICALITY_PATH_TO_INT",
     "MCTSNode", "MCTSPlanner",
     "Constraint", "ConstraintSolver",
     "Z3Solver", "HAS_Z3",

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Server Package
+TITAN OMNISCALE X v16 - Server Package
 
 Servidor HTTP OpenAI-compatible compartido entre Kivy y Termux.
 Elimina la duplicacion de ~300 lineas entre main.py y main_headless.py.

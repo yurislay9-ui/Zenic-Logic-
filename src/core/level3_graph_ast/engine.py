@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - Graph AST Engine v13 (ast nativo + regex)
+TITAN OMNISCALE X - Graph AST Engine v16 (ast nativo + regex)
 
 Motor de AST usando el modulo nativo ast de Python para codigo Python,
 y regex para otros lenguajes. Almacena nodos en SQLite con conexiones.
 
-v13 FIX: Usa connection pool de db_initializer en vez de abrir
+v16 FIX: Usa connection pool de db_initializer en vez de abrir
 conexiones nuevas por cada operacion. Batch inserts para scan_project.
 
 Sin dependencias externas. Compatible con Android.

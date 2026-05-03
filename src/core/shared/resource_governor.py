@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Resource Governor v1.0 (Termux/proot-distro)
+TITAN OMNISCALE X - Resource Governor v16 (Termux/proot-distro)
 
 Monitor y limitador de recursos para que el engine no chupe
 todos los recursos del telefono.
@@ -10,6 +10,12 @@ Implementa:
 - Thermal protection: reduce agresividad del solver si la CPU esta caliente
 - Adaptive budgets: ajusta MCTS simulaciones y timeouts segun carga del sistema
 - Process nice: baja prioridad del proceso para que el telefono siga usable
+- Model swap: notifica al ModelManager cuando hay presión de RAM
+
+CAMBIO TECNOLÓGICO v16 - Integración con ModelManager:
+- get_model_ram_status(): informa al ModelManager del estado de RAM
+- should_unload_models(): recomienda descargar modelos si RAM crítica
+- set_model_manager(): conecta con el gestor de modelos híbrido
 
 Compatible con Termux + proot-distro (Debian ARM).
 Sin dependencias externas. Usa solo stdlib.
@@ -21,6 +27,7 @@ import time
 import threading
 import logging
 import resource
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +65,7 @@ class ResourceGovernor:
         self._thermal_throttle = 1.0  # 1.0 = normal, 0.5 = reducir a la mitad
         self._gc_count = 0
         self._request_count = 0
+        self._model_manager = None  # Ref to ModelManager for model swap
 
         # Stats
         self.stats = {
@@ -292,6 +300,50 @@ class ResourceGovernor:
     def is_ram_critical(self):
         """Retorna True si la RAM esta al limite y hay que rechazar requests."""
         return self._ram_usage_mb > self.ram_limit_mb * 0.95
+
+    def set_model_manager(self, model_manager):
+        """
+        Conecta el ResourceGovernor con el ModelManager para model swap.
+
+        Cuando el governor detecta presión de RAM, puede recomendar
+        al ModelManager que descargue modelos para liberar memoria.
+        """
+        self._model_manager = model_manager
+        logger.info("ResourceGovernor: Connected to ModelManager for model swap")
+
+    def should_unload_models(self) -> str:
+        """
+        Recomienda al ModelManager descargar modelos según presión de RAM.
+
+        Returns:
+            "none" - No se necesita descargar nada
+            "semantic" - Descargar SemanticEngine (~150MB)
+            "ai" - Descargar MiniAIEngine (~378MB)
+            "all" - Descargar ambos (~530MB)
+        """
+        if self._ram_usage_mb > self.ram_limit_mb * 0.9:
+            return "all"
+        if self._ram_usage_mb > self.ram_limit_mb * 0.75:
+            return "ai"
+        if self._ram_usage_mb > self.ram_limit_mb * 0.6:
+            return "semantic"
+        return "none"
+
+    def get_model_ram_status(self) -> Dict:
+        """
+        Retorna estado de RAM para que el ModelManager tome decisiones.
+
+        El ModelManager consulta esto antes de cargar un modelo para
+        decidir si hay presupuesto suficiente o si debe descargar otro.
+        """
+        return {
+            "ram_usage_mb": round(self._ram_usage_mb, 1),
+            "ram_limit_mb": self.ram_limit_mb,
+            "ram_available_mb": round(self.ram_limit_mb - self._ram_usage_mb, 1),
+            "ram_usage_pct": round(self._ram_usage_mb / self.ram_limit_mb * 100, 1),
+            "thermal_throttle": round(self._thermal_throttle, 2),
+            "recommendation": self.should_unload_models(),
+        }
 
     def get_status(self):
         """Retorna el estado actual del governor para el endpoint /health."""

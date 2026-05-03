@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Data Types & Payloads v13
+TITAN OMNISCALE X - Data Types & Payloads v16
 
 Operation types, goal types, criticality levels, route paths,
 and data payloads for communication between pipeline levels.
@@ -37,6 +37,52 @@ class CriticalityLevel:
     FAST_STANDARD = 1
     DEEP_MODERATE = 2
     SURGICAL_CRITICAL = 3
+
+
+# ============================================================
+#  CRITICALITY CONVERSION UTILS (single source of truth)
+#  Resolves the 4-format criticality inconsistency:
+#    int (1/2/3), str ("standard"/"moderate"/"critical"),
+#    str ("low_crit"/"standard"/"high_crit"), CriticalityLevel constants
+# ============================================================
+
+CRITICALITY_INT_TO_STR = {
+    1: "standard",
+    2: "moderate",
+    3: "critical",
+}
+
+CRITICALITY_STR_TO_INT = {v: k for k, v in CRITICALITY_INT_TO_STR.items()}
+
+CRITICALITY_INT_TO_PATH = {
+    1: "low_crit",
+    2: "standard",
+    3: "high_crit",
+}
+
+CRITICALITY_PATH_TO_INT = {v: k for k, v in CRITICALITY_INT_TO_PATH.items()}
+
+
+def criticality_to_int(value) -> int:
+    """Convert any criticality representation to int (1/2/3)."""
+    if isinstance(value, int):
+        return max(1, min(3, value))
+    if isinstance(value, str):
+        if value in CRITICALITY_STR_TO_INT:
+            return CRITICALITY_STR_TO_INT[value]
+        if value in CRITICALITY_PATH_TO_INT:
+            return CRITICALITY_PATH_TO_INT[value]
+    return 2  # Default to DEEP_MODERATE
+
+
+def criticality_to_path(value) -> str:
+    """Convert any criticality representation to DAG path string."""
+    return CRITICALITY_INT_TO_PATH.get(criticality_to_int(value), "standard")
+
+
+def criticality_to_str(value) -> str:
+    """Convert any criticality representation to human-readable string."""
+    return CRITICALITY_INT_TO_STR.get(criticality_to_int(value), "moderate")
 
 
 class RoutePath:

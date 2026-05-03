@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - Merkle Ledger v13 (Sandbox Isolated)
+TITAN OMNISCALE X - Merkle Ledger v16 (Sandbox Isolated)
 
 Ledger con arbol Merkle real para integridad criptografica.
 Soporta snapshots, commits con verificacion, y rollbacks atomicos.
 
-v13 - AISLAMIENTO:
+v16 - AISLAMIENTO:
 - Los commits se escriben en el workspace AISLADO del sandbox
 - NUNCA escribe directamente en el filesystem del proyecto real
 - Los snapshots y rollbacks operan dentro del workspace aislado

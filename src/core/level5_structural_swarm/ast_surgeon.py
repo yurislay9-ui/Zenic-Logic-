@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - AST Surgeon v13 (Robust Multi-Language)
+TITAN OMNISCALE X - AST Surgeon v16 (Robust Multi-Language)
 
 Cirujano de AST usando ast nativo para Python y regex robusto
 para Kotlin, Go, JavaScript, TypeScript, Rust, Java.
 
-Mejoras v13:
+Mejoras v16:
 - Python: usa ast nativo con preservacion de lineas y decoradores
 - Multi-lenguaje: regex mejorados con soporte para bloques anidados
 - delete_function: limpieza de lineas en blanco residuales

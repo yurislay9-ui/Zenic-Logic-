@@ -446,16 +446,16 @@ class AbortiveProtocol:
 
             elif step.action == "SCRAPE_PATTERNS":
                 query = step.constraints.get("query", sub_intent.scrap_query)
-                patterns = await orch.scrap.fetch_modern_code(query, lang)
-                if patterns:
-                    explanations.append(f"Found {len(patterns) if isinstance(patterns, list) else 1} patterns")
-                    best = patterns[0] if isinstance(patterns, list) else patterns
-                    if isinstance(best, dict):
-                        best = best.get("code", str(best))[:2000]
+                # SmartScraper: Auto-routing multi-fuente
+                smart_result = await orch.scrap.smart_fetch(query, lang)
+                if smart_result.get("success") and smart_result.get("content"):
+                    source_name = smart_result.get("source", "github")
+                    explanations.append(f"SmartScraper: Found content via {source_name}")
+                    content = smart_result["content"]
                     if not code:
-                        code = best
+                        code = content
                 else:
-                    explanations.append("GitHub search: no results. Using local generation.")
+                    explanations.append("SmartScraper: No results. Using local generation.")
 
             elif step.action == "GENERATE_CODE":
                 result_code = orch._code_gen.generate_contextual_code(sub_intent, sub_ast, sub_plan, lang)

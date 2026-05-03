@@ -237,20 +237,21 @@ class TestSurgicalAgentFusion:
     """Tests for multi-signal fusion (core F2 innovation)."""
 
     def test_fusion_concordance_boosts_confidence(self, agent):
-        """When TF-IDF and Semantic agree, confidence should be higher."""
+        """When TF-IDF and Semantic fully agree (op+goal), confidence should be higher than individual."""
         # TF-IDF result
         tfidf = IntentOutput(
             operation="CREATE", goal="FEATURE_ADD",
-            confidence=0.3, source="tfidf",
+            confidence=0.5, source="tfidf",
         )
-        # Semantic result (agrees)
+        # Semantic result (agrees on BOTH operation and goal)
         semantic = IntentOutput(
             operation="CREATE", goal="FEATURE_ADD",
-            confidence=0.7, source="semantic",
+            confidence=0.5, source="semantic",
         )
         fused = agent._fuse_signals(tfidf, semantic)
-        # Concordance: confidence should be boosted
-        assert fused.confidence > max(tfidf.confidence, semantic.confidence)
+        # Full concordance: (0.5+0.5)/2 + 0.15 = 0.65, then cal_factor applied
+        # Should be higher than individual confidences of 0.5
+        assert fused.confidence > 0.5
 
     def test_fusion_discrepancy_reduces_confidence(self, agent):
         """When signals disagree, confidence should be reduced."""

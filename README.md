@@ -1,4 +1,4 @@
-# ZENIC LOGIC — TITAN OMNISCALE X v16
+# ZENIC LOGIC — TITAN OMNISCALE X v17
 
 <div align="center">
 
@@ -11,6 +11,7 @@ Funciona en **Android/Termux** sin GPU.
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-570%2B%20passed-brightgreen.svg)](tests/)
+[![Niches](https://img.shields.io/badge/Niches-103%20templates%20%7C%2020%20domains-orange.svg)](src/templates/niches/)
 
 </div>
 
@@ -38,36 +39,26 @@ Funciona en **Android/Termux** sin GPU.
   - [Chat Completions (OpenAI-Compatible)](#chat-completions-openai-compatible)
   - [Listar Modelos](#listar-modelos)
   - [Health Check](#health-check)
+  - [Niche Templates](#niche-templates)
+  - [DNA Validation System](#dna-validation-system)
   - [Generación de Apps](#generación-de-apps)
   - [Automatizaciones](#automatizaciones)
   - [Lógica de Negocio](#lógica-de-negocio)
   - [Autenticación](#autenticación)
   - [Razonamiento](#razonamiento)
+- [3 Mejoras de Nivel Dios (v17)](#3-mejoras-de-nivel-dios-v17)
+  - [A. Knowledge Inversion of Control (Auto-Scraping YAML)](#a-knowledge-inversion-of-control-auto-scraping-yaml)
+  - [B. Context Pointers for Code Path](#b-context-pointers-for-code-path)
+  - [C. Dynamic Low-Power Sequential Mode](#c-dynamic-low-power-sequential-mode)
+- [Sistema de Niches Declarativos](#sistema-de-niches-declarativos)
+- [Sistema DNA (Master Templates)](#sistema-dna-master-templates)
+- [Model Manager (Lazy Loading)](#model-manager-lazy-loading)
+- [Fractal Generator (Multi-File)](#fractal-generator-multi-file)
 - [Conectar con Cline/Aide/OpenCode](#conectar-con-clineaideopencode)
 - [Estructura del Proyecto](#estructura-del-proyecto)
 - [DAG Dinámico (F1) — Detalle](#dag-dinámico-f1--detalle)
 - [Sistema de Agentes IA — Detalle](#sistema-de-agentes-ia--detalle)
-  - [TitanAgent (F1)](#titanagent-f1)
-  - [SurgicalAgent (F2)](#surgicalagent-f2)
-  - [ContextAgent (F3)](#contextagent-f3)
-  - [CriticalityAgent (F4)](#criticalityagent-f4)
-  - [IntentAgent (Legacy)](#intentagent-legacy)
-  - [ReasoningAgent (F3)](#reasoningagent-f3)
-  - [BusinessLogicAgent (F3)](#businesslogicagent-f3)
-  - [CodeAgent (F4)](#codeagent-f4)
-  - [AutomationAgent (F4)](#automationagent-f4)
-  - [ValidationAgent (F5)](#validationagent-f5)
-  - [AgentRunner y Flujo de Ejecución](#agentrunner-y-flujo-de-ejecución)
-  - [Fallback Determinista](#fallback-determinista)
 - [Pipeline de 8 Niveles — Detalle](#pipeline-de-8-niveles--detalle)
-  - [Nivel 1: Semantic Parser](#nivel-1-semantic-parser)
-  - [Nivel 2: Macro Router MoE](#nivel-2-macro-router-moe)
-  - [Nivel 3: Graph AST Engine](#nivel-3-graph-ast-engine)
-  - [Nivel 4: APA Planner](#nivel-4-apa-planner)
-  - [Nivel 5: Structural Swarm](#nivel-5-structural-swarm)
-  - [Nivel 6: Reflexion Sandbox](#nivel-6-reflexion-sandbox)
-  - [Nivel 7: Merkle Ledger](#nivel-7-merkle-ledger)
-  - [Nivel 8: Theorem Cache](#nivel-8-theorem-cache)
 - [Motor SMT (Z3 / AC-3)](#motor-smt-z3--ac-3)
 - [Principio de Aislamiento Quirúrgico](#principio-de-aislamiento-quirúrgico)
 - [Configuración YAML](#configuración-yaml)
@@ -98,6 +89,13 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 | **Ruteo Quirúrgico (F2)** | Fusión multi-señal: Memory + Semantic + LLM + TF-IDF |
 | **Contexto Inteligente (F3)** | Compresión adaptativa + presupuesto de tokens + deduplicación |
 | **Criticalidad Dinámica (F4)** | Fusión ponderada 5-señal con retroalimentación histórica |
+| **103 Niches Declarativos** | 20 dominios, 793 entidades, 8,453 campos en YAML templates |
+| **Auto-Evolución (v17)** | GitHub Scrap + Cron + auto-update de niches — el sistema muta y aprende |
+| **Context Pointers (v17)** | Vector Signature Index + almacenamiento en disco — 100 tokens en vez de 20K |
+| **Low-Power Mode (v17)** | Monitoreo hardware térmico/batería → DAG paralelo/secuencial adaptativo |
+| **DNA Validation (v17)** | 4 Master Templates: logic_modules + domain_rules + validation_gates + glossary |
+| **Lazy Model Loading (v17)** | ModelManager: carga bajo demanda + auto-unload + RAM Budget |
+| **Fractal Generator (v17)** | Generación multi-archivo en 3 fases dentro del límite de 600 tokens |
 | **API OpenAI-Compatible** | `/v1/chat/completions` para Cline, Aide, OpenCode |
 | **Memoria Inteligente** | SmartMemory con cache semántico y aprendizaje episódico |
 | **Caché de Teoremas** | Skeleton Hash para bypass O(1) en mutaciones repetidas |
@@ -112,10 +110,12 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │                    API OpenAI-Compatible                           │
-│            /v1/chat/completions  /v1/models  /health              │
+│   /v1/chat/completions  /v1/models  /health  /v1/niches          │
+│   /v1/generate/niche  /v1/dna/*  /v1/system/*                    │
 ├───────────────────────────────────────────────────────────────────┤
 │                  DAG ORCHESTRATOR (F1)                             │
 │     Grafo acíclico con TitanAgent como meta-router                │
+│     + ContextPointerEngine + LowPowerSequentialMode               │
 │     CACHE_CHECK → INTENT → CONTEXT_PREPARE → AST_ANALYZE →       │
 │     THEOREM_CACHE → ROUTE → CRITICALITY_ROUTE → PLAN →           │
 │     SOLVER_VERIFY → EXECUTE_STEPS → SANDBOX → LEDGER →           │
@@ -140,6 +140,12 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 │  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud)       │
 │  Capa 2: MiniAIEngine (Qwen3) → PIENSA (razonamiento)           │
 │  Capa 3: SmartMemory → RECUERDA (cache, contexto, aprendizaje)   │
+├───────────────────────────────────────────────────────────────────┤
+│              v17: MEJORAS DE NIVEL DIOS                            │
+│  NicheLoader (103 YAML) │ DNALoader (4 Master Templates)         │
+│  NicheAutoScraper + Cron│ ContextPointerEngine (Vector Index)     │
+│  LowPowerSequentialMode │ ModelManager (Lazy Load + Auto-Unload)  │
+│  FractalGenerator (3-phase)                                       │
 ├───────────────────────────────────────────────────────────────────┤
 │                  INFRAESTRUCTURA PERMANENTE                        │
 │  Z3 Solver | AC-3 | Sandbox | Auth JWT/RBAC | ActionExecutor     │
@@ -167,7 +173,7 @@ El sistema opera con tres capas complementarias de inteligencia artificial que t
 
 - **Capa 1 — SemanticEngine (ENTIENDE)**: Motor de embeddings y similitud semántica. Utiliza TF-IDF + cosine similarity para clasificar intenciones y encontrar patrones. Con `fastembed` opcional, utiliza embeddings densos para mayor precisión. Carga automática si los embeddings están disponibles, con fallback a TF-IDF puro.
 
-- **Capa 2 — MiniAIEngine (PIENSA)**: Copiloto semántico basado en **Qwen3-0.6B Q4_K_M** (378MB) vía `llama-cpp-python`. Ejecuta 7 tareas bounded: clasificación de intención, sugerencia de patrones, explicación de violaciones, mejora de explicaciones, inferencia de entidades, generación contextual, y razonamiento por pasos. Funciona en CPU sin GPU con ~2-5 segundos por inferencia.
+- **Capa 2 — MiniAIEngine (PIENSA)**: Copiloto semántico basado en **Qwen3-0.6B Q4_K_M** (378MB) vía `llama-cpp-python`. Ejecuta 7 tareas bounded: clasificación de intención, sugerencia de patrones, explicación de violaciones, mejora de explicaciones, inferencia de entidades, generación contextual, y razonamiento por pasos. Funciona en CPU sin GPU con ~2-5 segundos por inferencia. Carga lazy vía **ModelManager** (v17): solo se carga en la primera petición, se auto-descarga tras 5 min de inactividad.
 
 - **Capa 3 — SmartMemory (RECUERDA)**: Sistema de memoria inteligente con tres almacenes: **Working Memory** (contexto inmediato, TTL configurable), **Long-term Memory** (proyectos y episodios persistentes), y **Semantic Cache** (cache de consultas frecuentes con matching semántico). Aprende de interacciones exitosas y fallidas, calculando importancia dinámica basada en tipo de operación, longitud de respuesta y resultado.
 
@@ -254,8 +260,9 @@ ZENIC LOGIC está diseñado para funcionar en hardware de consumo sin GPU:
 | **Tiempo por inferencia** | ~2-5 segundos (CPU) |
 | **RAM del modelo** | ~500 MB en runtime |
 | **Token limit por agente** | 600 tokens máx por llamada |
+| **RAM idle (v17)** | ~50 MB (ambos modelos unloaded) |
 
-El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvil, pero suficientemente capaz para las tareas bounded de los agentes (clasificación de intención, razonamiento por pasos, generación de código estructurado).
+El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvil, pero suficientemente capaz para las tareas bounded de los agentes (clasificación de intención, razonamiento por pasos, generación de código estructurado). Con el **ModelManager** (v17), los modelos se cargan lazy y se auto-descargan tras 5 minutos de inactividad, reduciendo RAM idle de ~730 MB a ~50 MB.
 
 ---
 
@@ -358,7 +365,7 @@ Content-Type: application/json
 {
   "id": "zenith-logic-001",
   "object": "chat.completion",
-  "model": "zenith-v16-semantic-surgical",
+  "model": "zenith-v17-semantic-surgical",
   "choices": [{
     "index": 0,
     "message": {
@@ -388,6 +395,116 @@ GET /v1/models
 ```http
 GET /health
 ```
+
+### Niche Templates
+
+```http
+GET /v1/niches
+GET /v1/niches?domain=health
+```
+
+Lista todos los niches disponibles, con filtro opcional por dominio. Retorna nombre, conteo de entidades y bloques.
+
+```http
+GET /v1/niches/domains
+```
+
+Lista todos los dominios con el número de niches por dominio.
+
+```http
+GET /v1/niches/search?q=pharmacy
+```
+
+Búsqueda multi-signal por keywords (nombre, dominio, subdominio, descripción, compliance).
+
+```http
+POST /v1/generate/niche
+Content-Type: application/json
+
+{
+  "niche": "pharmacy_management",
+  "output_dir": "./output"
+}
+```
+
+Genera una aplicación completa desde un niche template declarativo. Si no se especifica `niche`, se puede pasar `description` para auto-detectar el niche más relevante.
+
+### DNA Validation System
+
+```http
+GET /v1/dna/modules?domain=finance
+GET /v1/dna/modules?q=invoice
+```
+
+Lista los logic modules (bloques atómicos de función) del DNA. Filtrables por dominio o búsqueda.
+
+```http
+GET /v1/dna/domain-rules?industry=healthcare
+```
+
+Obtiene las reglas de negocio obligatorias para una industria específica.
+
+```http
+POST /v1/dna/validate
+Content-Type: application/json
+
+{
+  "code": "def process_payment(amount): ...",
+  "niche": "ecommerce_checkout"
+}
+```
+
+Valida código contra las validation gates del DNA. Retorna pass/fail/warnings con score.
+
+```http
+POST /v1/dna/polish
+Content-Type: application/json
+
+{
+  "text": "error: can't find user"
+}
+```
+
+Pule texto técnico a lenguaje corporativo profesional usando el glossary del DNA.
+
+### System Endpoints (v17)
+
+```http
+GET /v1/system/auto-evolve
+```
+
+Estado del sistema de auto-evolución: cron scheduler, último ciclo, estadísticas de mutación.
+
+```http
+POST /v1/system/auto-evolve/trigger
+```
+
+Fuerza un ciclo inmediato de auto-evolución (scrapea GitHub trending + actualiza niches).
+
+```http
+GET /v1/system/power-mode
+```
+
+Estado del modo de bajo consumo: temperatura CPU, batería, modo activo (NORMAL/CONSERVATIVE/EMERGENCY).
+
+```http
+GET /v1/system/context-index?q=authenticate
+```
+
+Busca en el índice de firmas de código. Retorna punteros compactos a funciones relevantes.
+
+```http
+POST /v1/system/context-index
+Content-Type: application/json
+
+{
+  "code": "def process_order(items): ...",
+  "file_path": "orders.py",
+  "query": "order processing"
+}
+```
+
+Indexa código y construye contexto compacto de punteros para el LLM.
 
 ### Generación de Apps
 
@@ -454,6 +571,344 @@ Modos: `step_by_step`, `self_reflect`, `with_context`
 
 ---
 
+## 3 Mejoras de Nivel Dios (v17)
+
+La versión 17 introduce tres mejoras arquitectónicas que transforman ZENIC LOGIC de un sistema estático a una plataforma **auto-mutable**, **consciente del hardware** y **eficiente en contexto**.
+
+### A. Knowledge Inversion of Control (Auto-Scraping YAML)
+
+**Problema**: Los niche templates YAML son estáticos. Un niche de `react_ecommerce` referencia `react@18.2` y `next@13.4`, pero cuando React 19 sale, el template queda obsoleto. El sistema no aprende por sí solo.
+
+**Solución**: El sistema ahora se **auto-muta y aprende** conectando el GitHub Scrap Agent (Level 5) con un Cron Scheduler que periódicamente:
+
+1. **Scrapea repos trending** de GitHub por lenguaje (Python, JavaScript, Go, etc.)
+2. **Analiza dependencias** (`package.json`, `go.mod`, `requirements.txt`) vía regex/AST
+3. **Mapea librerías a bloques** usando `LIBRARY_TO_BLOCK` (30+ mapeos: `fastapi` → `web_api`, `stripe` → `payment`, etc.)
+4. **Actualiza niches** en disco: agrega entidades, bloques, y patrones emergentes
+5. **Registra evolución** en SQLite (`niche_evolution.sqlite`) con timestamps y diffs
+
+**Arquitectura**:
+
+```
+┌───────────────────────────────────────────────────────┐
+│  NicheCronScheduler (background thread)               │
+│    Intervalo: 24h (mínimo 1h)                         │
+│    Cooldown: 30s entre cambios de modo                │
+│    Trigger manual: POST /v1/system/auto-evolve/trigger│
+│                                                        │
+│  NicheAutoUpdater                                      │
+│    ┌─── TrendingAnalyzer                               │
+│    │     GitHubScrapAgent → trending repos             │
+│    │     _extract_patterns() → deps + libs             │
+│    │     LIBRARY_TO_BLOCK (30+ mapeos)                 │
+│    │     LIBRARY_TO_ENTITIES (4 mapeos)                │
+│    │                                                   │
+│    └─── _save_niche_yaml() → escribe YAML actualizado │
+│                                                        │
+│  EvolutionEntry (dataclass)                            │
+│    mutation_type: entity_added / field_added /         │
+│                   block_added / pattern_updated        │
+│    source_repo, timestamp, old_value, new_value        │
+│    approved: bool (para auditoría)                     │
+└───────────────────────────────────────────────────────┘
+```
+
+**Cableado**: El `NicheCronScheduler` vive dentro del `DAGOrchestrator` y se inicia automáticamente con el servidor. El `NicheAutoUpdater` consume `NicheLoader` para encontrar niches matching y `GitHubScrapAgent` para obtener código trending.
+
+### B. Context Pointers for Code Path
+
+**Problema**: Para codebases de 20K+ tokens, comprimir código en summaries semánticos pierde la estructura exacta. El modelo necesita las coordenadas del código, no el código comprimido.
+
+**Solución**: En lugar de pasar código al LLM, se pasa un **Vector Signature Index** — punteros compactos que representan funciones como coordenadas. El modelo ve ~100 tokens de punteros en vez de 20K tokens de código:
+
+```
+📍 authenticate(user, pwd) -> bool @ L10-25 [auth.py]
+📍 generate_token(user_id) -> str @ L27-35 [auth.py]
+📍 verify_permissions(token, resource) -> bool @ L37-52 [auth.py]
+```
+
+**Arquitectura**:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ContextPointerEngine                                     │
+│                                                           │
+│  FunctionSignature (dataclass)                            │
+│    name, file_path, line_start, line_end                  │
+│    params, return_type, docstring, complexity             │
+│    calls: List[str], hash: str                            │
+│    to_pointer() → "📍 name(params) -> ret @ L10-25 [f]"  │
+│                                                           │
+│  ContextPointer (wrapper)                                 │
+│    signature + relevance_score + reason                    │
+│    load_code_from_disk() → lee líneas reales del archivo  │
+│    apply_modification(new_code) → escribe en disco        │
+│                                                           │
+│  SignatureIndex (core index)                              │
+│    index_project(root) → escanea recursivamente           │
+│    index_code(code, file_path) → indexa código inline     │
+│    search(query, top_k) → búsqueda keyword con scoring    │
+│    get_by_name(name) → lookup exacto                      │
+│    build_compact_context(query, max_tokens) → lista de    │
+│      punteros para consumo del LLM                        │
+│                                                           │
+│  Extractores multi-lenguaje:                              │
+│    Python: ast module (preciso)                           │
+│    JS/TS/Kotlin/Go/Java/Rust: regex (heurístico)         │
+│                                                           │
+│  Almacenamiento: ~/.titan_omniscale/context_store/        │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Flujo de uso**: Cuando el DAGOrchestrator necesita operar sobre código, usa `ContextPointerEngine.build_compact_context()` para construir la lista de punteros. El LLM opera sobre coordenadas. Si necesita modificar una función, `ContextPointer.load_code_from_disk()` carga solo las líneas necesarias, y `apply_modification()` usa AST Surgeon para escribir cambios directamente en disco.
+
+### C. Dynamic Low-Power Sequential Mode
+
+**Problema**: En Android/Termux, la ejecución paralela de agentes (Layer 4: Architect, Planner, Risk) puede causar picos de CPU que disparan thermal throttling, agotan la batería, o activan los mecanismos de seguridad del kernel Android que matan procesos.
+
+**Solución**: El DAG evalúa en tiempo real la temperatura del CPU, nivel de batería y uso de RAM. Si el hardware está estresado, desactiva la ejecución paralela y fuerza modo secuencial estricto:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  LowPowerSequentialMode                                   │
+│                                                           │
+│  PowerMode (Enum):                                        │
+│    NORMAL       → ejecución paralela completa             │
+│    CONSERVATIVE → Layer 4 secuencial, MCTS al 50%        │
+│    EMERGENCY    → todo secuencial, MCTS al 25%,          │
+│                   solo agentes críticos                   │
+│                                                           │
+│  HardwareState (dataclass):                               │
+│    cpu_usage: float        (de ResourceGovernor)          │
+│    ram_usage_mb: float     (de /proc/self/status)         │
+│    temperature_c: float    (de /sys/class/thermal/)       │
+│    battery_level: int      (de /sys/class/power_supply/)  │
+│    battery_charging: bool  (de /sys/class/power_supply/)  │
+│    thermal_throttle: bool  (de ResourceGovernor)          │
+│                                                           │
+│  evaluate() → lee hardware, calcula score, aplica modo   │
+│    Stickiness: 30s cooldown entre cambios de modo         │
+│    Thresholds:                                            │
+│      CONSERVATIVE: temp>55°C OR battery<30% OR RAM>85%   │
+│      EMERGENCY:    temp>65°C OR battery<15% OR RAM>95%   │
+│                                                           │
+│  API para DAGOrchestrator:                                │
+│    should_run_parallel_layer4() → bool                    │
+│    should_run_parallel_agents() → bool                    │
+│    get_mcts_scale() → 1.0 / 0.5 / 0.25                  │
+│    get_solver_timeout_scale() → 1.0 / 0.7 / 0.5         │
+│    should_postpone_non_critical() → bool                  │
+│    get_active_agents() → lista de agentes permitidos      │
+│    get_execution_order(layer) → orden de ejecución        │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Cableado**: El `DAGOrchestrator` consulta `LowPowerSequentialMode.evaluate()` antes de cada paso de ejecución. En modo CONSERVATIVE, Layer 4 (Architect, Planner, Risk) se ejecuta secuencialmente en vez de en paralelo. En modo EMERGENCY, solo se ejecutan agentes críticos y el MCTS reduce simulaciones al 25%. El `NicheCronScheduler` también lo consulta para posponer auto-scraping no crítico.
+
+---
+
+## Sistema de Niches Declarativos
+
+El sistema de niches permite generar aplicaciones completas desde plantillas YAML declarativas, sin tocar código Python. El sistema cargó **103 templates** a través de **20 dominios** con **793 entidades** y **8,453 campos**.
+
+### Dominios y Templates
+
+| Dominio | Templates | Entidades | Ejemplos |
+|---------|----------:|----------:|----------|
+| **health** | 12 | 96 | pharmacy, dental, telemedicine, clinical_lab |
+| **education** | 10 | 78 | lms, student_portal, course_platform |
+| **business** | 7 | 56 | erp, project_mgmt, hr_system |
+| **finance** | 6 | 48 | banking, crypto_exchange, accounting |
+| **ecommerce** | 5 | 40 | marketplace, checkout, dropshipping |
+| **technology** | 5 | 42 | saas_platform, devops_dashboard, api_gateway |
+| **logistics** | 5 | 38 | fleet_tracking, warehouse, supply_chain |
+| **media** | 5 | 35 | streaming, cms, podcast |
+| **agriculture** | 4 | 30 | crop_monitoring, livestock, irrigation |
+| **automotive** | 4 | 32 | fleet_management, ev_charging |
+| **creative** | 4 | 28 | portfolio, design_studio, video_editing |
+| **energy** | 4 | 34 | solar_monitoring, smart_grid |
+| **government** | 4 | 30 | citizen_portal, tax_filing |
+| **hospitality** | 4 | 28 | hotel_booking, restaurant_pos |
+| **legal** | 4 | 26 | case_management, contract_review |
+| **manufacturing** | 4 | 32 | quality_control, production_line |
+| **nonprofit** | 4 | 24 | donor_management, volunteer_tracking |
+| **real_estate** | 4 | 30 | property_listing, mortgage_calc |
+| **retail** | 4 | 26 | pos_system, inventory_tracking |
+| **sports** | 4 | 28 | athlete_tracking, event_management |
+
+### Estructura de un Niche YAML
+
+```yaml
+name: pharmacy_management
+domain: health
+subdomain: pharmaceutical
+description: "Sistema de gestión integral para farmacias"
+scale: small_to_medium
+
+blocks:
+  - inventory_tracking
+  - prescription_management
+  - customer_records
+  - billing_and_insurance
+
+entities:
+  medication:
+    fields:
+      - name: str, required
+      - generic_name: str
+      - dosage_form: str
+      - strength: str
+      - manufacturer: str
+      - price: float
+      - stock_quantity: int
+      - expiry_date: date
+      - requires_prescription: bool
+
+typical_paths:
+  - "/medications" -> inventory_tracking
+  - "/prescriptions" -> prescription_management
+
+triggers:
+  - low_stock_alert: inventory.stock_quantity < threshold
+  - expiry_warning: medication.expiry_date - today < 30_days
+
+compliance: [HIPAA, FDA]
+data_sensitivity: high
+backup_frequency: daily
+access_control: role_based
+audit_trail: true
+```
+
+### Cableado
+
+```
+NicheLoader (456 líneas)
+  → scan src/templates/niches/**/*.yaml
+  → NicheTemplate dataclass (name, domain, entities, blocks, compliance, etc.)
+  → search() / filter_by_compliance() / suggest_for_description()
+  → to_composition_plan() → CompositionPlan para TemplateEngine
+
+TemplateEngine (955 líneas)
+  → get_niche_plan() → resolve NicheTemplate → CompositionPlan
+  → render_niche() → render all blocks with Jinja2 + DNA validation
+  → 6 métodos niche: list_niches, list_domains, search_niches, get_niche_plan, render_niche, validate_niche_code
+
+HTTP Handler (853 líneas)
+  → GET /v1/niches
+  → GET /v1/niches/domains
+  → GET /v1/niches/search?q=
+  → POST /v1/generate/niche
+```
+
+---
+
+## Sistema DNA (Master Templates)
+
+El **DNA Loader** carga 4 "Master DNA Templates" que eliminan la improvisación en la generación de código. Cada template aporta una dimensión diferente de calidad:
+
+| DNA Template | Archivo | Rol |
+|-------------|---------|-----|
+| **Logic Modules** | `logic_modules.yaml` | Repositorio de funciones atómicas con verificación |
+| **Domain Expert Rules** | `domain_expert_rules.yaml` | Reglas de negocio obligatorias por industria |
+| **Validation Gates** | `validation_gates.yaml` | Juez de calidad con auto-fix strategies |
+| **Professional Glossary** | `professional_glossary.yaml` | Pulidor de lenguaje técnico a corporativo |
+
+### API del DNALoader (674 líneas)
+
+```python
+from src.core.dna_loader import get_dna_loader
+
+dna = get_dna_loader()
+
+# Logic Modules
+dna.get_module("invoice_calculate_tax")
+dna.get_modules_by_domain("finance")
+dna.search_modules("payment processing")
+dna.resolve_modules_for_niche("pharmacy_management", niche_blocks)
+
+# Domain Rules
+dna.get_domain_rules("healthcare")
+dna.get_mandatory_logic("healthcare")  # reglas no negociables
+dna.find_industry_for_niche("health")  # → "healthcare"
+
+# Validation Gates
+dna.get_global_gates("security")       # gates de seguridad globales
+dna.get_domain_gates("finance")        # gates específicos de dominio
+dna.validate_code(code, "finance")     # → pass/fail/warnings/score
+
+# Professional Glossary
+dna.polish_text("error: can't find user")  # → "User record not found"
+dna.polish_error("NullPointer exception")  # → "Required data reference is missing"
+dna.describe_feature("CRUD")               # → "Create, Read, Update, Delete operations"
+```
+
+---
+
+## Model Manager (Lazy Loading)
+
+El **ModelManager** (464 líneas) implementa carga híbrida de modelos para maximizar rendimiento en hardware móvil:
+
+| Modo | RAM Idle | Boot Time | Comportamiento |
+|------|---------:|----------:|----------------|
+| **Eager** (legacy) | ~730 MB | ~60s | Carga ambos modelos al inicio |
+| **Lazy** (v17) | ~50 MB | <5s | Carga solo cuando se necesita |
+
+### Características
+
+- **Lazy Loading**: Los modelos se cargan en la primera petición que los requiere
+- **Auto-Unload**: Tras 5 minutos de inactividad, los modelos se descargan automáticamente
+- **RAM Budget**: Si la RAM supera el 90% del presupuesto, fuerza unload del modelo menos reciente
+- **Context Managers**: `ai_engine_ctx()` y `semantic_engine_ctx()` para uso seguro con auto-cleanup
+
+### Variables de Entorno
+
+```bash
+TITAN_LAZY_LOAD=true        # Habilitar lazy loading (default: true)
+TITAN_AUTO_UNLOAD=true      # Auto-unload tras idle timeout
+TITAN_MODEL_IDLE_TIMEOUT=300  # Segundos de idle antes de unload (default: 300)
+TITAN_RAM_BUDGET_MB=800     # Presupuesto RAM en MB (default: 800)
+```
+
+---
+
+## Fractal Generator (Multi-File)
+
+El **FractalGenerator** (1,038 líneas) resuelve el problema de generar proyectos multi-archivo dentro del límite de 600 tokens de salida de Qwen3-0.6B. Divide la generación en 3 fases:
+
+### Fase 1: Structural
+Genera el árbol de directorios y la lista de archivos con sus descripciones. Si el LLM falla, usa templates predefinidos (`auth_system`, `crud_dashboard`, `inventory`) o un template genérico.
+
+### Fase 2: Skeletons
+Genera esqueletos de código: clases vacías con docstrings, funciones con `pass`, imports organizados. Incluye reparación de sintaxis para Python (`_fix_python_skeleton`).
+
+### Fase 3: Fill
+Rellena la lógica item-by-item (cada función/método individualmente), compatible con el límite de 600 tokens. Si el LLM falla, usa generación determinista basada en patrones:
+
+- `create/add` → try/save pattern
+- `get/list` → try/query pattern
+- `update` → try/update pattern
+- `delete` → try/delete pattern
+- `validate` → try/validate pattern
+
+### Invocación
+
+```python
+from src.core.fractal_generator import FractalGenerator
+
+gen = FractalGenerator(code_agent=code_agent, ai_engine=mini_ai)
+
+# Fase 1: Estructura
+spec = gen.generate_structure("sistema de inventario", "crud_dashboard", "inventory_app")
+
+# Fase 2: Esqueletos
+spec = gen.generate_skeletons(spec)
+
+# Fase 3: Rellenar lógica
+result = gen.fill_logic(spec, output_dir="./output")
+```
+
+---
+
 ## Conectar con Cline/Aide/OpenCode
 
 1. Inicia el motor ZENIC LOGIC
@@ -475,44 +930,54 @@ Zenic-Logic-/
 │   └── qwen3-0.6b-q4_k_m.gguf      # Modelo IA Qwen3 (378MB)
 ├── src/
 │   ├── core/
-│   │   ├── dag_orchestrator.py      # F1: DAG Dinámico + TitanAgent (1,454 líneas)
-│   │   ├── orchestrator.py          # Orquestador legacy (1,180 líneas, backward compat)
+│   │   ├── dag_orchestrator.py      # F1: DAG Dinámico + TitanAgent (1,859 líneas)
+│   │   ├── orchestrator.py          # Orquestador legacy (1,194 líneas, backward compat)
 │   │   ├── semantic_engine.py       # Capa 1: ENTIENDE
 │   │   ├── mini_ai_engine.py        # Capa 2: PIENSA (Qwen3)
-│   │   ├── smart_memory.py          # Capa 3: RECUERDA (807 líneas, SQL injection fixed)
-│   │   ├── agents/                  # Framework de Agentes IA
+│   │   ├── smart_memory.py          # Capa 3: RECUERDA (979 líneas)
+│   │   ├── agents/                  # Framework de Agentes IA (7,221 líneas)
 │   │   │   ├── __init__.py          # Exports del módulo (9 agentes + schemas)
 │   │   │   ├── base.py              # BaseAgent + AgentResult (194 líneas)
 │   │   │   ├── runner.py            # AgentRunner (LLM bridge, 216 líneas)
 │   │   │   ├── schemas.py           # Pydantic input/output schemas (272 líneas)
 │   │   │   ├── prompts.py           # System prompts + PromptBuilder (245 líneas)
-│   │   │   ├── cache.py             # AgentCache (197 líneas)
-│   │   │   ├── surgical_agent.py    # F2: SurgicalAgent multi-signal (572 líneas)
-│   │   │   ├── context_agent.py     # F3: ContextAgent compression (752 líneas)
+│   │   │   ├── cache.py             # AgentCache (195 líneas)
+│   │   │   ├── intent_shared.py     # Shared intent utilities (295 líneas)
+│   │   │   ├── surgical_agent.py    # F2: SurgicalAgent multi-signal (536 líneas)
+│   │   │   ├── context_agent.py     # F3: ContextAgent compression (727 líneas)
 │   │   │   ├── criticality_agent.py # F4: CriticalityAgent router (631 líneas)
-│   │   │   ├── intent_agent.py      # IntentAgent legacy (593 líneas)
+│   │   │   ├── intent_agent.py      # IntentAgent legacy (523 líneas)
 │   │   │   ├── reasoning_agent.py   # ReasoningAgent (532 líneas)
 │   │   │   ├── business_logic_agent.py # BusinessLogicAgent (636 líneas)
 │   │   │   ├── code_agent.py        # CodeAgent (1,043 líneas)
 │   │   │   ├── automation_agent.py  # AutomationAgent (507 líneas)
 │   │   │   └── validation_agent.py  # ValidationAgent (599 líneas)
-│   │   ├── reasoning_engine.py      # ReasoningEngine (Legacy)
-│   │   ├── thinking_engine.py       # ThinkingEngine (Legacy, Extended)
-│   │   ├── logic_builder.py         # LogicBuilder 30+ blocks (Legacy)
-│   │   ├── code_generator.py        # CodeGenerator (Legacy)
-│   │   ├── code_transformer.py      # CodeTransformer (Legacy)
-│   │   ├── app_generator.py         # AppGenerator (Legacy)
-│   │   ├── automation_engine.py     # AutomationEngine (Legacy)
-│   │   ├── chain_validator.py       # ChainValidator (Legacy)
-│   │   ├── template_engine.py       # Jinja2 Template Engine
-│   │   ├── auth_service.py          # JWT + RBAC
-│   │   ├── action_executor.py       # Real Action Execution
-│   │   ├── abortive_protocol.py     # Auto-subdivision en timeout
-│   │   ├── partial_reasoning.py     # OpenAI-compatible partial response
-│   │   ├── schema_designer.py       # DB Schema Designer
-│   │   ├── analysis_utils.py        # Quality reports + explanations (F5 target)
-│   │   ├── subtask_descriptor.py    # Subtask description
-│   │   ├── local_engine.py          # Legacy local engine
+│   │   ├── reasoning_engine.py      # ReasoningEngine (719 líneas, Legacy)
+│   │   ├── thinking_engine.py       # ThinkingEngine (857 líneas, Legacy)
+│   │   ├── logic_builder.py         # LogicBuilder 30+ blocks (2,920 líneas, Legacy)
+│   │   ├── code_generator.py        # CodeGenerator (819 líneas, Legacy)
+│   │   ├── code_transformer.py      # CodeTransformer (442 líneas, Legacy)
+│   │   ├── app_generator.py         # AppGenerator (1,293 líneas, Legacy)
+│   │   ├── automation_engine.py     # AutomationEngine (1,020 líneas, Legacy)
+│   │   ├── chain_validator.py       # ChainValidator (490 líneas, Legacy)
+│   │   ├── template_engine.py       # Jinja2 Template Engine (955 líneas)
+│   │   ├── auth_service.py          # JWT + RBAC (801 líneas)
+│   │   ├── action_executor.py       # Real Action Execution (1,097 líneas)
+│   │   ├── abortive_protocol.py     # Auto-subdivision en timeout (676 líneas)
+│   │   ├── partial_reasoning.py     # OpenAI-compatible partial response (382 líneas)
+│   │   ├── schema_designer.py       # DB Schema Designer (481 líneas)
+│   │   ├── analysis_utils.py        # Quality reports + explanations (140 líneas)
+│   │   ├── subtask_descriptor.py    # Subtask description (60 líneas)
+│   │   ├── │── v17: Nuevos módulos ──────────────────────────────
+│   │   ├── niche_loader.py          # YAML niche template loader (456 líneas)
+│   │   ├── niche_auto_scraper.py    # Auto-evolution engine (494 líneas)
+│   │   ├── dna_loader.py            # DNA Master Templates (674 líneas)
+│   │   ├── context_pointer_engine.py # Context Pointers / Vector Index (466 líneas)
+│   │   ├── low_power_sequential.py  # ARM-optimized sequential mode (421 líneas)
+│   │   ├── model_manager.py         # Lazy model loading + auto-unload (464 líneas)
+│   │   ├── fractal_generator.py     # Fractal multi-file generator (1,038 líneas)
+│   │   ├── env_loader.py            # .env loader (282 líneas)
+│   │   ├── local_engine.py          # Legacy local engine (292 líneas)
 │   │   ├── level1_semantic_engine/  # L1: TF-IDF + semantic parsing
 │   │   ├── level2_macro_router/     # L2: Criticality + AST signatures
 │   │   ├── level3_graph_ast/        # L3: AST analysis + SQLite
@@ -521,7 +986,7 @@ Zenic-Logic-/
 │   │   ├── level6_reflexion_sandbox/ # L6: Symbolic execution
 │   │   ├── level7_merkle_ledger/    # L7: Merkle tree + rollback
 │   │   ├── level8_theorem_cache/    # L8: Skeleton hash cache
-│   │   └── shared/                  # Infraestructura compartida
+│   │   └── shared/                  # Infraestructura compartida (5,877 líneas)
 │   │       ├── z3_solver.py         # SMT Solver (Z3 / AC-3 fallback)
 │   │       ├── symbolic_executor.py # Symbolic execution engine
 │   │       ├── sandbox_isolation.py # Workspace isolation
@@ -542,32 +1007,40 @@ Zenic-Logic-/
 │   │   ├── timeouts.yaml            # Presupuestos computacionales
 │   │   ├── critical_nodes.yaml      # Patrones de nodos críticos
 │   │   └── loader.py                # YAML config loader
-│   ├── server/                      # HTTP server (ThreadedHTTPServer)
+│   ├── server/                      # HTTP server (1,319 líneas)
 │   │   ├── server.py                # ThreadedHTTPServer
-│   │   ├── http_handler.py          # Request handler
+│   │   ├── http_handler.py          # Request handler (853 líneas, 20+ endpoints)
 │   │   ├── response_builder.py      # OpenAI-compatible responses
 │   │   └── rate_limiter.py          # Rate limiting
-│   └── templates/                   # Jinja2 templates
-│       ├── apps/                    # 8 app templates
-│       ├── automations/             # 6 automation templates
-│       └── blocks/                  # Code block templates
-│           ├── auth/
-│           ├── business_logic/
-│           ├── data/
-│           └── integrations/
-├── tests/
-│   ├── conftest.py                  # Shared fixtures
+│   └── templates/                   # Templates
+│       ├── dna/                     # 4 DNA Master Templates
+│       │   ├── validation_gates.yaml
+│       │   ├── professional_glossary.yaml
+│       │   ├── logic_modules.yaml
+│       │   └── domain_expert_rules.yaml
+│       ├── apps/                    # 8 app templates (9 Jinja2 files)
+│       ├── automations/             # 6 automation templates (5 Jinja2 files)
+│       ├── blocks/                  # Code block templates
+│       │   ├── auth/                # 3 auth block templates
+│       │   ├── business_logic/      # 7 business logic templates
+│       │   ├── data/                # 4 data block templates
+│       │   └── integrations/        # 7 integration templates
+│       └── niches/                  # 103 YAML templates en 20 dominios
+│           ├── agriculture/ (4)     ├── health/ (12)
+│           ├── automotive/ (4)      ├── hospitality/ (4)
+│           ├── business/ (7)        ├── legal/ (4)
+│           ├── creative/ (4)        ├── logistics/ (5)
+│           ├── ecommerce/ (5)       ├── manufacturing/ (4)
+│           ├── education/ (10)      ├── media/ (5)
+│           ├── energy/ (4)          ├── nonprofit/ (4)
+│           ├── finance/ (6)         ├── real_estate/ (4)
+│           ├── government/ (4)      ├── retail/ (4)
+│           └── technology/ (5)      ├── sports/ (4)
+├── tests/                           # 42 test files, ~13,695 líneas
+│   ├── conftest.py                  # Session-scoped temp dir fixture
 │   ├── integration/
-│   │   └── test_pipeline.py         # Integration tests
-│   └── unit/                        # 30 unit test files
-│       ├── test_agent_framework.py  # Agent framework tests
-│       ├── test_surgical_agent.py   # F2: SurgicalAgent tests
-│       ├── test_context_agent.py    # F3: ContextAgent tests
-│       ├── test_intent_agent.py     # IntentAgent tests
-│       ├── test_reasoning_and_business_agents.py # F3 agent tests
-│       ├── test_f4_f5_agents.py     # F4/F5 agent tests
-│       ├── test_phase8_intelligence.py # Phase 8 tests
-│       └── ...                      # 23 more test files
+│   │   └── test_pipeline.py
+│   └── unit/                        # 30+ unit test files
 ├── pyproject.toml                   # Project config + pytest
 ├── requirements.txt                 # Core dependencies
 ├── pytest.ini                       # Pytest configuration
@@ -639,6 +1112,7 @@ TitanAgent es el agente F1 que decide las transiciones del DAG cuando son no tri
 | Context prep | Sin compresión | F3 ContextAgent adaptativo |
 | Skip de nodos | No | criticality_skip por nodo |
 | Safety | Sin límite de pasos | Máx. 20 pasos totales |
+| Hardware aware | No | v17: LowPowerSequentialMode |
 
 ---
 
@@ -915,11 +1389,11 @@ El motor de AST construye un grafo de dependencias del código fuente utilizando
 
 ### Nivel 4: APA Planner
 
-El planificador APA (Automated Planning and Acting) utiliza dos motores complementarios: **Z3 SMT Solver** para verificación formal (cuando está instalado) y **AC-3 + backtracking** como fallback determinista (siempre disponible). El componente **MCTS** (Monte Carlo Tree Search) explora el espacio de mutaciones posibles con UCB1, 4 fases (Selección, Expansión, Simulación, Backpropagation), depth limit 5, y 100 simulaciones. El presupuesto computacional está controlado por watchdog: 15 segundos para Z3 quirúrgico, 5 segundos para moderado.
+El planificador APA (Automated Planning and Acting) utiliza dos motores complementarios: **Z3 SMT Solver** para verificación formal (cuando está instalado) y **AC-3 + backtracking** como fallback determinista (siempre disponible). El componente **MCTS** (Monte Carlo Tree Search) explora el espacio de mutaciones posibles con UCB1, 4 fases (Selección, Expansión, Simulación, Backpropagation), depth limit 5, y 100 simulaciones. El presupuesto computacional está controlado por watchdog: 15 segundos para Z3 quirúrgico, 5 segundos para moderado. En v17, el **LowPowerSequentialMode** puede escalar las simulaciones MCTS (50% o 25%) según temperatura y batería.
 
 ### Nivel 5: Structural Swarm
 
-El enjambre estructural opera con dos agentes: el **AST Surgeon** que realiza cirugía precisa en nodos del AST (reemplazar, eliminar, insertar funciones/clases) preservando la estructura del código, y el **GitHub Scrap Agent** que busca patrones modernos en repositorios públicos para inspirar soluciones. El AST Surgeon garantiza que las mutaciones son sintácticamente válidas antes de pasar al nivel de validación.
+El enjambre estructural opera con dos agentes: el **AST Surgeon** que realiza cirugía precisa en nodos del AST (reemplazar, eliminar, insertar funciones/clases) preservando la estructura del código, y el **GitHub Scrap Agent** que busca patrones modernos en repositorios públicos para inspirar soluciones. En v17, el GitHub Scrap Agent también alimenta el sistema de **Auto-Evolución** a través del `TrendingAnalyzer`, que extrae dependencias y patrones emergentes para actualizar los niche templates automáticamente.
 
 ### Nivel 6: Reflexion Sandbox
 
@@ -1010,7 +1484,7 @@ pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
        tests/unit/test_reasoning_and_business_agents.py tests/unit/test_f4_f5_agents.py
 ```
 
-**Cobertura de tests**: 30 archivos de test, ~8,314 líneas de tests, 570+ tests pasados.
+**Cobertura de tests**: 42 archivos de test, ~13,695 líneas de tests, 570+ tests pasados.
 
 | Suite de Tests | Archivo | Líneas | Enfoque |
 |---------------|---------|-------:|---------|
@@ -1021,6 +1495,9 @@ pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
 | Reasoning + Business | `test_reasoning_and_business_agents.py` | 493 | ReasoningAgent + BusinessLogicAgent |
 | F4 + F5 Agents | `test_f4_f5_agents.py` | 971 | CodeAgent + AutomationAgent + ValidationAgent + CriticalityAgent |
 | Phase 8 Intelligence | `test_phase8_intelligence.py` | 531 | ReasoningEngine + ChainValidator |
+| Scrap Agent | `test_scrap_agent.py` | 818 | GitHub Scrap Agent |
+| Symbolic Executor | `test_symbolic_executor.py` | 518 | Ejecución simbólica |
+| Auth Service | `test_auth_service.py` | 697 | JWT + RBAC |
 | Integration | `test_pipeline.py` | 326 | Pipeline completo end-to-end |
 
 ---
@@ -1050,6 +1527,14 @@ pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
 | `notification_dispatcher` | Despacho de notificaciones multi-canal |
 | `scheduled_report` | Generación y envío de reportes |
 | `webhook_handler` | Procesamiento de webhooks entrantes |
+
+### Niches Declarativos (103 templates en 20 dominios)
+
+Ver [Sistema de Niches Declarativos](#sistema-de-niches-declarativos) para el detalle completo.
+
+### DNA Master Templates (4 templates)
+
+Ver [Sistema DNA (Master Templates)](#sistema-dna-master-templates) para el detalle completo.
 
 ---
 
@@ -1100,8 +1585,10 @@ MIT License — Ver archivo [LICENSE](LICENSE) para detalles.
 
 <div align="center">
 
-**ZENIC LOGIC — TITAN OMNISCALE X v16**
+**ZENIC LOGIC — TITAN OMNISCALE X v17**
 
 *Ingeniería de software algorítmica 100% local, libre de alucinaciones sintácticas, inmaculada a nivel de compilación y totalmente funcional incluso bajo hardware Edge de mínimos recursos.*
+
+*Ahora con Auto-Evolución, Context Pointers y Low-Power Mode — el sistema muta, aprende y se adapta al hardware en tiempo real.*
 
 </div>

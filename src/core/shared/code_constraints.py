@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Code Constraint Builder v13
+TITAN OMNISCALE X - Code Constraint Builder v16
 
 Construye restricciones de verificacion a partir de analisis AST.
 Permite al Solver (Z3 o AC-3) verificar invariantes de codigo.

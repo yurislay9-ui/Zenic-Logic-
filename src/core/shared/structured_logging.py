@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Structured Logging
+TITAN OMNISCALE X v16 - Structured Logging
 
 Formateador de logging estructurado (JSON) para observabilidad.
 Compatible con Termux/ARM, sin dependencias externas.

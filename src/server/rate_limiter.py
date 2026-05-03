@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Rate Limiter
+TITAN OMNISCALE X v16 - Rate Limiter
 
 Token bucket rate limiter for the HTTP server.
 Protects against request flooding on resource-constrained ARM devices.

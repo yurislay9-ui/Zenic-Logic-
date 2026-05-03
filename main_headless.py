@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TITAN OMNISCALE X v13 - Headless Server for Termux/proot-distro
+TITAN OMNISCALE X v16 - Headless Server for Termux/proot-distro
 
 Servidor OpenAI-Compatible SIN Kivy. Disenado para correr en
 Termux + proot-distro (Debian) en tu Redmi 12R Pro.
@@ -29,6 +29,10 @@ import threading
 #  INICIALIZACION - Antes de importar modulos pesados
 # ============================================================
 
+# Cargar .env ANTES de cualquier otro import (variables de entorno)
+from src.core.env_loader import load_env
+load_env()
+
 from src.core.shared.resource_governor import (
     tune_gc_for_arm, set_process_priority_low,
     limit_open_files, init_governor,
@@ -41,7 +45,17 @@ limit_open_files()
 # Importar modulos del engine
 from src.core.shared.contracts import HAS_Z3
 from src.core.shared.db_initializer import initialize_databases
-from src.core.orchestrator import TitanOrchestrator
+
+# Use DAGOrchestrator (v16) as primary, with TitanOrchestrator (v16) as fallback
+try:
+    from src.core.dag_orchestrator import DAGOrchestrator
+    _ORCHESTRATOR_CLASS = DAGOrchestrator
+    _ORCHESTRATOR_NAME = "DAGOrchestrator (v16)"
+except ImportError:
+    from src.core.orchestrator import TitanOrchestrator
+    _ORCHESTRATOR_CLASS = TitanOrchestrator
+    _ORCHESTRATOR_NAME = "TitanOrchestrator (v16)"
+
 from src.server import (
     TitanHTTPHandler, ThreadedHTTPServer,
     get_local_ip, configure_handler, RateLimiter,
@@ -64,7 +78,7 @@ def print_banner(ip, port, solver_name, governor):
     res = governor.get_status() if governor else {}
     banner = f"""
 +==============================================================+
-|  TITAN OMNISCALE X v13 - HEADLESS SERVER                     |
+|  TITAN OMNISCALE X v16 - HEADLESS SERVER [HYBRID MODE]       |
 |  Motor de IA Quirurgico Local ({solver_name})                   |
 +==============================================================+
 |                                                              |
@@ -76,9 +90,11 @@ def print_banner(ip, port, solver_name, governor):
 |    POST /v1/chat/completions - Chat completion               |
 |    GET  /health           - Status + recursos                |
 |                                                              |
-|  Recursos:                                                   |
-|    Solver: {solver_name} | MCTS: adaptativo                    |
+|  Recursos (Hybrid Lazy Loading):                             |
+|    Solver: {solver_name} | MCTS: ARM-optimized                  |
 |    RAM: {res.get('ram_usage_mb', 0):.0f}MB / {res.get('ram_limit_mb', '?')}MB limite           |
+|    Models: Lazy (se cargan al primer request)               |
+|    Auto-unload: 5 min idle | Budget: 768MB                  |
 |    GC tuned for ARM | Priority: low                          |
 |                                                              |
 |  Ctrl+C para detener                                         |
@@ -96,7 +112,7 @@ START_TIME = time.time()
 
 def main():
     parser = argparse.ArgumentParser(
-        description="TITAN OMNISCALE X v13 - Headless Server"
+        description="TITAN OMNISCALE X v16 - Headless Server"
     )
     parser.add_argument(
         '--port', type=int, default=5000,
@@ -130,12 +146,18 @@ def main():
     initialize_databases()
 
     solver_name = "Z3" if HAS_Z3 else "AC-3"
-    logger.info("TITAN OMNISCALE X v13.0 - Headless Server")
+    logger.info("TITAN OMNISCALE X v16.0 - Headless Server")
     logger.info(f"Solver: {solver_name} | MCTS Adaptive | Symbolic Exec | Resource Governor")
     logger.info(f"RAM limit: {args.ram_limit}MB | GC tuned for ARM | Process priority: low")
 
-    # Crear orchestrator
-    orchestrator = TitanOrchestrator()
+    # Crear orchestrator (DAGOrchestrator v16 preferred)
+    # Con HYBRID MODE: los modelos se cargan lazy al primer request
+    orchestrator = _ORCHESTRATOR_CLASS()
+    logger.info(f"Orchestrator: {_ORCHESTRATOR_NAME} [HYBRID MODE]")
+
+    # Conectar governor con ModelManager para model swap
+    if hasattr(orchestrator, '_model_mgr'):
+        governor.set_model_manager(orchestrator._model_mgr)
 
     # Crear rate limiter (proteccion contra flood en ARM)
     rate_limiter = RateLimiter(
@@ -196,8 +218,21 @@ def main():
                         print(f"  CPU: {status['cpu_usage_pct']}% | RAM: {status['ram_usage_mb']}MB/{status['ram_limit_mb']}MB")
                         print(f"  Throttle: {status['thermal_throttle']} | MCTS: {status['adaptive_mcts_sims']} sims")
                         print(f"  Requests: {status['stats']['requests_served']} | GC forced: {status['stats']['gc_forced']}")
+                        # Model status
+                        if hasattr(orchestrator, '_model_mgr'):
+                            ms = orchestrator._model_mgr.get_status()
+                            for name, info in ms.get('models', {}).items():
+                                print(f"  {name}: {info['status']}" + (f" (idle {info.get('idle_s', 0)}s)" if 'idle_s' in info else ""))
+                    elif cmd.lower() == 'models':
+                        if hasattr(orchestrator, '_model_mgr'):
+                            ms = orchestrator._model_mgr.stats
+                            print(f"  SemanticEngine: {'LOADED' if ms['semantic_loaded'] else 'UNLOADED'} (loads={ms['semantic_loads']}, unloads={ms['semantic_unloads']})")
+                            print(f"  MiniAIEngine:  {'LOADED' if ms['ai_loaded'] else 'UNLOADED'} (loads={ms['ai_loads']}, unloads={ms['ai_unloads']})")
+                            print(f"  Auto-unloads: {ms['auto_unloads']} | RAM: {ms['current_ram_mb']}MB")
+                        else:
+                            print("  ModelManager not available")
                     elif cmd.lower() == 'help':
-                        print("  Commands: status | quit | help")
+                        print("  Commands: status | models | quit | help")
                 except EOFError:
                     break
         except KeyboardInterrupt:

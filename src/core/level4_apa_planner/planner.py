@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - APA Planner v13 (Z3 Real + MCTS Real)
+TITAN OMNISCALE X - APA Planner v16 (Z3 Real + MCTS Real)
 
 Planificador con MCTS real (UCB1, backpropagation, depth limiting)
 y Solver real (Z3 con fallback AC-3, timeout enforcement).

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Database Initializer v13 (Optimized for ARM)
+TITAN OMNISCALE X - Database Initializer v16 (Optimized for ARM)
 
 Inicializa todas las bases de datos SQLite con:
 - WAL mode para concurrencia sin locks
@@ -107,7 +107,7 @@ def close_all_connections():
 
 
 def initialize_databases():
-    """Crea todas las tablas SQLite con esquemas completos v13 + indices + PRAGMA."""
+    """Crea todas las tablas SQLite con esquemas completos v16 + indices + PRAGMA."""
 
     # Graph AST
     conn = get_connection("graph_ast.sqlite")

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Timeout Enforcer v13
+TITAN OMNISCALE X - Timeout Enforcer v16
 
 Enfuerza timeouts reales usando threading.Event.
 Compatible con Android/Termux (no usa signal.alarm).

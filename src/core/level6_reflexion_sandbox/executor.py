@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - Reflexion Sandbox v13 (Isolated + Symbolic Execution)
+TITAN OMNISCALE X - Reflexion Sandbox v16 (Isolated + Symbolic Execution)
 
 Sandbox con ejecucion simbolica acotada real, timeout real, K-Path limiting
 basado en grafo de dependencias, y path pruning para I/O.
 
-MEJORAS v13 - AISLAMIENTO COMPLETO:
+MEJORAS v16 - AISLAMIENTO COMPLETO:
 - Workspace aislado: el sandbox NUNCA toca archivos del proyecto
 - Builtins restringidos con open() que solo escribe dentro del workspace
 - __import__ restringido: solo modulos seguros permitidos
@@ -365,7 +365,44 @@ class ReflexionSandbox:
         - NO hay acceso al filesystem del proyecto
         - NO hay acceso a os, subprocess, shutil, etc.
         - El workspace se limpia automaticamente al terminar
+
+        SECURITY: Pre-validates AST to block dangerous constructs before exec.
         """
+        # SECURITY: Pre-validate AST — block dangerous constructs before execution
+        try:
+            tree = ast.parse(code, filename=target_name)
+            dangerous_attrs = {
+                '__class__', '__bases__', '__subclasses__', '__mro__',
+                '__globals__', '__code__', '__closure__', '__func__',
+                '__self__', '__dict__', '__weakref__',
+                '__builtins__', '__import__',
+            }
+            for node in ast.walk(tree):
+                # Block attribute access to dunder attributes (sandbox escape vectors)
+                if isinstance(node, ast.Attribute):
+                    if node.attr.startswith('__') and node.attr.endswith('__'):
+                        if node.attr in dangerous_attrs:
+                            raise ImportError(
+                                f"Sandbox: access to '{node.attr}' is blocked "
+                                f"for security (line {node.lineno})"
+                            )
+                # Block getattr/hasattr with dunder string literals
+                if isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name) and node.func.id in ('getattr', 'hasattr'):
+                        if node.args and len(node.args) >= 2:
+                            arg = node.args[1]
+                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                if arg.value.startswith('__') and arg.value.endswith('__'):
+                                    if arg.value in dangerous_attrs:
+                                        raise ImportError(
+                                            f"Sandbox: getattr/hasattr access to "
+                                            f"'{arg.value}' is blocked for security"
+                                        )
+        except SyntaxError as e:
+            return {"error": f"Sandbox: syntax error in code: {e}"}
+        except ImportError as e:
+            return {"error": str(e)}
+
         workspace = None
         try:
             # Crear workspace aislado para esta ejecucion

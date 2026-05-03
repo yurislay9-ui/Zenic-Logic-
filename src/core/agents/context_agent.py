@@ -54,7 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from src.core.agents.base import BaseAgent, AgentResult
-from src.core.agents.schemas import IntentOutput
+from src.core.agents.schemas import IntentOutput, ContextEntry, ContextOutput
 
 logger = logging.getLogger(__name__)
 
@@ -105,32 +105,7 @@ MAX_ENTRIES_FOR_SCORING = 30
 # Máximo de memorias pre-fetched por intent
 MAX_PREFETCH_RESULTS = 5
 
-
-@dataclass
-class ContextEntry:
-    """Entrada de contexto con score de relevancia calculado."""
-    content: str = ""
-    source: str = ""        # "working", "long_term", "episodic", "procedural"
-    operation: str = ""
-    goal: str = ""
-    importance: float = 0.5
-    recency: float = 1.0    # 0.0-1.0, 1.0 = más reciente
-    relevance_score: float = 0.0  # Score combinado
-    token_estimate: int = 0
-
-
-@dataclass
-class ContextOutput:
-    """Output del ContextAgent."""
-    compressed_context: str = ""          # Contexto comprimido para inyectar
-    relevant_memories: List[Dict[str, Any]] = field(default_factory=list)
-    token_budget: Dict[str, int] = field(default_factory=dict)
-    context_scores: Dict[str, float] = field(default_factory=dict)
-    entries_used: int = 0                 # Cuántas entradas se incluyeron
-    entries_total: int = 0                # Total disponible
-    compression_ratio: float = 1.0        # ratio = compressed_tokens / raw_tokens
-    source: str = "fallback"
-    duration_ms: int = 0
+# Note: ContextEntry and ContextOutput are imported from schemas.py (single source of truth)
 
 
 class ContextAgent(BaseAgent[ContextOutput]):

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Orchestrator v13 (Real Pipeline + Abortive Protocol)
+TITAN OMNISCALE X - Orchestrator v16 (Real Pipeline + Abortive Protocol)
 
 Orquestador del pipeline completo de 8 niveles.
 Incluye:
@@ -283,7 +283,7 @@ class TitanOrchestrator:
         if cached:
             elapsed = int((time.time() - start_time) * 1000)
             logger.info(f"SmartMemory: Cache hit ({cached['source']}) for: {msg[:50]}")
-            self._analysis.log_request(intent if 'intent' in dir() else None, "CACHED", elapsed, cache_hit=True)
+            self._analysis.log_request(None, "CACHED", elapsed, cache_hit=True)
             return {
                 "status": "CACHED",
                 "code": cached.get("response", ""),
@@ -369,16 +369,30 @@ class TitanOrchestrator:
 
             elif step.action == "SCRAPE_PATTERNS":
                 query = step.constraints.get("query", intent.scrap_query)
-                patterns = await self.scrap.fetch_modern_code(query, lang)
-                if patterns:
-                    explanations.append(f"Found {len(patterns) if isinstance(patterns, list) else 1} patterns on GitHub")
-                    best = patterns[0] if isinstance(patterns, list) else patterns
-                    if isinstance(best, dict):
-                        best = best.get("code", str(best))[:2000]
+                # SmartScraper: Auto-routing multi-fuente (GitHub + DevDocs + IconStack + Picsum)
+                smart_result = await self.scrap.smart_fetch(query, lang)
+                if smart_result.get("success") and smart_result.get("content"):
+                    source_name = smart_result.get("source", "github")
+                    explanations.append(f"SmartScraper: Found content via {source_name}")
+                    content = smart_result["content"]
                     if not code:
-                        code = best
+                        code = content
                 else:
-                    explanations.append("GitHub search: no results. Using local generation.")
+                    # Fallback: buscar en todas las fuentes
+                    all_results = await self.scrap.fetch_all_sources(query, lang)
+                    best_content = ""
+                    best_source = ""
+                    for src in ["github", "devdocs", "iconstack", "picsum"]:
+                        if src in all_results and all_results[src]:
+                            best_content = all_results[src]
+                            best_source = src
+                            break
+                    if best_content:
+                        explanations.append(f"SmartScraper: Found content via {best_source} (fallback)")
+                        if not code:
+                            code = best_content
+                    else:
+                        explanations.append("SmartScraper: No results. Using local generation.")
 
             elif step.action == "GENERATE_CODE":
                 result_code = self._code_gen.generate_contextual_code(intent, ast_analysis, plan, lang)

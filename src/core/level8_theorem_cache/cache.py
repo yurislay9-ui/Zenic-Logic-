@@ -1,11 +1,11 @@
 """
-TITAN OMNISCALE X - Theorem Cache v13 (Skeleton Hash + LRU Eviction)
+TITAN OMNISCALE X - Theorem Cache v16 (Skeleton Hash + LRU Eviction)
 
 Cache de teoremas con destilacion topologica (skeleton hash).
 Normaliza AST, elimina nombres de variables, y guarda esqueletos
 estructurales para bypass O(1) en mutaciones repetidas.
 
-v13 EVICTION: Politica LRU con limite de entradas y limpieza automatica.
+v16 EVICTION: Politica LRU con limite de entradas y limpieza automatica.
 Previene que la cache crezca sin control en dispositivos ARM con RAM limitada.
 
 Sin dependencias externas. Compatible con Android.

@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X v13 - Test Configuration
+TITAN OMNISCALE X v16 - Test Configuration
 
 Shared fixtures for all unit tests. Uses temporary directories
 to avoid polluting the real data directory.
