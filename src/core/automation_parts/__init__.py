@@ -1,10 +1,10 @@
 """
-TITAN OMNISCALE X - AutomationEngine (Workflow Automation for PYMEs)
+automation_parts — Sub-modules for AutomationEngine.
 
-Thin facade — all implementation lives in automation_parts sub-package.
+Re-exports all public symbols for convenient access.
 """
 
-from .automation_parts import (
+from .types import (
     DB_DIR,
     DB_PATH,
     PROJECTS_DIR,
@@ -14,18 +14,22 @@ from .automation_parts import (
     Action,
     Workflow,
     WorkflowExecution,
-    AutomationEngine,
 )
+from .engine import AutomationEngine
 
 __all__ = [
+    # Constants
     "DB_DIR",
     "DB_PATH",
     "PROJECTS_DIR",
+    # Enums
     "TriggerType",
     "ActionType",
+    # Dataclasses
     "Trigger",
     "Action",
     "Workflow",
     "WorkflowExecution",
+    # Main class
     "AutomationEngine",
 ]

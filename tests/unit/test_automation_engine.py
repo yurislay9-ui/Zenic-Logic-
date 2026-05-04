@@ -39,6 +39,10 @@ def temp_db(tmp_path, monkeypatch):
     projects_dir = str(tmp_path / "projects")
     os.makedirs(db_dir, exist_ok=True)
 
+    monkeypatch.setattr("src.core.automation_parts.types.DB_DIR", db_dir)
+    monkeypatch.setattr("src.core.automation_parts.types.DB_PATH", db_path)
+    monkeypatch.setattr("src.core.automation_parts.types.PROJECTS_DIR", projects_dir)
+    # Also patch the facade for backward compatibility
     monkeypatch.setattr("src.core.automation_engine.DB_DIR", db_dir)
     monkeypatch.setattr("src.core.automation_engine.DB_PATH", db_path)
     monkeypatch.setattr("src.core.automation_engine.PROJECTS_DIR", projects_dir)
