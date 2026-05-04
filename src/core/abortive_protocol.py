@@ -18,8 +18,18 @@ from src.config.loader import get_solver_timeout_ms
 from src.core.shared.db_initializer import get_projects_dir
 from src.core.shared.contracts import OperationType
 from src.core.subtask_descriptor import SubtaskDescriptor
+from src.core.step_dispatcher import StepDispatcher
 
 logger = logging.getLogger(__name__)
+
+# === Extracted Constants (previously hardcoded inline) ===
+MAX_SUBTASKS = 5                   # Max subtasks for abortive protocol
+MAX_DEEP_SUBTASKS = 3              # Max deep subtasks for recursive subdivision
+MAX_ABORTIVE_DEPTH = 2             # Max recursion depth for abortive protocol
+ABORTIVE_SANDBOX_TTL_MULTIPLIER = 5 # Abortive workspace TTL multiplier
+ABORTIVE_SANDBOX_TTL_MIN = 300      # Minimum abortive workspace TTL
+SUBTASK_SANDBOX_TTL_MULTIPLIER = 2  # Subtask workspace TTL multiplier
+SUBTASK_SANDBOX_TTL_MIN = 60       # Minimum subtask workspace TTL
 
 
 class AbortiveProtocol:
@@ -30,9 +40,10 @@ class AbortiveProtocol:
         Initialize with a reference to the orchestrator.
 
         Args:
-            orchestrator: TitanOrchestrator instance for accessing pipeline components.
+            orchestrator: BaseOrchestrator (or subclass) instance for accessing pipeline components.
         """
         self._orchestrator = orchestrator
+        self._step_dispatcher = StepDispatcher(orchestrator)
 
     async def handle_abortive_protocol(self, intent, routing, plan, ast_analysis, start_time):
         """
@@ -54,7 +65,7 @@ class AbortiveProtocol:
 
         # Crear workspace AISLADO para el protocolo abortivo
         abortive_workspace = orch._isolation_manager.create_workspace(
-            ttl_seconds=max(orch.sandbox.timeout_seconds * 5, 300)
+            ttl_seconds=max(orch.sandbox.timeout_seconds * ABORTIVE_SANDBOX_TTL_MULTIPLIER, ABORTIVE_SANDBOX_TTL_MIN)
         )
 
         # Rollback
@@ -64,13 +75,13 @@ class AbortiveProtocol:
         solver_timeout = plan.solver_proof.get("timeout_ms", get_solver_timeout_ms(orch.settings)) if plan.solver_proof else get_solver_timeout_ms(orch.settings)
 
         # Generar subtareas automaticamente (limit to 5 for memory safety)
-        subtasks = self.generate_subtasks(intent, ast_analysis, plan)[:5]
+        subtasks = self.generate_subtasks(intent, ast_analysis, plan)[:MAX_SUBTASKS]
 
         # EJECUTAR cada subtask a traves del pipeline completo
         subtask_results = []
         for i, subtask_msg in enumerate(subtasks):
             try:
-                result = await self.execute_subtask(subtask_msg, depth=0, max_depth=2)
+                result = await self.execute_subtask(subtask_msg, depth=0, max_depth=MAX_ABORTIVE_DEPTH)
                 subtask_results.append(result)
             except Exception as e:
                 logger.error("Subtask %d failed: %s", i, e)
@@ -96,6 +107,11 @@ class AbortiveProtocol:
                 # Commit resultado combinado en workspace aislado
                 node = orch.ledger.commit(intent.target, combined_code, p_dir,
                                            workspace=abortive_workspace)
+                # Release sandbox workspace after successful commit
+                try:
+                    orch._isolation_manager.release_workspace(abortive_workspace.sandbox_id)
+                except Exception:
+                    pass
                 orch.cache.save(intent, "PROVEN",
                               {"h": node.hash_sha256[:8], "code": combined_code},
                               combined_code, intent.language)
@@ -152,7 +168,8 @@ class AbortiveProtocol:
                     subtask_results=subtask_results, combined_code=combined_code
                 )
 
-        # No combined code could be produced
+        # No combined code could be produced — release workspace before returning
+        orch._isolation_manager.release_workspace(abortive_workspace.sandbox_id)
         elapsed = int((time.time() - start_time) * 1000)
         from src.core.shared.contracts import SandboxResult
         no_code_trial = SandboxResult(
@@ -171,29 +188,16 @@ class AbortiveProtocol:
         """
         Genera subtareas enriquecidas (SubtaskDescriptor) a partir de una tarea
         que excedio el presupuesto del solver.
-
-        Cada subtarea preserva:
-        - Solver insights (Z3/AC-3 results del análisis padre)
-        - MCTS hints (best action del plan padre)
-        - Parent violations (violaciones simbólicas detectadas)
-        - Parent context (AST analysis, metrics)
-
-        Estrategia de subdivision:
-        1. Si hay codigo, dividir por funcion/clase con contexto específico
-        2. Si es CREATE, dividir en interfaces + implementacion + validacion
-        3. Si es REFACTOR, dividir en analisis + mutacion por funcion
-        4. Si es DEBUG, dividir en trace + fix por funcion
         """
         orch = self._orchestrator
         # Extract parent pipeline context
         solver_insights = orch._code_gen.extract_solver_insights(plan.solver_proof) if plan else {}
         mcts_hints = []
         if plan and plan.steps:
-            mcts_hints = [s.action for s in plan.steps[:3]]  # Top 3 MCTS actions
+            mcts_hints = [s.action for s in plan.steps[:3]]
 
         parent_violations = []
         if plan and plan.solver_proof and isinstance(plan.solver_proof, dict):
-            # Extract violations from solver proof if available
             for key in ["null_safety", "type_safety", "invariant_safety"]:
                 sub_result = plan.solver_proof.get(key)
                 if isinstance(sub_result, dict) and not sub_result.get("verified", True):
@@ -209,7 +213,6 @@ class AbortiveProtocol:
         subtasks = []
 
         if intent.raw_code:
-            # Dividir por funciones con contexto específico
             function_names = ast_analysis.get("function_names", [])
             if function_names:
                 for fn_name in function_names:
@@ -226,7 +229,6 @@ class AbortiveProtocol:
                         depth=0,
                     ))
             else:
-                # Dividir genérica con contexto
                 subtasks.append(SubtaskDescriptor(
                     message=f"analyze structure of {intent.target}",
                     target=intent.target,
@@ -250,7 +252,6 @@ class AbortiveProtocol:
                     depth=0,
                 ))
         else:
-            # Sin codigo: subdividir la operacion en fases con contexto
             if intent.op == OperationType.CREATE:
                 subtasks.append(SubtaskDescriptor(
                     message=f"create interfaces and types for {intent.target}",
@@ -375,14 +376,8 @@ class AbortiveProtocol:
         Execute a single subtask through the full pipeline.
 
         Accepts both SubtaskDescriptor (enriched) and str (legacy).
-        When a SubtaskDescriptor is provided, the solver insights,
-        MCTS hints, and parent violations are used to enrich the
-        subtask's execution context.
-
-        Runs the complete sub-pipeline: parse -> AST -> cache -> route -> plan
-        -> execute steps -> sandbox -> commit/rollback.
-
-        If a subtask itself times out, recursively subdivides up to max_depth.
+        Uses StepDispatcher for unified step execution instead of
+        duplicating the dispatch logic.
         """
         import time
 
@@ -421,109 +416,26 @@ class AbortiveProtocol:
             # Recursive subdivision
             deeper_subtasks = self.generate_subtasks(sub_intent, sub_ast, sub_plan)
             results = []
-            for ds in deeper_subtasks[:3]:  # Limit to 3 sub-subtasks
+            for ds in deeper_subtasks[:MAX_DEEP_SUBTASKS]:
                 result = await self.execute_subtask(ds, depth + 1, max_depth)
                 results.append(result)
             combined = self.merge_subtask_results(results, sub_intent.language)
             return combined
 
-        # Execute plan steps (same logic as main execute())
+        # Execute plan steps using StepDispatcher (unified logic)
         code = sub_intent.raw_code or ""
-        result_code = ""
         explanations = []
         lang = sub_intent.language
 
-        for step in sub_plan.steps:
-            if step.action == "ANALYZE_STRUCTURE":
-                if code:
-                    analysis = orch.ast_engine.analyze_structure(code, lang)
-                    explanations.append(
-                        f"Structure: {analysis['functions']} functions, "
-                        f"{analysis['classes']} classes, max complexity {analysis['max_complexity']}"
-                    )
-                else:
-                    explanations.append("No code provided for analysis.")
-
-            elif step.action == "SCRAPE_PATTERNS":
-                query = step.constraints.get("query", sub_intent.scrap_query)
-                # SmartScraper: Auto-routing multi-fuente
-                smart_result = await orch.scrap.smart_fetch(query, lang)
-                if smart_result.get("success") and smart_result.get("content"):
-                    source_name = smart_result.get("source", "github")
-                    explanations.append(f"SmartScraper: Found content via {source_name}")
-                    content = smart_result["content"]
-                    if not code:
-                        code = content
-                else:
-                    explanations.append("SmartScraper: No results. Using local generation.")
-
-            elif step.action == "GENERATE_CODE":
-                result_code = orch._code_gen.generate_contextual_code(sub_intent, sub_ast, sub_plan, lang)
-                explanations.append(f"Code generated for {sub_intent.op}")
-
-            elif step.action == "REPLACE_AST_NODE":
-                if code and step.target_node_name:
-                    solver_insights = orch._code_gen.extract_solver_insights(sub_plan.solver_proof) if sub_plan else None
-                    new_snippet = orch._code_transform.optimize_function(step.target_node_name, lang, sub_ast, solver_insights)
-                    result_code = orch.surgeon.mutate_node(code, step.target_node_name, new_snippet, lang)
-                    explanations.append(f"Function '{step.target_node_name}' replaced via AST surgery")
-                else:
-                    result_code = orch._code_gen.generate_contextual_code(sub_intent, sub_ast, sub_plan, lang)
-                    explanations.append("Optimized code generated")
-
-            elif step.action == "DELETE_AST_NODE":
-                if code and step.target_node_name:
-                    result_code = orch.surgeon.delete_function(code, step.target_node_name, lang)
-                    explanations.append(f"Function '{step.target_node_name}' deleted via AST surgery")
-
-            elif step.action == "TRACE_EXECUTION":
-                explanations.append("Symbolic execution trace performed (K-Path limited)")
-                if code:
-                    analysis = orch.ast_engine.analyze_structure(code, lang)
-                    for fn_name in analysis.get("function_names", []):
-                        explanations.append(f"  - Traced: {fn_name}")
-
-            elif step.action == "PATCH_FIX":
-                result_code = orch._analysis.apply_fix(code, sub_intent, lang)
-                explanations.append("Fix patch applied")
-
-            elif step.action == "QUALITY_REPORT":
-                if code:
-                    report = orch._analysis.generate_quality_report(
-                        orch.ast_engine.analyze_structure(code, lang), code, lang)
-                    explanations.append(report)
-
-            elif step.action == "EXPLAIN_CODE":
-                if code:
-                    explanations.append(orch._analysis.explain_code(code, lang, sub_ast))
-                else:
-                    explanations.append(orch._analysis.explain_concept(sub_intent))
-
-            elif step.action in ["SYMBOLIC_VALIDATION", "SYNTAX_VALIDATION"]:
-                explanations.append("Symbolic validation executed (bounded symbolic execution)")
-
-            elif step.action == "ANALYZE_AND_RESPOND":
-                if code:
-                    explanations.append(orch._analysis.analyze_and_respond(code, sub_intent, sub_ast))
-                else:
-                    explanations.append(orch._analysis.general_response(sub_intent))
-
-            elif step.action in ["QUICK_ANALYSIS", "FULL_ANALYSIS"]:
-                if code:
-                    explanations.append(orch._analysis.full_analysis(code, sub_intent, sub_ast, lang))
-                else:
-                    explanations.append(orch._analysis.general_response(sub_intent))
-
-            elif step.action == "CHECK_DEPENDENCIES":
-                if code:
-                    deps = orch._analysis.check_dependencies(code, sub_intent.target, lang)
-                    explanations.extend(deps)
+        result_code, code, explanations = await self._step_dispatcher.execute_plan_steps(
+            sub_plan, sub_intent, code, explanations, lang, sub_ast,
+        )
 
         final_code = result_code if result_code else code
 
         # Sandbox validation con workspace AISLADO para subtask
         subtask_workspace = orch._isolation_manager.create_workspace(
-            ttl_seconds=max(orch.sandbox.timeout_seconds * 2, 60)
+            ttl_seconds=max(orch.sandbox.timeout_seconds * SUBTASK_SANDBOX_TTL_MULTIPLIER, SUBTASK_SANDBOX_TTL_MIN)
         )
         p_dir = str(get_projects_dir())
         orch.ledger.snapshot(sub_intent.target, p_dir, workspace=subtask_workspace)
@@ -553,10 +465,6 @@ class AbortiveProtocol:
     def merge_subtask_results(self, subtask_results, language="python"):
         """
         Combine code from multiple subtasks into one coherent module (Gap 4 Fix).
-
-        For Python: concatenate with deduplication of imports.
-        For other languages: appropriate line-based merging.
-        Returns empty string if no code could be extracted.
         """
         code_parts = []
         for result in subtask_results:
@@ -598,7 +506,6 @@ class AbortiveProtocol:
             all_imports.extend(imports)
             all_bodies.append('\n'.join(body))
 
-        # Deduplicate imports while preserving order
         seen_imports = set()
         unique_imports = []
         for imp in all_imports:
@@ -672,5 +579,5 @@ class AbortiveProtocol:
                         all_lines.append(line)
                     continue
                 all_lines.append(line)
-            all_lines.append('')  # blank line between blocks
+            all_lines.append('')
         return '\n'.join(all_lines)

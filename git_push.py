@@ -26,7 +26,18 @@ def main():
 
     # Load SSH key
     key_path = os.path.expanduser("~/.ssh/id_rsa")
-    pkey = paramiko.RSAKey.from_private_key_file(key_path)
+    try:
+        pkey = paramiko.RSAKey.from_private_key_file(key_path)
+    except FileNotFoundError:
+        print(f"Error: SSH key not found at {key_path}", file=sys.stderr)
+        print("Generate one with: ssh-keygen -t rsa -f ~/.ssh/id_rsa", file=sys.stderr)
+        sys.exit(1)
+    except paramiko.PasswordRequiredException:
+        print(f"Error: SSH key at {key_path} requires a passphrase", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: Could not load SSH key at {key_path}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Connect
     client = paramiko.SSHClient()
@@ -43,16 +54,13 @@ def main():
         print(f"Add the host key to ~/.ssh/known_hosts first: ssh-keyscan {host} >> ~/.ssh/known_hosts", file=sys.stderr)
         sys.exit(1)
 
-    # Execute git command
-    stdin, stdout, stderr = client.get_transport().open_session().exec_command(git_command)
+    # Execute git command via SSH channel
+    chan = client.get_transport().open_session()
+    chan.exec_command(git_command)
 
     # Proxy data between git and SSH
     import select
     import socket
-
-    # Use exec_command with proper channel
-    chan = client.get_transport().open_session()
-    chan.exec_command(git_command)
 
     # Simple proxy loop
     import fcntl

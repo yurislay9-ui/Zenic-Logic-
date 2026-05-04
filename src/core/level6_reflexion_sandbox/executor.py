@@ -199,31 +199,45 @@ class ReflexionSandbox:
             )
 
         # Fase 7: Ejecucion segura AISLADA con timeout real
-        if not dangerous_calls:
-            exec_result, timed_out = self._enforcer.execute_with_timeout(
-                self._isolated_exec, code, target_name
+        if dangerous_calls:
+            # Dangerous code detected — do NOT execute, return FAIL status
+            warnings.append(f"Dangerous calls detected: {', '.join(dangerous_calls)}. Execution blocked.")
+            return SandboxResult(
+                status="FAIL_DANGEROUS",
+                error_message=(
+                    f"Dangerous code patterns detected: {', '.join(dangerous_calls)}. "
+                    f"Execution blocked for safety. Remove or refactor these calls."
+                ),
+                warnings=warnings,
+                metrics=metrics,
+                paths_explored=paths_explored,
+                paths_pruned=paths_pruned
             )
-            if timed_out:
-                return SandboxResult(
-                    status="FAIL_TIMEOUT",
-                    error_message=(
-                        f"Execution exceeded timeout ({self.timeout_seconds}s). "
-                        f"Code may contain infinite loops or excessive computation."
-                    ),
-                    warnings=warnings,
-                    metrics=metrics,
-                    paths_explored=paths_explored,
-                    paths_pruned=paths_pruned
-                )
-            if exec_result and exec_result.get("error"):
-                return SandboxResult(
-                    status="FAIL_RUNTIME",
-                    error_message=exec_result["error"],
-                    warnings=warnings,
-                    metrics=metrics,
-                    paths_explored=paths_explored,
-                    paths_pruned=paths_pruned
-                )
+
+        exec_result, timed_out = self._enforcer.execute_with_timeout(
+            self._isolated_exec, code, target_name
+        )
+        if timed_out:
+            return SandboxResult(
+                status="FAIL_TIMEOUT",
+                error_message=(
+                    f"Execution exceeded timeout ({self.timeout_seconds}s). "
+                    f"Code may contain infinite loops or excessive computation."
+                ),
+                warnings=warnings,
+                metrics=metrics,
+                paths_explored=paths_explored,
+                paths_pruned=paths_pruned
+            )
+        if exec_result and exec_result.get("error"):
+            return SandboxResult(
+                status="FAIL_RUNTIME",
+                error_message=exec_result["error"],
+                warnings=warnings,
+                metrics=metrics,
+                paths_explored=paths_explored,
+                paths_pruned=paths_pruned
+            )
 
         # Agregar info de la ejecucion simbolica al resultado
         metrics["symbolic_paths"] = len(symbolic_result.get("paths", []))

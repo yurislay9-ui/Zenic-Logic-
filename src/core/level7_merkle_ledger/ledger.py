@@ -45,6 +45,8 @@ class MerkleLedger:
         conn.commit()
 
     def _hash_content(self, content):
+        if isinstance(content, bytes):
+            return hashlib.sha256(content).hexdigest()
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
     def _merkle_root(self, hashes):
@@ -62,8 +64,32 @@ class MerkleLedger:
             hashes = new_level
         return hashes[0]
 
+    def _get_all_file_hashes(self, db_path=None):
+        """Obtiene los hashes mas recientes de todos los archivos. Si db_path se proporciona, usa esa DB."""
+        conn = None
+        try:
+            if db_path:
+                conn = sqlite3.connect(db_path)
+            else:
+                conn = get_connection("merkle_ledger.sqlite")
+            rows = conn.execute(
+                "SELECT file_path, hash_sha256 FROM ledger WHERE id IN "
+                "(SELECT MAX(id) FROM ledger GROUP BY file_path)"
+            ).fetchall()
+            return {row[0]: row[1] for row in rows}
+        except Exception as e:
+            logger.warning("Ledger: Error getting all file hashes: %s", e)
+            return {}
+        finally:
+            if db_path and conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
     def _get_last_hash(self, file_path, db_path=None):
         """Obtiene el ultimo hash para un archivo. Si db_path se proporciona, usa esa DB."""
+        conn = None
         try:
             if db_path:
                 conn = sqlite3.connect(db_path)
@@ -72,24 +98,35 @@ class MerkleLedger:
             r = conn.execute(
                 "SELECT hash_sha256 FROM ledger WHERE file_path=? ORDER BY id DESC LIMIT 1",
                 (file_path,)).fetchone()
-            if db_path:
-                conn.close()
             return r[0] if r else "GENESIS"
-        except Exception:
+        except Exception as e:
+            logger.warning("Ledger: Error getting last hash: %s", e)
             return "GENESIS"
+        finally:
+            if db_path and conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _record_operation(self, file_path, content_hash, parent_hash, operation, db_path=None):
         """Registra una operacion en el ledger. Si db_path se proporciona, usa esa DB."""
-        if db_path:
-            conn = sqlite3.connect(db_path)
-        else:
-            conn = get_connection("merkle_ledger.sqlite")
-        conn.execute(
-            "INSERT INTO ledger (file_path, hash_sha256, parent_hash, operation, timestamp) VALUES (?,?,?,?,?)",
-            (file_path, content_hash, parent_hash, operation, time.time()))
-        conn.commit()
-        if db_path:
-            conn.close()
+        conn = None
+        try:
+            if db_path:
+                conn = sqlite3.connect(db_path)
+            else:
+                conn = get_connection("merkle_ledger.sqlite")
+            conn.execute(
+                "INSERT INTO ledger (file_path, hash_sha256, parent_hash, operation, timestamp) VALUES (?,?,?,?,?)",
+                (file_path, content_hash, parent_hash, operation, time.time()))
+            conn.commit()
+        finally:
+            if db_path and conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def snapshot(self, rel_path, project_dir, workspace=None):
         """
@@ -139,13 +176,24 @@ class MerkleLedger:
             content_hash = self._hash_content(content)
             self._ensure_sandbox_db(workspace)
             parent_hash = self._get_last_hash(rel_path, workspace.get_db_path("merkle_ledger.sqlite"))
-            merkle_hash = self._merkle_root([content_hash, parent_hash])
+
+            # Collect all current file hashes for proper Merkle root
+            all_hashes = list(self._get_all_file_hashes(
+                workspace.get_db_path("merkle_ledger.sqlite")).values())
+            all_hashes.append(content_hash)
+
+            # Compute proper Merkle root over ALL hashes
+            if len(all_hashes) >= 2:
+                root_hash = self._merkle_root(all_hashes)
+            else:
+                root_hash = content_hash
+
             self._record_operation(
-                rel_path, merkle_hash, parent_hash, "COMMIT",
+                rel_path, root_hash, parent_hash, "COMMIT",
                 workspace.get_db_path("merkle_ledger.sqlite")
             )
             logger.info("Commit (sandbox): %s -> %s in workspace %s",
-                        rel_path, merkle_hash[:12], workspace.sandbox_id)
+                        rel_path, root_hash[:12], workspace.sandbox_id)
         else:
             # MODO LEGADO: escribir en el filesystem del sistema
             p = Path(project_dir) / rel_path
@@ -153,11 +201,21 @@ class MerkleLedger:
             p.write_text(content, encoding="utf-8")
             content_hash = self._hash_content(content)
             parent_hash = self._get_last_hash(rel_path)
-            merkle_hash = self._merkle_root([content_hash, parent_hash])
-            self._record_operation(rel_path, merkle_hash, parent_hash, "COMMIT")
+
+            # Collect all current file hashes for proper Merkle root
+            all_hashes = list(self._get_all_file_hashes().values())
+            all_hashes.append(content_hash)
+
+            # Compute proper Merkle root over ALL hashes
+            if len(all_hashes) >= 2:
+                root_hash = self._merkle_root(all_hashes)
+            else:
+                root_hash = content_hash
+
+            self._record_operation(rel_path, root_hash, parent_hash, "COMMIT")
 
         return MerkleNode(
-            file_path=rel_path, hash_sha256=merkle_hash,
+            file_path=rel_path, hash_sha256=root_hash,
             parent_hash=parent_hash, timestamp=time.time(), operation="COMMIT"
         )
 

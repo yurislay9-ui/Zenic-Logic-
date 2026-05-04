@@ -31,10 +31,16 @@ import time
 import json
 import sqlite3
 import hashlib
+import threading
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
-import numpy as np
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    np = None
+    HAS_NUMPY = False
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +68,7 @@ class MemoryEntry:
     goal: str = ""
     importance: float = 0.5     # 0.0-1.0, higher = more important
     timestamp: float = 0.0
-    embedding: Optional[np.ndarray] = None  # Lazy-loaded
+    embedding: Optional[Any] = None  # np.ndarray when numpy available
     access_count: int = 0
     session_id: str = ""
     client_id: str = "default"
@@ -80,14 +86,14 @@ class SmartMemory:
 
     # VACUUM interval: every 24 hours to prevent DB bloat on phone storage
     VACUUM_INTERVAL_S = 86400  # 24 hours
-    _last_vacuum_time = 0.0
 
     def __init__(self, semantic_engine=None):
         self._semantic = semantic_engine  # Reference to SemanticEngine for embeddings
         self._session_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
         self._working_memory: List[MemoryEntry] = []
+        self._working_lock = threading.Lock()
         self._client_id = 'default'  # Brecha B: Multi-client isolation
-        self._conn_pool = None  # Persistent connection for WAL mode
+        self._last_vacuum_time = 0.0  # Instance variable (was class var)
 
         # Initialize DB with WAL mode for better mobile performance
         os.makedirs(DB_DIR, exist_ok=True)
@@ -120,7 +126,7 @@ class SmartMemory:
         eliminando espacio muerto, pero es costoso → solo cada 24h.
         """
         now = time.time()
-        if now - SmartMemory._last_vacuum_time < SmartMemory.VACUUM_INTERVAL_S:
+        if now - self._last_vacuum_time < SmartMemory.VACUUM_INTERVAL_S:
             return
 
         try:
@@ -132,7 +138,7 @@ class SmartMemory:
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 conn.execute("VACUUM")
 
-            SmartMemory._last_vacuum_time = now
+            self._last_vacuum_time = now
             new_size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
             logger.info(
                 f"SmartMemory: VACUUM complete ({db_size_mb:.1f}MB → {new_size_mb:.1f}MB)"
@@ -274,9 +280,10 @@ class SmartMemory:
         conn = self._get_connection()
         try:
             for table in tables:
+                assert table in self._VALID_TABLES, f"Invalid table: {table}"
                 try:
                     conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN client_id TEXT DEFAULT 'default'"
+                        f'ALTER TABLE "{table}" ADD COLUMN client_id TEXT DEFAULT \'default\''
                     )
                 except sqlite3.OperationalError:
                     # Column already exists, ignore
@@ -294,8 +301,9 @@ class SmartMemory:
         conn = self._get_connection()
         try:
             for table in tables:
+                assert table in self._VALID_TABLES, f"Invalid table: {table}"
                 conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{table}_client ON {table}(client_id)"
+                    f'CREATE INDEX IF NOT EXISTS "idx_{table}_client" ON "{table}"(client_id)'
                 )
             conn.commit()
         finally:
@@ -416,13 +424,13 @@ class SmartMemory:
             session_id=self._session_id,
             client_id=self._client_id,
         )
-        self._working_memory.append(entry)
+        with self._working_lock:
+            self._working_memory.append(entry)
 
-        # Evict oldest if over limit
-        if len(self._working_memory) > MAX_WORKING_ENTRIES:
-            # Remove lowest importance entry
-            self._working_memory.sort(key=lambda e: e.importance)
-            self._working_memory.pop(0)
+            # Evict lowest importance if over limit
+            if len(self._working_memory) > MAX_WORKING_ENTRIES:
+                min_entry = min(self._working_memory, key=lambda e: e.importance)
+                self._working_memory.remove(min_entry)
 
     def get_working_context(self, max_tokens: int = MAX_COMPRESSED_TOKENS) -> str:
         """
@@ -431,14 +439,15 @@ class SmartMemory:
         Formato: "Previous context: [summarized interactions]"
         Esto le da a Qwen el contexto que no tendría de otra forma.
         """
-        if not self._working_memory:
-            return ""
+        with self._working_lock:
+            if not self._working_memory:
+                return ""
 
-        # Build context from working memory, prioritizing important entries
-        # Brecha B: Filter by client_id
-        client_entries = [e for e in self._working_memory if e.client_id == self._client_id]
-        sorted_entries = sorted(client_entries, key=lambda e: (-e.importance, -e.timestamp))
-        
+            # Build context from working memory, prioritizing important entries
+            # Brecha B: Filter by client_id
+            client_entries = [e for e in self._working_memory if e.client_id == self._client_id]
+            sorted_entries = sorted(client_entries, key=lambda e: (-e.importance, -e.timestamp))
+
         context_parts = []
         token_estimate = 0
         
@@ -461,7 +470,8 @@ class SmartMemory:
 
     def get_recent_operations(self, n: int = 5) -> List[str]:
         """Obtiene las últimas N operaciones realizadas."""
-        return [e.operation for e in self._working_memory[-n:] if e.operation]
+        with self._working_lock:
+            return [e.operation for e in self._working_memory[-n:] if e.operation]
 
     # ================================================================
     #  3. LONG-TERM MEMORY (learning)
@@ -469,15 +479,16 @@ class SmartMemory:
 
     def save_to_long_term(self, query: str, solution: str, operation: str = "",
                            goal: str = "", importance: float = 0.5, 
-                           success: bool = True, tags: List[str] = None):
+                           success: bool = True, tags: Optional[List[str]] = None):
         """Guarda una solución exitosa en la memoria a largo plazo."""
+        tags = tags or []
         emb_blob = None
         if self._semantic and self._semantic.is_loaded:
             emb = self._semantic.embed(query)
             if emb is not None:
                 emb_blob = self._serialize_embedding(emb)
 
-        tags_json = json.dumps(tags or [])
+        tags_json = json.dumps(tags)
 
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -531,12 +542,12 @@ class SmartMemory:
     def _evict_long_term(self):
         """Evict least important entries if over limit."""
         with sqlite3.connect(DB_PATH) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM long_term_memory").fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM long_term_memory WHERE client_id=?", (self._client_id,)).fetchone()[0]
             if count > MAX_LONG_TERM_ENTRIES:
                 # Delete lowest importance entries
                 conn.execute(
-                    "DELETE FROM long_term_memory WHERE id IN (SELECT id FROM long_term_memory ORDER BY importance ASC, access_count ASC LIMIT ?)",
-                    (count - MAX_LONG_TERM_ENTRIES + 50,)  # Delete extra 50 to avoid frequent eviction
+                    "DELETE FROM long_term_memory WHERE id IN (SELECT id FROM long_term_memory WHERE client_id=? ORDER BY importance ASC, access_count ASC LIMIT ?)",
+                    (self._client_id, count - MAX_LONG_TERM_ENTRIES + 50,)  # Delete extra 50 to avoid frequent eviction
                 )
 
     # ================================================================
@@ -591,14 +602,16 @@ class SmartMemory:
     # ================================================================
 
     @staticmethod
-    def _serialize_embedding(emb: np.ndarray) -> bytes:
+    def _serialize_embedding(emb) -> bytes:
         """Serialize embedding to bytes for SQLite storage."""
+        if not HAS_NUMPY:
+            return b''
         return emb.astype(np.float32).tobytes()
 
     @staticmethod
-    def _deserialize_embedding(data: bytes) -> Optional[np.ndarray]:
+    def _deserialize_embedding(data: bytes):
         """Deserialize embedding from SQLite bytes."""
-        if data is None or len(data) == 0:
+        if not HAS_NUMPY or data is None or len(data) == 0:
             return None
         try:
             emb = np.frombuffer(data, dtype=np.float32)
@@ -624,7 +637,7 @@ class SmartMemory:
         return {
             "session_id": self._session_id,
             "client_id": self._client_id,
-            "working_memory_size": len(self._working_memory),
+            "working_memory_size": len(self._working_memory) if self._working_lock else 0,
             "semantic_cache_size": cache_count,
             "long_term_memory_size": ltm_count,
             "semantic_engine_available": self._semantic is not None and self._semantic.is_loaded,
@@ -636,14 +649,15 @@ class SmartMemory:
     # ================================================================
 
     def save_episode(self, event_type: str, description: str, context: str = "",
-                     outcome: str = "", importance: float = 0.5, tags: list = None):
+                     outcome: str = "", importance: float = 0.5, tags: Optional[List[str]] = None):
         """Guarda un episodio en la memoria episodica."""
+        tags = tags or []
         emb_blob = None
         if self._semantic and self._semantic.is_loaded:
             emb = self._semantic.embed(f"{event_type}: {description}")
             if emb is not None:
                 emb_blob = self._serialize_embedding(emb)
-        tags_json = json.dumps(tags or [])
+        tags_json = json.dumps(tags)
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO episodic_memory (event_type, description, context, outcome, importance, embedding, created_at, tags, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -651,7 +665,7 @@ class SmartMemory:
             )
         self._evict_table("episodic_memory", MAX_EPISODIC_ENTRIES)
 
-    def find_episodes(self, event_type: str = "", query: str = "", limit: int = 10) -> list:
+    def find_episodes(self, event_type: str = "", query: str = "", limit: int = 10) -> List[Dict[str, Any]]:
         """Busca episodios por tipo o similitud semantica."""
         results = []
         if event_type:
@@ -682,14 +696,15 @@ class SmartMemory:
     # ================================================================
 
     def learn_pattern(self, pattern_name: str, pattern_type: str, description: str,
-                       steps: list = None, success: bool = True):
+                       steps: Optional[List[str]] = None, success: bool = True):
         """Aprende un patron procedural. Trackea tasa de exito."""
+        steps = steps or []
         emb_blob = None
         if self._semantic and self._semantic.is_loaded:
             emb = self._semantic.embed(description)
             if emb is not None:
                 emb_blob = self._serialize_embedding(emb)
-        steps_json = json.dumps(steps or [])
+        steps_json = json.dumps(steps)
         with sqlite3.connect(DB_PATH) as conn:
             existing = conn.execute("SELECT id, success_count, fail_count FROM procedural_memory WHERE pattern_name=? AND client_id=?", (pattern_name, self._client_id)).fetchone()
             if existing:
@@ -702,7 +717,7 @@ class SmartMemory:
                 conn.execute("INSERT INTO procedural_memory (pattern_name, pattern_type, description, success_count, fail_count, success_rate, steps, embedding, created_at, last_used, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (pattern_name, pattern_type, description, 1 if success else 0, 0 if success else 1, 1.0 if success else 0.0, steps_json, emb_blob, time.time(), time.time(), self._client_id))
 
-    def find_patterns(self, pattern_type: str = "", query: str = "", min_success_rate: float = 0.5, limit: int = 5) -> list:
+    def find_patterns(self, pattern_type: str = "", query: str = "", min_success_rate: float = 0.5, limit: int = 5) -> List[Dict[str, Any]]:
         """Busca patrones aprendidos relevantes."""
         results = []
         with sqlite3.connect(DB_PATH) as conn:
@@ -734,12 +749,15 @@ class SmartMemory:
 
     def save_project(self, project_name: str, project_type: str = "",
                      description: str = "", path: str = "", status: str = "active",
-                     entities: list = None, endpoints: list = None,
-                     config: dict = None, notes: str = ""):
+                     entities: Optional[List[str]] = None, endpoints: Optional[List[str]] = None,
+                     config: Optional[Dict[str, Any]] = None, notes: str = ""):
         """Guarda/actualiza el estado de un proyecto generado."""
-        entities_json = json.dumps(entities or [])
-        endpoints_json = json.dumps(endpoints or [])
-        config_json = json.dumps(config or {})
+        entities = entities or []
+        endpoints = endpoints or []
+        config = config or {}
+        entities_json = json.dumps(entities)
+        endpoints_json = json.dumps(endpoints)
+        config_json = json.dumps(config)
         with sqlite3.connect(DB_PATH) as conn:
             existing = conn.execute("SELECT id FROM project_memory WHERE project_name=? AND client_id=?", (project_name, self._client_id)).fetchone()
             if existing:
@@ -749,20 +767,20 @@ class SmartMemory:
                 conn.execute("INSERT INTO project_memory (project_name, project_type, description, path, status, entities, endpoints, config, created_at, updated_at, notes, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (project_name, project_type, description, path, status, entities_json, endpoints_json, config_json, time.time(), time.time(), notes, self._client_id))
 
-    def get_project(self, project_name: str):
+    def get_project(self, project_name: str) -> Optional[Dict[str, Any]]:
         """Obtiene el estado de un proyecto."""
         with sqlite3.connect(DB_PATH) as conn:
             row = conn.execute("SELECT project_name, project_type, description, path, status, entities, endpoints, config, created_at, updated_at, notes FROM project_memory WHERE project_name=? AND client_id=?", (project_name, self._client_id)).fetchone()
         if not row: return None
         return {"project_name": row[0], "project_type": row[1], "description": row[2], "path": row[3], "status": row[4], "entities": json.loads(row[5] or "[]"), "endpoints": json.loads(row[6] or "[]"), "config": json.loads(row[7] or "{}"), "created_at": row[8], "updated_at": row[9], "notes": row[10]}
 
-    def list_projects(self, status: str = "") -> list:
+    def list_projects(self, status: str = "") -> List[Dict[str, Any]]:
         """Lista todos los proyectos."""
         with sqlite3.connect(DB_PATH) as conn:
             if status:
-                rows = conn.execute("SELECT project_name, project_type, description, path, status, created_at, updated_at FROM project_memory WHERE status=? ORDER BY updated_at DESC", (status,)).fetchall()
+                rows = conn.execute("SELECT project_name, project_type, description, path, status, created_at, updated_at FROM project_memory WHERE status=? AND client_id=? ORDER BY updated_at DESC", (status, self._client_id)).fetchall()
             else:
-                rows = conn.execute("SELECT project_name, project_type, description, path, status, created_at, updated_at FROM project_memory ORDER BY updated_at DESC").fetchall()
+                rows = conn.execute("SELECT project_name, project_type, description, path, status, created_at, updated_at FROM project_memory WHERE client_id=? ORDER BY updated_at DESC", (self._client_id,)).fetchall()
         return [{"project_name": r[0], "project_type": r[1], "description": r[2], "path": r[3], "status": r[4], "created_at": r[5], "updated_at": r[6]} for r in rows]
 
     # ================================================================
@@ -779,20 +797,21 @@ class SmartMemory:
     def _evict_table(self, table_name: str, max_entries: int):
         """Evict oldest/least important entries from a table."""
         # SQL Injection protection: validate table_name against whitelist
+        assert table_name in self._VALID_TABLES, f"Invalid table: {table_name}"
         if table_name not in self._VALID_TABLES:
             logger.warning(f"SmartMemory._evict_table: Invalid table name '{table_name}' rejected")
             return
         with sqlite3.connect(DB_PATH) as conn:
-            count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            count = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
             if count > max_entries:
-                conn.execute(f"DELETE FROM {table_name} WHERE id IN (SELECT id FROM {table_name} ORDER BY importance ASC, created_at ASC LIMIT ?)", (count - max_entries + 10,))
+                conn.execute(f'DELETE FROM "{table_name}" WHERE id IN (SELECT id FROM "{table_name}" ORDER BY importance ASC, created_at ASC LIMIT ?)', (count - max_entries + 10,))
 
     # ================================================================
     #  ENHANCED STATS
     # ================================================================
 
     @property
-    def enhanced_stats(self) -> dict:
+    def enhanced_stats(self) -> Dict[str, Any]:
         """Estadisticas completas de todas las memorias."""
         with sqlite3.connect(DB_PATH) as conn:
             cache_count = conn.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()[0]
@@ -806,12 +825,15 @@ class SmartMemory:
             except sqlite3.OperationalError: pass
             try: project_count = conn.execute("SELECT COUNT(*) FROM project_memory").fetchone()[0]
             except sqlite3.OperationalError: pass
-        return {"session_id": self._session_id, "working_memory_size": len(self._working_memory), "semantic_cache_size": cache_count, "long_term_memory_size": ltm_count, "episodic_memory_size": episodic_count, "procedural_memory_size": procedural_count, "project_memory_size": project_count, "semantic_engine_available": self._semantic is not None and self._semantic.is_loaded}
+        with self._working_lock:
+            working_size = len(self._working_memory)
+        return {"session_id": self._session_id, "working_memory_size": working_size, "semantic_cache_size": cache_count, "long_term_memory_size": ltm_count, "episodic_memory_size": episodic_count, "procedural_memory_size": procedural_count, "project_memory_size": project_count, "semantic_engine_available": self._semantic is not None and self._semantic.is_loaded}
 
 
-    def clear_session(self):
+    def clear_session(self) -> None:
         """Limpia la memoria de trabajo para una nueva sesión."""
-        self._working_memory.clear()
+        with self._working_lock:
+            self._working_memory.clear()
         self._session_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
 
     # ================================================================
@@ -836,8 +858,9 @@ class SmartMemory:
         ]
         with sqlite3.connect(DB_PATH) as conn:
             for table in tables:
+                assert table in self._VALID_TABLES, f"Invalid table: {table}"
                 conn.execute(
-                    f"DELETE FROM {table} WHERE client_id=?", (client_id,)
+                    f'DELETE FROM "{table}" WHERE client_id=?', (client_id,)
                 )
         # Also remove from working memory
         self._working_memory = [
@@ -977,3 +1000,7 @@ class SmartMemory:
             logger.info(f"SmartMemory: Consolidated - promoted={promoted}, episodes_merged={consolidated_episodes}")
         
         return {"promoted_to_long_term": promoted, "episodes_consolidated": consolidated_episodes}
+
+    def get_recent_entries(self, limit: int = 30):
+        """Public accessor for recent working memory entries."""
+        return self._working_memory[:limit]

@@ -24,6 +24,7 @@ Ventajas sobre f-strings:
 import os
 import json
 import logging
+import secrets as _secrets
 from typing import Optional, Dict, Any, List, Set
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,9 @@ except ImportError:
     JINJA2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# Sentinel object for lazy-load failure (avoids type confusion with False/None)
+_LOAD_FAILED = object()
 
 # === Template Root ===
 TEMPLATE_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates")
@@ -246,8 +250,8 @@ class TemplateEngine:
                 logger.info(f"TemplateEngine: NicheLoader loaded {count} niche templates")
             except ImportError:
                 logger.warning("TemplateEngine: NicheLoader not available")
-                self._niche_loader = False  # type: ignore
-        return self._niche_loader if self._niche_loader is not False else None
+                self._niche_loader = _LOAD_FAILED
+        return self._niche_loader if self._niche_loader is not _LOAD_FAILED else None
 
     def _get_dna_loader(self):
         """Obtiene el DNALoader (lazy-loaded)."""
@@ -259,8 +263,8 @@ class TemplateEngine:
                 logger.info(f"TemplateEngine: DNALoader loaded {counts}")
             except ImportError:
                 logger.warning("TemplateEngine: DNALoader not available")
-                self._dna_loader = False  # type: ignore
-        return self._dna_loader if self._dna_loader is not False else None
+                self._dna_loader = _LOAD_FAILED
+        return self._dna_loader if self._dna_loader is not _LOAD_FAILED else None
 
     def get_dna(self) -> Optional[Any]:
         """Obtiene el DNALoader para acceso directo a las 4 plantillas maestras."""
@@ -591,7 +595,7 @@ class TemplateEngine:
         variables.setdefault("template_type", "generic")
         variables.setdefault("db_name", variables.get("project_name", "app") + ".db")
         variables.setdefault("port", 8000)
-        variables.setdefault("secret_key", "change-this-in-production")
+        variables.setdefault("secret_key", _secrets.token_urlsafe(32))
         variables.setdefault("debug", True)
         variables.setdefault("version", "1.0.0")
 

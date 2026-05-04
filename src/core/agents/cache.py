@@ -7,6 +7,7 @@ Evita llamadas repetidas al LLM para consultas similares.
 
 import hashlib
 import time
+import threading
 import logging
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
@@ -39,6 +40,7 @@ class AgentCache:
         self._hits = 0
         self._misses = 0
         self._semantic_engine = None
+        self._lock = threading.Lock()
 
     @property
     def stats(self) -> Dict[str, Any]:
@@ -71,7 +73,8 @@ class AgentCache:
         entry = self._cache.get(key)
         if entry is not None:
             if not self._is_expired(entry):
-                self._hits += 1
+                with self._lock:
+                    self._hits += 1
                 # Move to end for LRU behavior (most recently used at end)
                 self._cache.move_to_end(key)
                 return entry["result"]
@@ -83,10 +86,12 @@ class AgentCache:
         if self._semantic_engine and self._semantic_engine.is_loaded:
             sem_result = self._semantic_lookup(agent_name, input_data)
             if sem_result is not None:
-                self._hits += 1
+                with self._lock:
+                    self._hits += 1
                 return sem_result
 
-        self._misses += 1
+        with self._lock:
+            self._misses += 1
         return None
 
     def put(self, agent_name: str, input_data: Any, result: Any) -> None:
@@ -100,6 +105,9 @@ class AgentCache:
         """
         key = self._make_key(agent_name, input_data)
 
+        if key in self._cache:
+            self._cache.move_to_end(key)
+
         # Evitar que el cache crezca demasiado
         if len(self._cache) >= self._max_size:
             self._evict_oldest()
@@ -109,6 +117,7 @@ class AgentCache:
             "result": result,
             "timestamp": time.time(),
             "access_count": 0,
+            "input_text": self._serialize(input_data)[:500],
         }
 
     def clear(self) -> None:
@@ -116,20 +125,24 @@ class AgentCache:
         self._cache.clear()
         logger.debug("AgentCache: Cleared")
 
+    def __len__(self) -> int:
+        """Return the number of entries in the cache."""
+        return len(self._cache)
+
     def _make_key(self, agent_name: str, input_data: Any) -> str:
         """Genera una clave hash para el cache."""
         # Serializar input de forma determinista
         input_str = f"{agent_name}:{self._serialize(input_data)}"
-        return hashlib.sha256(input_str.encode()).hexdigest()[:16]
+        return hashlib.sha256(input_str.encode()).hexdigest()[:32]
 
     @staticmethod
     def _serialize(data: Any) -> str:
         """Serializa datos para hashing de forma determinista."""
+        import json
         if isinstance(data, str):
             return data
         if hasattr(data, '__dict__'):
             # dataclass o objeto
-            import json
             try:
                 return json.dumps(data.__dict__, sort_keys=True, default=str)
             except (TypeError, ValueError):

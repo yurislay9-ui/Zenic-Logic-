@@ -26,6 +26,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+import threading
+_load_lock = threading.Lock()
+
 # Estado interno (carga unica)
 _loaded = False
 _loaded_path: Optional[str] = None
@@ -124,50 +127,51 @@ def load_env(force: bool = False) -> bool:
     """
     global _loaded, _loaded_path
 
-    if _loaded and not force:
-        return _loaded_path is not None
+    with _load_lock:
+        if _loaded and not force:
+            return _loaded_path is not None
 
-    env_path = _find_env_file()
+        env_path = _find_env_file()
 
-    if env_path is None:
-        logger.debug("env_loader: No .env file found")
+        if env_path is None:
+            logger.debug("env_loader: No .env file found")
+            _loaded = True
+            return False
+
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except (OSError, PermissionError) as e:
+            logger.warning("env_loader: Cannot read %s: %s", env_path, e)
+            _loaded = True
+            return False
+
+        loaded_count = 0
+        skipped_count = 0
+
+        for line_num, line in enumerate(lines, 1):
+            parsed = _parse_env_line(line)
+            if parsed is None:
+                continue
+
+            key, value = parsed
+
+            # Solo setear si NO existe ya en os.environ
+            # (el entorno del sistema tiene prioridad)
+            if key not in os.environ:
+                os.environ[key] = value
+                loaded_count += 1
+            else:
+                skipped_count += 1
+
         _loaded = True
-        return False
+        _loaded_path = str(env_path)
 
-    try:
-        with open(env_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-    except (OSError, PermissionError) as e:
-        logger.warning("env_loader: Cannot read %s: %s", env_path, e)
-        _loaded = True
-        return False
-
-    loaded_count = 0
-    skipped_count = 0
-
-    for line_num, line in enumerate(lines, 1):
-        parsed = _parse_env_line(line)
-        if parsed is None:
-            continue
-
-        key, value = parsed
-
-        # Solo setear si NO existe ya en os.environ
-        # (el entorno del sistema tiene prioridad)
-        if key not in os.environ:
-            os.environ[key] = value
-            loaded_count += 1
-        else:
-            skipped_count += 1
-
-    _loaded = True
-    _loaded_path = str(env_path)
-
-    logger.info(
-        "env_loader: Loaded %d vars from %s (%d skipped, already in env)",
-        loaded_count, env_path.name, skipped_count
-    )
-    return True
+        logger.info(
+            "env_loader: Loaded %d vars from %s (%d skipped, already in env)",
+            loaded_count, env_path.name, skipped_count
+        )
+        return True
 
 
 def get_env(key: str, default: str = "") -> str:
@@ -210,7 +214,7 @@ def get_env_bool(key: str, default: bool = False) -> bool:
     return default
 
 
-def get_env_list(key: str, default: list = None, separator: str = ",") -> list:
+def get_env_list(key: str, default: Optional[list] = None, separator: str = ",") -> list:
     """Obtiene una variable de entorno como lista (separada por comas)."""
     value = get_env(key, "")
     if not value:

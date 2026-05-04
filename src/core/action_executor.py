@@ -130,6 +130,7 @@ def _validate_sql(query: str) -> bool:
     for pattern in dangerous:
         if re.search(pattern, query, re.MULTILINE | re.IGNORECASE):
             logger.warning(f"SQL validation: potentially dangerous pattern: {pattern}")
+            return False
     return True
 
 
@@ -145,7 +146,8 @@ class EmailExecutor(ActionExecutor):
 
     Config: {host, port, user, password, to, subject, body, html, cc, bcc, from_email, attachments}
     """
-    _connection_pool: Dict[str, Any] = {}
+    def __init__(self):
+        self._connection_pool: Dict[str, Any] = {}
 
     async def execute(self, config: Dict[str, Any], context: Dict[str, Any]) -> ActionResult:
         start = self._measure()
@@ -373,7 +375,8 @@ class DatabaseExecutor(ActionExecutor):
         if not query:
             return ActionResult(False, {}, "No SQL query provided", self._elapsed_ms(start))
 
-        _validate_sql(query)
+        if not _validate_sql(query):
+            return ActionResult(False, {"query": query}, "SQL validation failed: dangerous pattern detected", self._elapsed_ms(start))
         try:
             result_data = await asyncio.to_thread(self._execute_db, db_path, operation, query, params)
             elapsed = self._elapsed_ms(start)

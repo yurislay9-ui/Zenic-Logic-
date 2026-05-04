@@ -106,29 +106,29 @@ class TestGraphASTEnginePython:
         """Should calculate cyclomatic complexity correctly."""
         nodes = engine.scan_code(PYTHON_CODE, "test.py", "python")
         greet_func = [n for n in nodes if n["name"] == "greet"]
-        if greet_func:
-            # greet() has an if, so complexity >= 2
-            assert greet_func[0]["complexity"] >= 2
+        assert len(greet_func) > 0, "Should find 'greet' function in parsed code"
+        # greet() has an if, so complexity >= 2
+        assert greet_func[0]["complexity"] >= 2
 
     def test_extract_calls(self, engine):
         """Should extract function call dependencies."""
         nodes = engine.scan_code(PYTHON_CODE, "test.py", "python")
         greet_func = [n for n in nodes if n["name"] == "greet"]
-        if greet_func:
-            import json
-            calls = json.loads(greet_func[0].get("connections", "[]"))
-            # greet() calls hello()
-            assert any("hello" in str(c) for c in calls)
+        assert len(greet_func) > 0, "Should find 'greet' function in parsed code"
+        import json
+        calls = json.loads(greet_func[0].get("connections", "[]"))
+        # greet() calls hello()
+        assert any("hello" in str(c) for c in calls)
 
     def test_class_connections(self, engine):
         """Should extract class method connections."""
         nodes = engine.scan_code(PYTHON_CODE, "test.py", "python")
         user_class = [n for n in nodes if n["name"] == "User"]
-        if user_class:
-            import json
-            conns = json.loads(user_class[0].get("connections", "[]"))
-            method_conns = [c for c in conns if str(c).startswith("method:")]
-            assert len(method_conns) >= 1
+        assert len(user_class) > 0, "Should find 'User' class in parsed code"
+        import json
+        conns = json.loads(user_class[0].get("connections", "[]"))
+        method_conns = [c for c in conns if str(c).startswith("method:")]
+        assert len(method_conns) >= 1
 
     def test_syntax_error_handling(self, engine):
         """Should handle syntax errors gracefully."""

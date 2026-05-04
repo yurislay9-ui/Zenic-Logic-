@@ -108,7 +108,12 @@ class AnalysisUtils:
         return "\n".join(parts)
 
     def check_dependencies(self, code, target, lang):
-        nodes = self._orchestrator.ast_engine.get_node_info(target.replace('.py', ''))
+        if not self._orchestrator:
+            return ["No orchestrator available for dependency check"]
+        ast_engine = getattr(self._orchestrator, 'ast_engine', None)
+        if not ast_engine:
+            return ["No AST engine available for dependency check"]
+        nodes = ast_engine.get_node_info(target.replace('.py', ''))
         results = []
         if nodes:
             for n in nodes[:5]:

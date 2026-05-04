@@ -17,6 +17,9 @@ import logging
 import time
 import traceback
 from datetime import datetime, timezone
+from typing import Optional
+
+__all__ = ["StructuredFormatter", "PlainFormatter", "setup_logging", "log_pipeline_step"]
 
 
 class StructuredFormatter(logging.Formatter):
@@ -67,8 +70,10 @@ class StructuredFormatter(logging.Formatter):
 
             return json.dumps(log_entry, ensure_ascii=False, default=str)
 
-        except Exception:
+        except Exception as e:
             # Fallback a formato plano si JSON falla
+            # Note: using print instead of logger to avoid recursion in formatter
+            print(f"StructuredFormatter: JSON formatting failed: {e}")
             return super().format(record)
 
 
@@ -137,8 +142,14 @@ def setup_logging(level=logging.INFO, structured=False, service_name="titan-omni
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
-    # Remover handlers existentes
-    root_logger.handlers.clear()
+    # Only add our handler if not already present; avoid clearing handlers from other libraries
+    has_our_handler = any(
+        isinstance(h, logging.StreamHandler) and
+        isinstance(getattr(h, 'formatter', None), (StructuredFormatter, PlainFormatter))
+        for h in root_logger.handlers
+    )
+    if has_our_handler:
+        return  # Already configured
 
     handler = logging.StreamHandler()
 
@@ -157,8 +168,8 @@ def log_pipeline_step(
     logger_instance,
     level: int,
     message: str,
-    pipeline_level: int = None,
-    request_id: str = None,
+    pipeline_level: Optional[int] = None,
+    request_id: Optional[str] = None,
     **kwargs,
 ):
     """

@@ -33,6 +33,22 @@ def pipeline_components():
     }
 
 
+
+@pytest.fixture(autouse=True)
+def _clean_cache_db():
+    """Ensure clean database state for each test."""
+    try:
+        from src.core.shared.db_initializer import initialize_databases, get_connection
+        initialize_databases()
+        conn = get_connection('theorem_cache.sqlite')
+        try:
+            conn.execute('DELETE FROM theorems')
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
 class TestPipelineL1ToL2:
     """Integration tests for Level 1 (Parser) -> Level 2 (Router)."""
 
@@ -219,13 +235,9 @@ class TestPipelineL8Cache:
 
         # Lookup by composite hash (same intent)
         result = cache.lookup(intent, code, "python")
-        # Cache may be cleared by other tests in same session, so be lenient
-        if result is not None:
-            assert result["data"]["h"] == "abc123"
-        else:
-            # If cache miss, at least verify save didn't crash
-            # This can happen when DB connections are reset between tests
-            pass
+        # Cache may be cleared by other tests in same session, but lookup must return valid result
+        assert result is not None
+        assert result["data"]["h"] == "abc123"
 
     def test_cache_miss(self, pipeline_components):
         """Should return None for cache miss."""

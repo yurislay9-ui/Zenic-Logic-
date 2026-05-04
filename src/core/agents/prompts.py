@@ -205,7 +205,10 @@ class PromptBuilder:
         Returns:
             tuple: (system_prompt, user_prompt)
         """
-        # Formatear user prompt con contexto
+        # NOTE: Manual str.replace() is used intentionally instead of str.format()
+        # or string.Template to avoid KeyError/ValueError from curly braces in
+        # prompt text that are not placeholders (e.g. JSON templates in system
+        # prompts). This is a safe substitution pattern.
         user_prompt = user_template
         for key, value in context.items():
             placeholder = "{" + key + "}"

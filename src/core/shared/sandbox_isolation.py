@@ -27,16 +27,21 @@ Compatible con Termux + proot-distro (Debian ARM).
 """
 
 import os
-import sys
 import shutil
-import tempfile
 import threading
 import time
 import uuid
 import logging
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "SandboxWorkspace", "SandboxIsolationManager",
+    "get_isolation_manager", "shutdown_isolation",
+    "create_sandbox_builtins", "create_sandbox_globals",
+]
 
 
 class SandboxWorkspace:
@@ -118,12 +123,21 @@ class SandboxWorkspace:
 
     def write_code(self, code: str, filename: str = "sandbox_code.py") -> Path:
         """
-        Escribe codigo en el workspace aislado.
+        Write code to the sandbox code directory with path traversal protection.
 
         Returns:
             Path al archivo creado dentro del workspace
         """
+        # Sanitize filename to prevent path traversal
+        if not filename:
+            raise ValueError("Filename cannot be empty")
+        clean = filename.replace("..", "").replace("/", "").replace("\\", "")
+        if clean != filename:
+            raise ValueError(f"Invalid filename (path traversal detected): {filename!r}")
         code_path = self.code_dir / filename
+        # Verify the resolved path stays within the sandbox
+        if not code_path.resolve().is_relative_to(self.workspace_dir.resolve()):
+            raise ValueError(f"Path escape detected: {filename!r}")
         code_path.write_text(code, encoding="utf-8")
         logger.debug("Codigo escrito en: %s", code_path)
         return code_path
@@ -260,7 +274,7 @@ class SandboxIsolationManager:
         self.sandbox_root = SandboxWorkspace(sandbox_id="init",
                                               auto_cleanup=False).sandbox_root
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
-        self._active_workspaces: dict[str, SandboxWorkspace] = {}
+        self._active_workspaces: Dict[str, SandboxWorkspace] = {}
         self._lock = threading.Lock()
         self._cleanup_thread = None
         self._running = True
@@ -353,11 +367,11 @@ class SandboxIsolationManager:
                 workspace.close()
                 logger.info("Workspace liberado: %s", sandbox_id)
 
-    def get_workspace(self, sandbox_id: str) -> SandboxWorkspace | None:
+    def get_workspace(self, sandbox_id: str) -> Optional[SandboxWorkspace]:
         """Obtiene un workspace activo por su ID."""
         return self._active_workspaces.get(sandbox_id)
 
-    def list_active_workspaces(self) -> list[dict]:
+    def list_active_workspaces(self) -> List[Dict[str, Any]]:
         """Lista todos los workspaces activos con su estado."""
         result = []
         for ws in self._active_workspaces.values():
@@ -372,7 +386,7 @@ class SandboxIsolationManager:
             })
         return result
 
-    def list_client_workspaces(self, client_id: str) -> list[dict]:
+    def list_client_workspaces(self, client_id: str) -> List[Dict[str, Any]]:
         """Brecha B: Lista todos los workspaces activos para un client_id especifico."""
         result = []
         for ws in self._active_workspaces.values():
@@ -496,7 +510,7 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
         try:
             resolved = path.resolve()
             workspace_resolved = workspace.workspace_dir.resolve()
-            if not str(resolved).startswith(str(workspace_resolved)):
+            if not resolved.is_relative_to(workspace_resolved):
                 raise PermissionError(
                     f"Sandbox: acceso denegado a '{filepath}'. "
                     f"Solo se permite acceso dentro del workspace aislado."
@@ -518,8 +532,8 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
         'functools', 'operator', 'typing', 'enum', 'dataclasses',
         'abc', 'copy', 're', 'json', 'decimal', 'fractions',
         'statistics', 'datetime', 'time', 'hashlib', 'base64',
-        'struct', 'pprint', 'textwrap', 'string',
-        'collections.abc', 'collections.abc',
+        'struct', 'pprint', 'textwrap',
+        'collections.abc',
     }
 
     def _sandbox_import(name, *args, **kwargs):
@@ -559,10 +573,6 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
         'iter': iter, 'next': next, 'super': super,
         'property': property, 'classmethod': classmethod,
         'staticmethod': staticmethod,
-
-        # Constructores de datos
-        'dict': dict, 'list': list, 'set': set, 'tuple': tuple,
-        'frozenset': frozenset,
 
         # Excepciones permitidas
         'Exception': Exception, 'ValueError': ValueError,
@@ -609,7 +619,7 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
 
 
 def create_sandbox_globals(workspace: SandboxWorkspace,
-                           extra_globals: dict = None) -> dict:
+                           extra_globals: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Crea el diccionario de globals para ejecucion segura en sandbox.
 

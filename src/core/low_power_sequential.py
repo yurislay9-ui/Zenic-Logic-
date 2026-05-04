@@ -31,6 +31,7 @@ import logging
 from typing import Dict, Any, Optional
 from enum import Enum
 from dataclasses import dataclass
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ class LowPowerSequentialMode:
         self._governor = governor
         self._current_mode = PowerMode.NORMAL
         self._mode_since = time.time()
-        self._history: list = []
+        self._history: deque = deque(maxlen=100)
         self._forced_mode: Optional[PowerMode] = None
 
     def set_governor(self, governor):
@@ -95,6 +96,8 @@ class LowPowerSequentialMode:
         """Fuerza un modo específico (para testing o configuración manual)."""
         self._forced_mode = mode
         if mode:
+            self._current_mode = mode
+            self._mode_since = time.time()
             logger.info(f"LowPowerSequential: Forced mode to {mode.value}")
 
     def evaluate(self) -> PowerMode:
@@ -159,9 +162,9 @@ class LowPowerSequentialMode:
         time_in_mode = time.time() - self._mode_since
         if new_mode != self._current_mode:
             if time_in_mode < self.MODE_STICKINESS_SECONDS:
-                # Only upgrade (never downgrade during stickiness period)
-                if self._mode_rank(new_mode) > self._mode_rank(self._current_mode):
-                    new_mode = self._current_mode  # Stay in current mode
+                # Block downgrade during stickiness, but always allow upgrade to more restrictive mode
+                if self._mode_rank(new_mode) < self._mode_rank(self._current_mode):
+                    new_mode = self._current_mode  # Stay in current (more restrictive) mode
             else:
                 self._mode_since = time.time()
 
@@ -184,9 +187,6 @@ class LowPowerSequentialMode:
             "temp": hw.temperature_c,
             "battery": hw.battery_level,
         })
-        # Keep last 100 entries
-        if len(self._history) > 100:
-            self._history = self._history[-100:]
 
         return self._current_mode
 

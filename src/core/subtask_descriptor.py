@@ -7,6 +7,8 @@ subtarea, permitiendo que cada subtarea se ejecute con conocimiento
 del análisis previo en vez de empezar desde cero.
 """
 
+from typing import Any, Dict, List, Optional
+
 
 class SubtaskDescriptor:
     """
@@ -29,9 +31,10 @@ class SubtaskDescriptor:
         depth: Profundidad de recursión en subdivisión
     """
 
-    def __init__(self, message, target="", operation="", goal="",
-                 solver_insights=None, mcts_hints=None,
-                 parent_violations=None, parent_context=None, depth=0):
+    def __init__(self, message: str, target: str = "", operation: str = "", goal: str = "",
+                 solver_insights: Optional[Dict[str, Any]] = None, mcts_hints: Optional[List[Any]] = None,
+                 parent_violations: Optional[List[Any]] = None,
+                 parent_context: Optional[Dict[str, Any]] = None, depth: int = 0):
         self.message = message
         self.target = target
         self.operation = operation
@@ -41,6 +44,17 @@ class SubtaskDescriptor:
         self.parent_violations = parent_violations or []
         self.parent_context = parent_context or {}
         self.depth = depth
+
+    def __repr__(self):
+        """Return a concise representation showing key attributes."""
+        return (
+            f"SubtaskDescriptor("
+            f"message={self.message!r}, "
+            f"target={self.target!r}, "
+            f"operation={self.operation!r}, "
+            f"goal={self.goal!r}, "
+            f"depth={self.depth})"
+        )
 
     def to_message(self):
         """Convierte el descriptor a mensaje de texto para el parser."""

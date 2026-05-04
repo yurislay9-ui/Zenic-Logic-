@@ -12,7 +12,7 @@ Implementa lo que el documento especifica:
 import ast
 import json
 import logging
-from collections import Counter
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # ============================================================
 #  K-PATH ANALYZER - Analisis de K-Paths basado en Grafo AST
 # ============================================================
+
+__all__ = ["KPathAnalyzer"]
+
 
 class KPathAnalyzer:
     """
@@ -45,15 +48,17 @@ class KPathAnalyzer:
             dict con depth, nodes_affected, exceeds_limit
         """
         import sqlite3
-        from src.core.shared.db_initializer import get_connection
+        from .db_initializer import get_connection
 
+        conn = None
         try:
             conn = get_connection("graph_ast.sqlite")
 
             # Buscar nodo(s) por nombre
+            escaped = target_name.replace("%", "\\%").replace("_", "\\_")
             target_rows = conn.execute(
-                "SELECT name, node_type, connections FROM ast_nodes WHERE name LIKE ?",
-                (f"%{target_name}%",)
+                "SELECT name, node_type, connections FROM ast_nodes WHERE name LIKE ? ESCAPE '\\'",
+                (f"%{escaped}%",)
             ).fetchall()
 
             if not target_rows:
@@ -66,7 +71,7 @@ class KPathAnalyzer:
 
             # BFS desde el nodo target
             visited = set()
-            queue = []
+            queue = deque()
             all_affected = []
 
             for row in target_rows:
@@ -76,7 +81,7 @@ class KPathAnalyzer:
                     visited.add(node_name)
 
             while queue:
-                current, depth = queue.pop(0)
+                current, depth = queue.popleft()
 
                 if depth > self.k_limit:
                     continue

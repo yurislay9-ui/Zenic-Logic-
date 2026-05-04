@@ -31,7 +31,8 @@ import os
 import re
 import ast
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+import threading
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 
 try:
@@ -118,7 +119,7 @@ class DNALoader:
         self._glossary: List[GlossaryEntry] = []
         self._error_messages: Dict[str, str] = {}
         self._feature_descriptions: Dict[str, Dict] = {}
-        self._communication_templates: List[Dict] = {}
+        self._communication_templates: List[Dict] = []
         self._loaded = False
 
         # Indexes for fast lookup
@@ -590,20 +591,38 @@ class DNALoader:
     #  PROFESSIONAL GLOSSARY API
     # ================================================================
 
+    def _preserve_case_replace(self, match, replacement):
+        """Replace a match while preserving the original capitalization pattern."""
+        original = match.group(0)
+        if original.isupper():
+            return replacement.upper()
+        elif original[0].isupper():
+            return replacement[0].upper() + replacement[1:]
+        elif original.islower():
+            return replacement.lower()
+        return replacement
+
     def polish_text(self, text: str) -> str:
         """
         Transforma jerga técnica en lenguaje corporativo de élite.
 
         Aplica todas las transformaciones del glosario profesional.
+        Preserves original capitalization and processes longest terms first
+        to avoid substring corruption (e.g., "debug" matching "bug").
         """
         if not self._loaded:
             self.load_all()
 
         result = text
-        for entry in self._glossary:
-            # Case-insensitive replacement
-            pattern = re.compile(re.escape(entry.from_term), re.IGNORECASE)
-            result = pattern.sub(entry.to_term, result)
+        sorted_entries = sorted(self._glossary, key=lambda e: len(e.from_term), reverse=True)
+        for entry in sorted_entries:
+            # Case-insensitive replacement preserving original capitalization
+            result = re.sub(
+                re.escape(entry.from_term),
+                lambda m: self._preserve_case_replace(m, entry.to_term),
+                result,
+                flags=re.IGNORECASE
+            )
 
         return result
 
@@ -661,14 +680,25 @@ class DNALoader:
             "yaml_available": YAML_AVAILABLE,
         }
 
+    def list_all_modules(self):
+        """Public accessor for all loaded logic modules."""
+        return list(getattr(self, '_logic_modules', {}).values())
+
+    def list_all_domain_rules(self):
+        """Public accessor for all domain rules."""
+        return list(getattr(self, '_domain_rules', {}).values())
+
 
 # === Singleton ===
 _dna_loader_instance: Optional[DNALoader] = None
+_dna_loader_lock = threading.Lock()
 
 
 def get_dna_loader() -> DNALoader:
     """Obtiene la instancia singleton del DNALoader."""
     global _dna_loader_instance
     if _dna_loader_instance is None:
-        _dna_loader_instance = DNALoader()
+        with _dna_loader_lock:
+            if _dna_loader_instance is None:
+                _dna_loader_instance = DNALoader()
     return _dna_loader_instance

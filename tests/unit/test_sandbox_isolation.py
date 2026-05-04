@@ -168,6 +168,15 @@ class TestSandboxWorkspace:
             ws.auto_cleanup = True
             ws.close()
 
+    def test_write_code_path_traversal_blocked(self):
+        """Should not allow writing outside workspace via path traversal."""
+        ws = SandboxWorkspace(sandbox_id="test_traversal", auto_cleanup=True)
+        try:
+            with pytest.raises((PermissionError, ValueError, OSError)):
+                ws.write_code("malicious", "../../etc/shadow")
+        finally:
+            ws.close()
+
 
 class TestSandboxBuiltinRestrictions:
     """Tests for sandbox builtins security."""

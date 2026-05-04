@@ -5,14 +5,24 @@ Operation types, goal types, criticality levels, route paths,
 and data payloads for communication between pipeline levels.
 """
 
+import enum
 from typing import Any, Dict, List, Optional
+
+__all__ = [
+    "OperationType", "GoalType", "CriticalityLevel", "RoutePath",
+    "IntentPayload", "RoutingPayload", "PlanStep", "ExecutionPlan",
+    "SandboxResult", "MerkleNode", "ChatMessage", "ChatRequest",
+    "criticality_to_int", "criticality_to_path", "criticality_to_str",
+    "CRITICALITY_INT_TO_STR", "CRITICALITY_STR_TO_INT",
+    "CRITICALITY_INT_TO_PATH", "CRITICALITY_PATH_TO_INT",
+]
 
 
 # ============================================================
 #  OPERACIONES Y OBJETIVOS
 # ============================================================
 
-class OperationType:
+class OperationType(str, enum.Enum):
     CREATE = "CREATE"
     REFACTOR = "REFACTOR"
     DELETE = "DELETE"
@@ -23,7 +33,7 @@ class OperationType:
     OPTIMIZE = "OPTIMIZE"
 
 
-class GoalType:
+class GoalType(str, enum.Enum):
     COMPLEXITY_REDUCTION = "COMPLEXITY_REDUCTION"
     MODERN_PATTERN = "MODERN_PATTERN"
     BUG_FIX = "BUG_FIX"
@@ -33,7 +43,7 @@ class GoalType:
     READABILITY = "READABILITY"
 
 
-class CriticalityLevel:
+class CriticalityLevel(int, enum.Enum):
     FAST_STANDARD = 1
     DEEP_MODERATE = 2
     SURGICAL_CRITICAL = 3
@@ -85,7 +95,7 @@ def criticality_to_str(value) -> str:
     return CRITICALITY_INT_TO_STR.get(criticality_to_int(value), "moderate")
 
 
-class RoutePath:
+class RoutePath(str, enum.Enum):
     FAST_PATH = "FAST_PATH_REGEX"
     DEEP_PATH = "DEEP_PATH_CONSTRAINT"
     SURGICAL_PATH = "SURGICAL_PATH_FULL"

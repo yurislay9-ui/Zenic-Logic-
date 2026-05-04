@@ -157,11 +157,19 @@ class TestMCTSPlanner:
         assert planner.depth_reached >= 0
 
     def test_deterministic_with_same_seed(self, simple_action_generator, simple_reward_function):
-        """MCTS should be reproducible (same actions available)."""
-        planner = MCTSPlanner(max_depth=2, max_simulations=5, timeout_ms=5000)
+        """Same seed should produce identical results."""
+        import random
+
         initial_state = {"target": "test", "op": "CREATE", "goal": "add", "depth": 0, "taken_actions": []}
-        result1 = planner.search(initial_state, simple_action_generator, simple_reward_function)
-        result2 = planner.search(initial_state, simple_action_generator, simple_reward_function)
-        # Both should return valid actions (may differ due to randomness but should be in valid set)
-        assert result1 in ["ACTION_A", "ACTION_B"]
-        assert result2 in ["ACTION_A", "ACTION_B"]
+
+        # Run same search twice with same seed
+        random.seed(42)
+        planner1 = MCTSPlanner(max_depth=2, max_simulations=5, timeout_ms=5000)
+        result1 = planner1.search(initial_state, simple_action_generator, simple_reward_function)
+
+        random.seed(42)
+        planner2 = MCTSPlanner(max_depth=2, max_simulations=5, timeout_ms=5000)
+        result2 = planner2.search(initial_state, simple_action_generator, simple_reward_function)
+
+        # Results should be identical
+        assert result1 == result2

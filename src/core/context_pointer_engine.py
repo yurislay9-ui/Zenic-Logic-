@@ -100,10 +100,16 @@ class ContextPointer:
             logger.error(f"ContextPointer: Error loading code from disk: {e}")
         return ""
 
-    def apply_modification(self, new_code: str) -> bool:
+    def apply_modification(self, new_code: str, sibling_pointers: Optional[List['ContextPointer']] = None) -> bool:
         """
         Aplica una modificación directamente al archivo en disco
         usando coordenadas del puntero.
+
+        Args:
+            new_code: The replacement code for this pointer's range.
+            sibling_pointers: Other ContextPointer objects for the same file whose
+                line numbers should be adjusted after this modification. If not
+                provided, sibling pointers will NOT be adjusted (known limitation).
         """
         try:
             if not os.path.isfile(self.signature.file_path):
@@ -116,17 +122,41 @@ class ContextPointer:
             start = max(0, self.signature.line_start - 1)
             end = min(len(lines), self.signature.line_end)
 
+            old_line_count = end - start
+
             # Reemplazar las líneas
             new_lines = new_code.splitlines(keepends=True)
+            new_line_count = len(new_lines)
             lines[start:end] = new_lines
 
             with open(self.signature.file_path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
 
-            # Update signature
-            self.signature.line_end = self.signature.line_start + len(new_lines) - 1
+            # Calculate line delta for sibling adjustment
+            line_delta = new_line_count - old_line_count
+
+            # Save original end before updating (needed for sibling comparison)
+            original_line_end = self.signature.line_end
+
+            # Update own signature
+            self.signature.line_end = self.signature.line_start + new_line_count - 1
             new_hash = hashlib.sha256(new_code.encode()).hexdigest()[:16]
             self.signature.hash = new_hash
+
+            # Adjust sibling pointers' line numbers for the same file
+            if sibling_pointers:
+                self._adjust_siblings(sibling_pointers, line_delta, original_line_end)
+            elif line_delta != 0:
+                # TODO: Without sibling_pointers, modifications that change line counts
+                # will cause other ContextPointer objects for the same file to have
+                # stale line_start/line_end values. Callers should pass sibling_pointers
+                # obtained from SignatureIndex._signatures[file_path] to ensure
+                # all pointers remain consistent after modifications.
+                logger.warning(
+                    f"ContextPointer: Line delta={line_delta} but no sibling pointers "
+                    f"provided. Other pointers for {self.signature.file_path} may "
+                    f"have stale line numbers."
+                )
 
             logger.info(
                 f"ContextPointer: Applied modification to {self.signature.name} "
@@ -137,6 +167,38 @@ class ContextPointer:
         except Exception as e:
             logger.error(f"ContextPointer: Error applying modification: {e}")
             return False
+
+    def _adjust_siblings(self, sibling_pointers: List['ContextPointer'], line_delta: int, original_line_end: int = None):
+        """
+        Adjust line numbers of sibling ContextPointer objects that come AFTER
+        this pointer in the same file.
+
+        When a modification changes the number of lines, all subsequent
+        pointers in the same file need their line_start and line_end
+        shifted by the same delta.
+        """
+        if line_delta == 0:
+            return
+
+        # Use original line_end for comparison to avoid skipping siblings
+        # that start at the same line as our new (expanded) end
+        my_end = original_line_end if original_line_end is not None else self.signature.line_end
+        for sibling in sibling_pointers:
+            # Skip self and pointers that start before or at our original range
+            if sibling is self:
+                continue
+            if sibling.signature.file_path != self.signature.file_path:
+                continue
+            if sibling.signature.line_start <= my_end:
+                continue
+
+            # Shift this sibling's line numbers
+            sibling.signature.line_start += line_delta
+            sibling.signature.line_end += line_delta
+            logger.debug(
+                f"ContextPointer: Adjusted sibling '{sibling.signature.name}' "
+                f"by delta={line_delta} -> L{sibling.signature.line_start}-{sibling.signature.line_end}"
+            )
 
 
 class SignatureIndex:
@@ -151,7 +213,7 @@ class SignatureIndex:
     def __init__(self, project_root: str = ""):
         self._root = project_root
         self._signatures: Dict[str, List[FunctionSignature]] = {}  # file -> [signatures]
-        self._name_index: Dict[str, FunctionSignature] = {}  # name -> signature
+        self._name_index: Dict[tuple, List[FunctionSignature]] = {}  # (name, file_path) -> [signatures]
         self._store_dir = CONTEXT_STORE_ROOT
 
     def index_project(self, project_root: str = "") -> int:
@@ -176,7 +238,7 @@ class SignatureIndex:
                     sigs = self._extract_signatures(content, str(filepath))
                     self._signatures[str(filepath)] = sigs
                     for sig in sigs:
-                        self._name_index[sig.name] = sig
+                        self._name_index.setdefault((sig.name, sig.file_path), []).append(sig)
                     count += len(sigs)
                 except Exception as e:
                     logger.debug(f"SignatureIndex: Error indexing {filepath}: {e}")
@@ -194,7 +256,7 @@ class SignatureIndex:
         sigs = self._extract_signatures(code, file_path)
         self._signatures[file_path] = sigs
         for sig in sigs:
-            self._name_index[sig.name] = sig
+            self._name_index.setdefault((sig.name, sig.file_path), []).append(sig)
 
         # Also store the code in the context store for disk-based operations
         self._store_code(code, file_path)
@@ -366,52 +428,74 @@ class SignatureIndex:
         query_words = set(query_lower.replace("_", " ").split())
         pointers = []
 
-        for name, sig in self._name_index.items():
-            score = 0
+        for (name, file_path), sigs in self._name_index.items():
+            for sig in sigs:
+                score = 0
 
-            # Name match
-            if query_lower == name.lower():
-                score += 100
-            elif query_lower in name.lower():
-                score += 50
-            else:
-                name_words = set(name.lower().replace("_", " ").split())
-                overlap = query_words & name_words
-                score += len(overlap) * 20
+                # Name match
+                if query_lower == name.lower():
+                    score += 100
+                elif query_lower in name.lower():
+                    score += 50
+                else:
+                    name_words = set(name.lower().replace("_", " ").split())
+                    overlap = query_words & name_words
+                    score += len(overlap) * 20
 
-            # Docstring match
-            if sig.docstring:
-                doc_words = set(sig.docstring.lower().split())
-                doc_overlap = query_words & doc_words
-                score += len(doc_overlap) * 5
+                # Docstring match
+                if sig.docstring:
+                    doc_words = set(sig.docstring.lower().split())
+                    doc_overlap = query_words & doc_words
+                    score += len(doc_overlap) * 5
 
-            # Call match (functions that call the queried function)
-            if query_lower in [c.lower() for c in sig.calls]:
-                score += 15
+                # Call match (functions that call the queried function)
+                if query_lower in [c.lower() for c in sig.calls]:
+                    score += 15
 
-            if score > 0:
-                reason = ""
-                if query_lower in name.lower():
-                    reason = f"Nombre coincide con '{query}'"
-                elif sig.docstring and any(w in sig.docstring.lower() for w in query_words):
-                    reason = f"Docstring menciona términos relevantes"
-                elif query_lower in [c.lower() for c in sig.calls]:
-                    reason = f"Llama a función relacionada"
+                if score > 0:
+                    reason = ""
+                    if query_lower in name.lower():
+                        reason = f"Nombre coincide con '{query}'"
+                    elif sig.docstring and any(w in sig.docstring.lower() for w in query_words):
+                        reason = f"Docstring menciona términos relevantes"
+                    elif query_lower in [c.lower() for c in sig.calls]:
+                        reason = f"Llama a función relacionada"
 
-                pointers.append(ContextPointer(
-                    signature=sig,
-                    relevance_score=score,
-                    reason=reason,
-                ))
+                    pointers.append(ContextPointer(
+                        signature=sig,
+                        relevance_score=score,
+                        reason=reason,
+                    ))
 
         pointers.sort(key=lambda p: p.relevance_score, reverse=True)
         return pointers[:top_k]
 
-    def get_by_name(self, name: str) -> Optional[ContextPointer]:
-        """Obtiene un puntero por nombre exacto de función."""
-        sig = self._name_index.get(name)
-        if sig:
-            return ContextPointer(signature=sig, reason="Exact name match")
+    def get_by_name(self, name: str, file_path: Optional[str] = None) -> Optional[ContextPointer]:
+        """Obtiene un puntero por nombre exacto de función.
+
+        Args:
+            name: Function/class name to look up.
+            file_path: Optional file path for disambiguation. If provided,
+                looks up (name, file_path) directly. If None, searches all
+                entries and returns the first match (with a warning).
+        """
+        if file_path is not None:
+            sigs = self._name_index.get((name, file_path))
+            if sigs:
+                return ContextPointer(signature=sigs[0], reason="Exact name and file match")
+            return None
+        # Fallback: search all entries with this name
+        matches = []
+        for (n, fp), sigs in self._name_index.items():
+            if n == name:
+                matches.extend(sigs)
+        if matches:
+            logger.warning(
+                f"ContextPointerEngine: get_by_name('{name}') matched "
+                f"{len(matches)} signature(s) across multiple files without "
+                f"file_path disambiguation; returning first match"
+            )
+            return ContextPointer(signature=matches[0], reason="Exact name match (no file_path specified)")
         return None
 
     def build_compact_context(self, query: str, max_tokens: int = 2000) -> Tuple[str, List[ContextPointer]]:

@@ -23,7 +23,7 @@ class TestTimeoutEnforcer:
         """Slow functions should trigger timeout."""
         enforcer = TimeoutEnforcer(timeout_ms=100)
         result, timed_out = enforcer.execute_with_timeout(
-            lambda: time.sleep(5)
+            lambda: time.sleep(0.5)
         )
         assert timed_out is True
 
@@ -60,13 +60,13 @@ class TestTimeoutEnforcer:
     def test_timed_out_property(self):
         """timed_out property should reflect last execution state."""
         enforcer = TimeoutEnforcer(timeout_ms=100)
-        enforcer.execute_with_timeout(lambda: time.sleep(5))
+        enforcer.execute_with_timeout(lambda: time.sleep(0.5))
         assert enforcer.timed_out is True
 
     def test_timed_out_resets_on_new_execution(self):
         """timed_out should reset between executions."""
         enforcer = TimeoutEnforcer(timeout_ms=100)
-        enforcer.execute_with_timeout(lambda: time.sleep(5))
+        enforcer.execute_with_timeout(lambda: time.sleep(0.5))
         assert enforcer.timed_out is True
 
         enforcer.execute_with_timeout(lambda: 1)
@@ -86,7 +86,7 @@ class TestTimeoutEnforcer:
         """Should return None as result when timeout occurs."""
         enforcer = TimeoutEnforcer(timeout_ms=50)
         result, timed_out = enforcer.execute_with_timeout(
-            lambda: time.sleep(10)
+            lambda: time.sleep(1.0)
         )
         assert result is None
         assert timed_out is True

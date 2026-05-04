@@ -41,6 +41,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
+
+def _validate_identifier(name: str) -> str:
+    """Validate SQL identifier to prevent injection. Only alphanumeric + underscore."""
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
+
 # ============================================================
 #  LOGIC BLOCK BASE
 # ============================================================
@@ -606,8 +614,11 @@ class ValidateUniqueBlock(LogicBlock):
 
             if db is not None:
                 try:
+                    # Validate identifiers to prevent SQL injection
+                    _validate_identifier(field_name)
+                    _validate_identifier(table_name)
                     cursor = db.execute(
-                        f"SELECT id, {field_name} FROM {table_name} WHERE {field_name} = ?",
+                        f'SELECT id, "{field_name}" FROM "{table_name}" WHERE "{field_name}" = ?',
                         (value,)
                     )
                     row = cursor.fetchone() if hasattr(cursor, 'fetchone') else None
@@ -1255,11 +1266,14 @@ class CRUDCreateBlock(LogicBlock):
             db = context.get("db", None)
             if db is not None:
                 try:
-                    columns = ", ".join(clean_fields.keys())
+                    _validate_identifier(table)
+                    for col in clean_fields.keys():
+                        _validate_identifier(col)
+                    columns = ", ".join(f'"{c}"' for c in clean_fields.keys())
                     placeholders = ", ".join(["?"] * len(clean_fields))
                     values = list(clean_fields.values())
                     cursor = db.execute(
-                        f"INSERT INTO {table} ({columns}) VALUES ({placeholders})",
+                        f'INSERT INTO "{table}" ({columns}) VALUES ({placeholders})',
                         values
                     )
                     record_id = cursor.lastrowid if hasattr(cursor, 'lastrowid') else len(clean_fields)
@@ -1310,28 +1324,33 @@ class CRUDReadBlock(LogicBlock):
             db = context.get("db", None)
             if db is not None:
                 try:
+                    _validate_identifier(table)
                     where_clauses = []
                     values = []
                     for key, value in filters.items():
+                        _validate_identifier(key)
                         if isinstance(value, dict):
                             op = value.get("op", "=")
+                            # Only allow safe operators
+                            if op not in ("=", "!=", "<", "<", ">", ">=", "LIKE", "IN"):
+                                op = "="
                             val = value.get("value", value)
-                            where_clauses.append(f"{key} {op} ?")
+                            where_clauses.append(f'"{key}" {op} ?')
                             values.append(val)
                         else:
-                            where_clauses.append(f"{key} = ?")
+                            where_clauses.append(f'"{key}" = ?')
                             values.append(value)
 
                     where_str = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
                     # Count
-                    count_cursor = db.execute(f"SELECT COUNT(*) FROM {table}{where_str}", values)
+                    count_cursor = db.execute(f'SELECT COUNT(*) FROM "{table}"{where_str}', values)
                     total = count_cursor.fetchone()[0]
 
                     # Fetch page
                     offset = (page - 1) * page_size
                     cursor = db.execute(
-                        f"SELECT * FROM {table}{where_str} ORDER BY {order_by} LIMIT ? OFFSET ?",
+                        f'SELECT * FROM "{table}"{where_str} ORDER BY {order_by} LIMIT ? OFFSET ?',
                         values + [page_size, offset]
                     )
                     rows = cursor.fetchall()
@@ -1393,10 +1412,13 @@ class CRUDUpdateBlock(LogicBlock):
             db = context.get("db", None)
             if db is not None:
                 try:
-                    set_clauses = [f"{k} = ?" for k in fields.keys()]
+                    _validate_identifier(table)
+                    for k in fields.keys():
+                        _validate_identifier(k)
+                    set_clauses = [f'"{k}" = ?' for k in fields.keys()]
                     values = list(fields.values()) + [record_id]
                     cursor = db.execute(
-                        f"UPDATE {table} SET {', '.join(set_clauses)} WHERE id = ?",
+                        f'UPDATE "{table}" SET {', '.join(set_clauses)} WHERE id = ?',
                         values
                     )
                     rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 1
@@ -1447,13 +1469,14 @@ class CRUDDeleteBlock(LogicBlock):
             db = context.get("db", None)
             if db is not None:
                 try:
+                    _validate_identifier(table)
                     if soft_delete:
                         cursor = db.execute(
-                            f"UPDATE {table} SET deleted_at = ? WHERE id = ?",
+                            f'UPDATE "{table}" SET deleted_at = ? WHERE id = ?',
                             (time.strftime("%Y-%m-%d %H:%M:%S"), record_id)
                         )
                     else:
-                        cursor = db.execute(f"DELETE FROM {table} WHERE id = ?", (record_id,))
+                        cursor = db.execute(f'DELETE FROM "{table}" WHERE id = ?', (record_id,))
 
                     rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 1
                     db.commit() if hasattr(db, 'commit') else None

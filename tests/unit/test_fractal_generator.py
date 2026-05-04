@@ -263,7 +263,7 @@ class TestPhase2Skeletons:
 
         assert spec.phase == 2
         for f in spec.files:
-            content = getattr(f, '_generated_content', '')
+            content = f.generated_content
             # All non-init files should have content
             if not f.path.endswith("__init__.py") or f.classes or f.functions:
                 assert content, f"No content for {f.path}"

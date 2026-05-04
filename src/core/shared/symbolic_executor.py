@@ -17,12 +17,12 @@ Implementa la ejecucion simbolica del Nivel 6 como especifica el documento:
 
 import ast
 import logging
-import time
 
 logger = logging.getLogger(__name__)
 
-from .z3_solver import Z3Solver, HAS_Z3
-from .constraint_solver import Constraint
+from .z3_solver import HAS_Z3
+
+__all__ = ["SymbolicValue", "SymbolicPath", "SymbolicExecutor"]
 
 # Z3 module reference for convenience (only available when HAS_Z3 is True)
 if HAS_Z3:
@@ -105,8 +105,9 @@ class SymbolicPath:
                 solver.add(cond)
             result = solver.check()
             return result != z3_module.unsat
-        except Exception:
+        except Exception as e:
             # Fallback a string-based si Z3 falla
+            logger.debug("SymbolicPath: Z3 feasibility check failed: %s", e)
             return self._is_feasible_string()
 
     def _is_feasible_string(self):
@@ -281,8 +282,9 @@ class SymbolicExecutor:
         if HAS_Z3:
             try:
                 z3_cond = self._build_z3_constraint(test_node, current_path, negate=negate)
-            except Exception:
+            except Exception as e:
                 z3_cond = None
+                logger.debug("SymbolicExecutor: Z3 constraint encoding failed: %s", e)
 
         return string_cond, z3_cond
 
@@ -740,8 +742,9 @@ class SymbolicExecutor:
         if HAS_Z3 and true_z3 is not None:
             try:
                 false_z3 = z3_module.Not(true_z3)
-            except Exception:
+            except Exception as e:
                 false_z3 = None
+                logger.debug("SymbolicExecutor: Z3 Not() negation failed: %s", e)
 
         # True branch
         true_path = SymbolicPath(
@@ -780,11 +783,11 @@ class SymbolicExecutor:
             false_paths = [false_path]
 
         # Check I/O in branches
-        for tp in true_paths:
-            tp = self._check_io_in_body(stmt.body, tp)
-        for fp in false_paths:
+        for i in range(len(true_paths)):
+            true_paths[i] = self._check_io_in_body(stmt.body, true_paths[i])
+        for i in range(len(false_paths)):
             if stmt.orelse:
-                fp = self._check_io_in_body(stmt.orelse, fp)
+                false_paths[i] = self._check_io_in_body(stmt.orelse, false_paths[i])
 
         return true_paths + false_paths
 
@@ -1324,9 +1327,10 @@ class SymbolicExecutor:
                                     f"in function '{func_name}' (Z3 verified)"
                                 )
                             # else: Z3 proved it can't be zero - safe
-                    except Exception:
+                    except Exception as e:
                         # Z3 failed - use heuristic: if variable is not constrained
                         # away from zero, flag it as potential issue
+                        logger.debug("SymbolicExecutor: Z3 div-by-zero check failed: %s", e)
                         is_constrained_nonzero = any(
                             f"SYM({denom_var})!=0" in str(c) or
                             f"SYM({denom_var})>0" in str(c) or
@@ -1664,10 +1668,9 @@ class SymbolicExecutor:
                             inputs[var_name] = float(dec_str.rstrip('0').rstrip('.') if '.' in dec_str else dec_str)
                         else:
                             inputs[var_name] = str(val)
-                    except Exception:
+                    except Exception as e:
                         inputs[var_name] = str(val)
-
-                # Generate SMT-LIB2 representation
+                        logger.debug("SymbolicExecutor: Z3 model value extraction failed for '%s': %s", var_name, e)
                 smt_lib = solver.to_smt2()
 
                 return {
@@ -1820,8 +1823,9 @@ class SymbolicExecutor:
                             counterexample[var_name] = bool(val)
                         else:
                             counterexample[var_name] = str(val)
-                    except Exception:
+                    except Exception as e:
                         counterexample[var_name] = str(val)
+                        logger.debug("SymbolicExecutor: Z3 counterexample value extraction failed for '%s': %s", var_name, e)
 
                 return {
                     "reachable": True,
@@ -1938,8 +1942,9 @@ class SymbolicExecutor:
                                     entry["concrete_inputs"][var_name] = val.as_long()
                                 else:
                                     entry["concrete_inputs"][var_name] = str(val)
-                            except Exception:
+                            except Exception as e:
                                 entry["concrete_inputs"][var_name] = str(val)
+                                logger.debug("SymbolicExecutor: Path export value extraction failed for '%s': %s", var_name, e)
                 except Exception as export_err:
                     logger.debug(f"SymbolicExecutor: Path export failed: {export_err}")
 

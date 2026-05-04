@@ -7,8 +7,11 @@ Compatible con Android/Termux (no usa signal.alarm).
 
 import threading
 import logging
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["TimeoutEnforcer"]
 
 
 # ============================================================
@@ -21,12 +24,12 @@ class TimeoutEnforcer:
     Compatible con Android/Termux (no usa signal.alarm).
     """
 
-    def __init__(self, timeout_ms=5000):
+    def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
         self._timed_out = False
         self._event = threading.Event()
 
-    def execute_with_timeout(self, func, *args, **kwargs):
+    def execute_with_timeout(self, func: Callable[..., Any], *args, **kwargs):
         """
         Ejecuta una funcion con un timeout estricto.
 
@@ -61,5 +64,5 @@ class TimeoutEnforcer:
         return result_container[0], False
 
     @property
-    def timed_out(self):
+    def timed_out(self) -> bool:
         return self._timed_out

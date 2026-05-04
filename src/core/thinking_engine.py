@@ -433,7 +433,7 @@ class ThinkingEngine:
             "port": 8000,
             "host": "0.0.0.0",
             "debug": True,
-            "secret_key": "change-this-in-production",
+            "secret_key": os.environ.get("TITAN_SECRET_KEY", "change-this-in-production"),
             "entity_count": len(entities),
         }
 

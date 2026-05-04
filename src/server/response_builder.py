@@ -8,6 +8,7 @@ eliminando la duplicacion entre main.py (Kivy) y main_headless.py (Termux).
 
 import time
 import uuid
+from typing import Any, Dict, Optional
 
 from src.core.shared.contracts import HAS_Z3
 
@@ -17,7 +18,7 @@ def _solver_name():
     return "Z3" if HAS_Z3 else "AC-3"
 
 
-def build_normal_response(data, result, user_msg, governor=None):
+def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
     """
     Construye la respuesta OpenAI-compatible para un resultado normal del pipeline.
 
@@ -118,7 +119,7 @@ def build_normal_response(data, result, user_msg, governor=None):
     }
 
 
-def build_partial_reasoning_response(data, result, user_msg):
+def build_partial_reasoning_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str) -> Dict[str, Any]:
     """
     Construye la respuesta de Razonamiento Parcial con tool_calls.
 
@@ -170,7 +171,7 @@ def build_partial_reasoning_response(data, result, user_msg):
     }
 
 
-def build_error_response(error_msg):
+def build_error_response(error_msg: str) -> Dict[str, Any]:
     """
     Construye la respuesta de error interno compatible con OpenAI.
 
@@ -201,7 +202,7 @@ def build_error_response(error_msg):
     }
 
 
-def build_overloaded_response():
+def build_overloaded_response() -> Dict[str, Any]:
     """
     Construye la respuesta de servidor sobrecargado (503).
 

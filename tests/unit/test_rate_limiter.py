@@ -5,7 +5,6 @@ Tests token bucket algorithm, global concurrent limit, and cleanup.
 """
 
 import pytest
-import time
 from src.server.rate_limiter import RateLimiter
 
 
@@ -67,13 +66,22 @@ class TestRateLimiter:
 
     def test_token_refill(self):
         """Tokens should refill over time."""
-        limiter = RateLimiter(max_requests_per_minute=60, burst_size=1)
-        limiter.acquire("127.0.0.1")
-        limiter.release()
-        # Exhausted, but after ~1s should have 1 token
-        assert limiter.acquire("127.0.0.1") is False
-        time.sleep(1.1)
-        assert limiter.acquire("127.0.0.1") is True
+        from unittest.mock import patch
+
+        _time_counter = [0.0]
+
+        def fake_time():
+            return _time_counter[0]
+
+        with patch('src.server.rate_limiter.time.time', side_effect=fake_time):
+            limiter = RateLimiter(max_requests_per_minute=60, burst_size=1)
+            limiter.acquire("127.0.0.1")
+            limiter.release()
+            # Exhausted, no tokens remain
+            assert limiter.acquire("127.0.0.1") is False
+            # Advance time by 1 second — token should refill
+            _time_counter[0] = 1.0
+            assert limiter.acquire("127.0.0.1") is True
 
     def test_get_stats(self):
         """Stats should reflect current state."""

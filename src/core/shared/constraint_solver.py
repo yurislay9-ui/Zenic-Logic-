@@ -12,8 +12,11 @@ Fallback when Z3 is not available.
 import time
 import random
 import logging
+from typing import Any, Callable, Dict, List
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["Constraint", "ConstraintSolver"]
 
 
 # ============================================================
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 class Constraint:
     """Representa una restriccion entre variables."""
 
-    def __init__(self, var1, var2, predicate, description=""):
+    def __init__(self, var1: str, var2: str, predicate: Callable[[Any, Any], bool], description: str = ""):
         self.var1 = var1
         self.var2 = var2
         self.predicate = predicate
@@ -40,12 +43,12 @@ class ConstraintSolver:
     Fallback cuando Z3 no esta disponible.
     """
 
-    def __init__(self, timeout_ms=5000):
+    def __init__(self, timeout_ms: int = 5000):
         self.timeout_ms = timeout_ms
         self._start_time = 0
         self._timed_out = False
 
-    def solve(self, domains, constraints):
+    def solve(self, domains: Dict[str, List[Any]], constraints: List[Constraint]) -> Dict[str, Any]:
         """Resuelve un CSP (Constraint Satisfaction Problem)."""
         self._start_time = time.time()
         self._timed_out = False
@@ -70,7 +73,7 @@ class ConstraintSolver:
             return {"status": "SATISFIED", "assignment": result}
         return {"status": "UNSATISFIABLE", "assignment": None}
 
-    def verify_invariant(self, condition_func, variables, domains):
+    def verify_invariant(self, condition_func: Callable[..., bool], variables: List[str], domains: Dict[str, List[Any]]) -> Dict[str, Any]:
         """Verifica si una invariante se cumple en todos los estados posibles."""
         self._start_time = time.time()
         self._timed_out = False

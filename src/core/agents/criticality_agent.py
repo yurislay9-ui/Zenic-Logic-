@@ -408,10 +408,13 @@ class CriticalityAgent(BaseAgent[CriticalityOutput]):
         # Normalizar existing_criticality a int
         existing_int = None
         if existing_criticality is not None:
-            existing_int = STR_TO_LEVEL.get(
-                str(existing_criticality).lower(),
-                int(existing_criticality) if str(existing_criticality).isdigit() else None
-            )
+            try:
+                existing_int = STR_TO_LEVEL.get(
+                    str(existing_criticality).lower(),
+                    int(float(existing_criticality)),
+                )
+            except (ValueError, TypeError):
+                existing_int = None
 
         # Extraer información del intent_output
         if isinstance(intent_output, IntentOutput):

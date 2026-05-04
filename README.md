@@ -10,8 +10,9 @@ Funciona en **Android/Termux** sin GPU.
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-570%2B%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-2_654%20methods%20%7C%2079%20files-brightgreen.svg)](tests/)
 [![Niches](https://img.shields.io/badge/Niches-103%20templates%20%7C%2020%20domains-orange.svg)](src/templates/niches/)
+[![Source](https://img.shields.io/badge/Source-90%20files%20%7C%2042K%20lines-blue.svg)](src/)
 
 </div>
 
@@ -89,7 +90,7 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 | **Ruteo Quirúrgico (F2)** | Fusión multi-señal: Memory + Semantic + LLM + TF-IDF |
 | **Contexto Inteligente (F3)** | Compresión adaptativa + presupuesto de tokens + deduplicación |
 | **Criticalidad Dinámica (F4)** | Fusión ponderada 5-señal con retroalimentación histórica |
-| **103 Niches Declarativos** | 20 dominios, 793 entidades, 8,453 campos en YAML templates |
+| **107 Niches Declarativos** | 20 dominios, 793 entidades, 8,453 campos en YAML templates |
 | **Auto-Evolución (v17)** | GitHub Scrap + Cron + auto-update de niches — el sistema muta y aprende |
 | **Context Pointers (v17)** | Vector Signature Index + almacenamiento en disco — 100 tokens en vez de 20K |
 | **Low-Power Mode (v17)** | Monitoreo hardware térmico/batería → DAG paralelo/secuencial adaptativo |
@@ -204,7 +205,7 @@ Las iniciativas F1-F4 representan la evolución del orquestador estático hacia 
 | **F2** | SurgicalAgent / IntentAgent | SurgicalAgent | Completado | F1 DAG → F3 context → F4 criticality |
 | **F3** | ContextAgent / ReasoningAgent | ContextAgent + ReasoningAgent | Completado | F2 intent → F4 budget → agents downstream |
 | **F4** | Dynamic Criticality Router | CriticalityAgent | Completado | F1 path + F2 signals + F3 budget + agents |
-| **F5** | ExplainAgent / ValidationAgent | ValidationAgent + AnalysisUtils | Pendiente | F4 adjustments → explain output |
+| **F5** | ExplainAgent / ValidationAgent | ValidationAgent + AnalysisUtils | Completado | F4 adjustments → explain output |
 
 **Flujo unificado de información:**
 ```
@@ -709,7 +710,7 @@ La versión 17 introduce tres mejoras arquitectónicas que transforman ZENIC LOG
 
 ## Sistema de Niches Declarativos
 
-El sistema de niches permite generar aplicaciones completas desde plantillas YAML declarativas, sin tocar código Python. El sistema cargó **103 templates** a través de **20 dominios** con **793 entidades** y **8,453 campos**.
+El sistema de niches permite generar aplicaciones completas desde plantillas YAML declarativas, sin tocar código Python. El sistema cargó **107 templates** a través de **20 dominios** con **793 entidades** y **8,453 campos**.
 
 ### Dominios y Templates
 

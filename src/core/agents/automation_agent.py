@@ -30,6 +30,7 @@ import re
 import json
 import time
 import logging
+import dataclasses
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.core.agents.base import BaseAgent, AgentResult
@@ -190,11 +191,11 @@ class AutomationAgent(BaseAgent[AutomationOutput]):
         if self._smart_memory:
             try:
                 self._smart_memory.save_to_cache(
-                    description, str(AutomationOutput(
+                    description, json.dumps(dataclasses.asdict(AutomationOutput(
                         name=name, triggers=triggers, actions=actions,
                         schedule=schedule, conditions=conditions,
                         description=description[:200],
-                    )), "automation", "", 0.6,
+                    ))), "automation", "", 0.6,
                 )
             except Exception:
                 pass

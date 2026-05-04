@@ -136,8 +136,8 @@ class ContextAgent(BaseAgent[ContextOutput]):
         self._smart_memory = smart_memory
 
         # Cache de contexto compartido (deduplicación cross-agent)
-        self._shared_context_cache: Dict[str, str] = {}
-        self._shared_context_timestamp: float = 0.0
+        # Each entry stores (compressed_context, timestamp) for per-entry TTL
+        self._shared_context_cache: Dict[str, tuple] = {}
         self._shared_context_ttl: float = 30.0  # 30 segundos de TTL
 
         # Track de qué contexto ya se envió a cada agente (deduplicación)
@@ -247,9 +247,8 @@ class ContextAgent(BaseAgent[ContextOutput]):
         comp_tokens = len(compressed.split()) if compressed else 0
         ratio = min(comp_tokens / max(raw_tokens, 1), 1.0) if raw_tokens > 0 else 1.0
 
-        # Cache compartido
-        self._shared_context_cache[f"{op}:{goal}"] = compressed
-        self._shared_context_timestamp = time.time()
+        # Cache compartido — store with per-entry timestamp
+        self._shared_context_cache[f"{op}:{goal}"] = (compressed, time.time())
 
         duration_ms = int((time.time() - start) * 1000)
         self._update_stats("fallback", duration_ms)
@@ -339,8 +338,12 @@ class ContextAgent(BaseAgent[ContextOutput]):
 
         # Buscar en cache compartido
         cache_key = f"{op}:{goal}"
-        cached = self._shared_context_cache.get(cache_key, "")
-        cache_age = time.time() - self._shared_context_timestamp
+        cached_entry = self._shared_context_cache.get(cache_key)
+        cached = ""
+        cache_age = float('inf')
+        if cached_entry:
+            cached, ts = cached_entry
+            cache_age = time.time() - ts
 
         # Si el cache es muy viejo, invalidar
         if cache_age > self._shared_context_ttl or not cached:
@@ -706,9 +709,9 @@ class ContextAgent(BaseAgent[ContextOutput]):
         # Verificar cache compartido
         cache_key = f"{op}:{goal}"
         if cache_key in self._shared_context_cache:
-            cache_age = time.time() - self._shared_context_timestamp
+            cached, ts = self._shared_context_cache[cache_key]
+            cache_age = time.time() - ts
             if cache_age < self._shared_context_ttl:
-                cached = self._shared_context_cache[cache_key]
                 return cached[:max_tokens * 4]
 
         # Calcular fresh
@@ -722,6 +725,6 @@ class ContextAgent(BaseAgent[ContextOutput]):
             "default_budget": DEFAULT_TOKEN_BUDGET,
             "total_budget": TOTAL_CONTEXT_BUDGET,
             "shared_cache_entries": len(self._shared_context_cache),
-            "shared_cache_age": time.time() - self._shared_context_timestamp,
+            "shared_cache_age": "per-entry",
             "agents_tracked": list(self._agent_context_sent.keys()),
         }

@@ -341,10 +341,15 @@ class CodeGenerator:
         null_check_code = ""
         if solver_insights["null_safety_required"]:
             null_check_code = '''
-    def _validate_not_none(self, value: Any, name: str = "value") -> Any:
-        """Null-safety guard. Added by solver insight."""
+    def _validate_not_none(self, arg_name: str) -> Any:
+        """Null-safety guard. Validates by argument name using caller's locals.
+        Uses locals().get(arg_name) to resolve the actual variable value
+        instead of checking the string name directly. Added by solver insight."""
+        import inspect
+        caller_locals = inspect.currentframe().f_back.f_locals
+        value = caller_locals.get(arg_name)
         if value is None:
-            raise ValueError(f"{name} must not be None")
+            raise ValueError(f"{arg_name} must not be None")
         return value
 '''
 
@@ -482,7 +487,7 @@ class {safe_target.capitalize()}Manager:
             return Result(success=False, error="Module not initialized")
         try:
             if self._validate_not_none if hasattr(self, '_validate_not_none') else None:
-                self._validate_not_none(payload, "payload")
+                self._validate_not_none("payload")
             result_data = self._process(payload)
             return Result(success=True, data=result_data)
         except Exception as e:

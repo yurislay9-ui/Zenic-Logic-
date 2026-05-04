@@ -34,6 +34,7 @@ import os
 import time
 import threading
 import logging
+import platform
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
@@ -62,8 +63,8 @@ class ModelManager:
     def __init__(self, lazy_load: bool = True, idle_timeout_s: int = None,
                  ram_budget_mb: int = None):
         self._lazy_load = lazy_load if ENABLE_LAZY_LOAD else False
-        self._idle_timeout_s = idle_timeout_s or IDLE_TIMEOUT_S
-        self._ram_budget_mb = ram_budget_mb or RAM_BUDGET_MB
+        self._idle_timeout_s = idle_timeout_s if idle_timeout_s is not None else IDLE_TIMEOUT_S
+        self._ram_budget_mb = ram_budget_mb if ram_budget_mb is not None else RAM_BUDGET_MB
 
         # Model instances (lazy-created)
         self._semantic_engine = None
@@ -359,7 +360,9 @@ class ModelManager:
         try:
             import resource
             usage = resource.getrusage(resource.RUSAGE_SELF)
-            return usage.ru_maxrss / 1024
+            if platform.system() == 'Darwin':
+                return usage.ru_maxrss / 1024 / 1024  # macOS: bytes -> MB
+            return usage.ru_maxrss / 1024  # Linux: KB -> MB
         except Exception:
             pass
         return 0.0
@@ -373,8 +376,9 @@ class ModelManager:
         Carga ambos modelos inmediatamente (comportamiento original).
         Usar solo si se quiere el comportamiento v13/v15 sin lazy loading.
         """
-        self._ensure_semantic_loaded()
-        self._ensure_ai_loaded()
+        with self._lock:
+            self._ensure_semantic_loaded()
+            self._ensure_ai_loaded()
         logger.info("ModelManager: Eager init complete (both models loaded)")
 
     @property
@@ -443,12 +447,15 @@ class ModelManager:
 # ============================================================
 
 _manager = None
+_singleton_lock = threading.Lock()
 
 def get_model_manager() -> ModelManager:
     """Obtiene el singleton del ModelManager."""
     global _manager
     if _manager is None:
-        _manager = ModelManager()
+        with _singleton_lock:
+            if _manager is None:
+                _manager = ModelManager()
     return _manager
 
 def init_model_manager(lazy_load: bool = True, idle_timeout_s: int = None,

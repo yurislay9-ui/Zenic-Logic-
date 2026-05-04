@@ -12,10 +12,11 @@ test_code_generator.py. Focuses on:
 - Edge cases and error handling
 """
 
+import os
 import sys
 import pytest
 
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.core.code_generator import CodeGenerator
 from src.core.shared.contracts import (

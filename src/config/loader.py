@@ -148,7 +148,7 @@ def _parse_value(value: str) -> Any:
     return value
 
 
-def _deep_merge(base: Dict, override: Dict) -> Dict:
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """Fusiona dos diccionarios recursivamente (override gana)."""
     result = base.copy()
     for key, value in override.items():

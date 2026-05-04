@@ -25,6 +25,12 @@ aiosmtplib>=3.0.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
+# SSH / Remote Access (git_push.py, ssh_wrapper.py)
+paramiko>=3.4.0
+
+# Configuration (YAML parsing in src/config/loader.py)
+pyyaml>=6.0
+
 # PDF & Reports
 # weasyprint>=59.0  # Uncomment for PDF generation
 
@@ -58,3 +64,4 @@ aiofiles>=23.0.0
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
+pytest-timeout>=2.1.0

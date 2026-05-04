@@ -9,6 +9,7 @@ import gc
 import json
 import time
 import uuid
+import threading
 import logging
 
 from src.core.shared.db_initializer import get_projects_dir
@@ -88,16 +89,29 @@ class PartialReasoningManager:
             "partial_code": combined_code,
             "created_at": time.time(),
         }
-        orch._pending_resumptions[resumption_token] = resumption_state
+        with orch._resumptions_lock:
+            orch._pending_resumptions[resumption_token] = resumption_state
 
-        # Clean up old resumptions (keep last 100)
-        if len(orch._pending_resumptions) > 100:
-            oldest_keys = sorted(
-                orch._pending_resumptions.keys(),
-                key=lambda k: orch._pending_resumptions[k].get("created_at", 0)
-            )
-            for k in oldest_keys[:len(oldest_keys) - 100]:
+        # Clean up old resumptions: TTL-based (30 min) + count-based (keep last 100)
+        _RESUMPTION_TTL_SECONDS = 30 * 60  # 30 minutes
+        with orch._resumptions_lock:
+            # Remove entries older than TTL
+            now = time.time()
+            expired_keys = [
+                k for k, v in orch._pending_resumptions.items()
+                if now - v.get("created_at", 0) > _RESUMPTION_TTL_SECONDS
+            ]
+            for k in expired_keys:
                 del orch._pending_resumptions[k]
+
+            # Also enforce max count
+            if len(orch._pending_resumptions) > 100:
+                oldest_keys = sorted(
+                    orch._pending_resumptions.keys(),
+                    key=lambda k: orch._pending_resumptions[k].get("created_at", 0)
+                )
+                for k in oldest_keys[:len(oldest_keys) - 100]:
+                    del orch._pending_resumptions[k]
 
         return {
             "status": "PARTIAL_REASONING",
@@ -182,15 +196,16 @@ class PartialReasoningManager:
         orch = self._orchestrator
 
         # Lookup resumption state
-        state = orch._pending_resumptions.get(resumption_token)
-        if not state:
-            return {
-                "status": "ERROR",
-                "code": "",
-                "hash": "N/A",
-                "error": f"Invalid or expired resumption token: {resumption_token[:8]}...",
-                "processing_time_ms": 0,
-            }
+        with orch._resumptions_lock:
+            state = orch._pending_resumptions.get(resumption_token)
+            if not state:
+                return {
+                    "status": "ERROR",
+                    "code": "",
+                    "hash": "N/A",
+                    "error": f"Invalid or expired resumption token: {resumption_token[:8]}...",
+                    "processing_time_ms": 0,
+                }
 
         original_intent_data = state["original_intent"]
         previous_results = state.get("subtask_results", [])
@@ -259,7 +274,8 @@ class PartialReasoningManager:
                 if trial.status == "PASS":
                     node = orch.ledger.commit(intent.target, combined_code, p_dir, workspace=resume_workspace)
                     orch._isolation_manager.release_workspace(resume_workspace.sandbox_id)
-                    orch._pending_resumptions.pop(resumption_token, None)
+                    with orch._resumptions_lock:
+                        orch._pending_resumptions.pop(resumption_token, None)
                     elapsed = int((time.time() - start_time) * 1000)
                     return {
                         "status": "SUCCESS", "code": combined_code,
@@ -270,6 +286,9 @@ class PartialReasoningManager:
                 else:
                     orch.ledger.rollback(intent.target, p_dir, workspace=resume_workspace)
                     orch._isolation_manager.release_workspace(resume_workspace.sandbox_id)
+            else:
+                # No combined code — no workspace was created in this branch
+                pass
             elapsed = int((time.time() - start_time) * 1000)
             return {
                 "status": "PARTIAL_REASONING",
@@ -281,6 +300,9 @@ class PartialReasoningManager:
 
         # Execute remaining subtasks with enriched context
         new_results = list(previous_results)  # Copy existing results
+        # Extend list to accommodate indices beyond current length
+        while len(new_results) < len(subtasks):
+            new_results.append(None)
         for idx in indices_to_run:
             if idx < len(subtasks):
                 try:
@@ -314,7 +336,8 @@ class PartialReasoningManager:
                 elapsed = int((time.time() - start_time) * 1000)
 
                 # Remove resumption state since we succeeded
-                orch._pending_resumptions.pop(resumption_token, None)
+                with orch._resumptions_lock:
+                    orch._pending_resumptions.pop(resumption_token, None)
                 orch._isolation_manager.release_workspace(resume_workspace.sandbox_id)
 
                 return {
@@ -337,8 +360,9 @@ class PartialReasoningManager:
                 orch.ledger.rollback(intent.target, p_dir, workspace=resume_workspace)
                 orch._isolation_manager.release_workspace(resume_workspace.sandbox_id)
                 # Update the resumption state with new results
-                state["subtask_results"] = new_results
-                state["partial_code"] = combined_code
+                with orch._resumptions_lock:
+                    orch._pending_resumptions[resumption_token]["subtask_results"] = new_results
+                    orch._pending_resumptions[resumption_token]["partial_code"] = combined_code
                 elapsed = int((time.time() - start_time) * 1000)
                 return {
                     "status": "PARTIAL_REASONING",

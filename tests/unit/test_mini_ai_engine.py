@@ -332,7 +332,7 @@ class TestResponseParsing:
     """Test Qwen3 think-block extraction."""
 
     def test_extract_from_think_block(self):
-        raw = "<think\nOkay let me think about this\n</think\n\nCREATE"
+        raw = "<think\nOkay let me think about this\n</think\n>\n\nCREATE"
         result = MiniAIEngine._extract_answer(raw)
         assert result == "CREATE"
 
@@ -349,7 +349,7 @@ class TestResponseParsing:
         assert "```" not in result
 
     def test_extract_empty_think(self):
-        raw = "<think\n</think\n\nOPTIMIZE"
+        raw = "<think\n</think\n>\n\nOPTIMIZE"
         result = MiniAIEngine._extract_answer(raw)
         assert result == "OPTIMIZE"
 

@@ -6,12 +6,13 @@ and singleton management.
 """
 
 import gc
+import os
 import sys
 import time
 import threading
 import pytest
 
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.core.shared.resource_governor import (
     ResourceGovernor,
@@ -25,6 +26,16 @@ from src.core.shared.resource_governor import (
 # ============================================================
 #  Constructor Tests
 # ============================================================
+
+
+@pytest.fixture(autouse=True)
+def _reset_singleton(monkeypatch):
+    """Reset ResourceGovernor singleton for each test."""
+    try:
+        import src.core.shared.resource_governor as rg_module
+        monkeypatch.setattr(rg_module, '_governor', None, raising=False)
+    except ImportError:
+        pass
 
 class TestResourceGovernorConstructor:
     """Tests for ResourceGovernor initialization."""
@@ -361,43 +372,35 @@ class TestSingleton:
         """get_governor should return a ResourceGovernor instance."""
         # Reset singleton
         import src.core.shared.resource_governor as rg_module
-        rg_module._governor = None
         gov = get_governor()
         assert isinstance(gov, ResourceGovernor)
         # Cleanup
-        rg_module._governor = None
 
     def test_get_governor_singleton(self):
         """get_governor should return the same instance on repeated calls."""
         import src.core.shared.resource_governor as rg_module
-        rg_module._governor = None
         gov1 = get_governor()
         gov2 = get_governor()
         assert gov1 is gov2
         # Cleanup
-        rg_module._governor = None
 
     def test_init_governor_with_config(self):
         """init_governor should create a governor with custom config."""
         import src.core.shared.resource_governor as rg_module
-        rg_module._governor = None
         gov = init_governor(ram_limit_mb=1024)
         assert isinstance(gov, ResourceGovernor)
         assert gov.ram_limit_mb == 1024
         # Cleanup
         gov.stop_monitoring()
-        rg_module._governor = None
 
     def test_init_governor_starts_monitoring(self):
         """init_governor should start monitoring."""
         import src.core.shared.resource_governor as rg_module
-        rg_module._governor = None
         gov = init_governor()
         assert gov._monitor_thread is not None
         assert gov._monitor_thread.is_alive()
         # Cleanup
         gov.stop_monitoring()
-        rg_module._governor = None
 
 
 # ============================================================

@@ -19,13 +19,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["MCTSNode", "MCTSPlanner"]
+
 # ARM-optimized defaults: detect if running on mobile
 def _is_arm_device():
     """Detecta si estamos en un dispositivo ARM (Teléfono/Tablet)."""
     try:
         machine = os.uname().machine if hasattr(os, 'uname') else ''
         return 'arm' in machine.lower() or 'aarch' in machine.lower()
-    except Exception:
+    except Exception as e:
+        logger.debug("MCTS: ARM detection failed: %s", e)
         return False
 
 # Adaptive defaults based on hardware
@@ -56,6 +59,8 @@ class MCTSNode:
 
     def ucb1(self, exploration=1.414):
         """Upper Confidence Bound 1 para seleccion."""
+        if self.parent is None or self.parent.visits == 0:
+            return float('inf')
         if self.visits == 0:
             return float('inf')
         exploitation = self.wins / self.visits

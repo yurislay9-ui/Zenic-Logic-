@@ -240,6 +240,8 @@ class NicheAutoUpdater:
         self._niche_root = ""
         self._mutations_count = 0
         self._last_scan = 0.0
+        self._copied_niches = set()
+        self._copied_entities = set()
 
         if niche_loader:
             self._niche_root = niche_loader._root
@@ -280,6 +282,10 @@ class NicheAutoUpdater:
 
             for niche in matching_niches:
                 # Step 3: Merge new blocks
+                # Use a copy of the blocks list to avoid mutating shared objects
+                if id(niche) not in self._copied_niches:
+                    niche.blocks = niche.blocks.copy()
+                    self._copied_niches.add(id(niche))
                 for block in suggested_blocks:
                     if block not in niche.blocks:
                         niche.blocks.append(block)
@@ -295,6 +301,10 @@ class NicheAutoUpdater:
                         mutations.append(entry)
 
                 # Step 4: Merge new entities
+                # Use a copy of the entities list to avoid mutating shared objects
+                if id(niche) not in self._copied_entities:
+                    niche.entities = niche.entities.copy()
+                    self._copied_entities.add(id(niche))
                 for entity in suggested_entities:
                     entity_name = entity.get("name", "")
                     existing_names = [e.get("name", "") for e in niche.entities]

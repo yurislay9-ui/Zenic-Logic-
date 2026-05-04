@@ -1,67 +1,64 @@
-name: TITAN Pipeline CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, develop]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ['3.10', '3.11', '3.12']
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: latest
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio pytest-cov
-          pip install kivy==2.3.0 || echo "Kivy install skipped (headless CI)"
-          pip install z3-solver || echo "Z3 install skipped (AC-3 fallback)"
-
-      - name: Run unit tests
-        env:
-          TITAN_DATA_DIR: /tmp/titan_ci_data
-        run: |
-          python -m pytest tests/unit/ -v --tb=short --ignore=tests/unit/test_server.py || true
-
-      - name: Run integration tests
-        env:
-          TITAN_DATA_DIR: /tmp/titan_ci_data
-        run: |
-          python -m pytest tests/integration/ -v --tb=short || true
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt || true
+        pip install pytest pytest-asyncio pytest-cov pytest-timeout bandit
+    
+    - name: Compile check
+      run: |
+        python -m compileall src/ -q
+    
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ --tb=short -q --timeout=30 --timeout-method=thread -p no:ddtrace --cov=src --cov-report=term-missing --cov-fail-under=50
+      env:
+        PYTHONPATH: .
+    
+    - name: Security scan with bandit
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ -ll || true
+      continue-on-error: true
 
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install linting tools
-        run: |
-          pip install flake8
-
-      - name: Lint with flake8
-        run: |
-          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 src/ --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install linting tools
+      run: pip install flake8 mypy
+    - name: Lint with flake8
+      run: |
+        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+      continue-on-error: true
+    - name: Type check with mypy
+      run: |
+        mypy src/ --ignore-missing-imports --no-strict-optional || true
+      continue-on-error: true

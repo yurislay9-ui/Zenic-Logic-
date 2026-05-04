@@ -217,19 +217,41 @@ class ChainValidator:
         for i in range(len(blocks) - 1):
             current = blocks[i]
             next_block = blocks[i + 1]
-            
-            current_outputs = set(getattr(current, 'outputs', []))
-            next_inputs = set(getattr(next_block, 'inputs', []))
-            
-            # Check if data block outputs match validation inputs
-            if current.category == 'data' and next_block.category == 'validation':
-                # Data blocks should provide data that validation blocks can check
-                pass  # This is a good pattern
-            
-            if current.category == 'validation' and next_block.category == 'data':
-                # Validation should happen before data operations
-                if 'valid' in current_outputs and 'data' in next_inputs:
-                    pass  # Good: validate then operate
+
+            current_name = getattr(current, 'name', f'block_{i}')
+            next_name = getattr(next_block, 'name', f'block_{i+1}')
+
+            if not self._check_type_compatibility(current, next_block):
+                result.add_warning(
+                    "type_mismatch",
+                    f"Block '{current_name}' outputs may be incompatible with "
+                    f"block '{next_name}' inputs",
+                    block_name=current_name,
+                    block_index=i,
+                )
+
+    @staticmethod
+    def _check_type_compatibility(block, next_block) -> bool:
+        """Check that block outputs are compatible with next_block inputs."""
+        # Get output and input types
+        outputs = getattr(block, 'outputs', []) or []
+        inputs = getattr(next_block, 'inputs', []) or []
+
+        # If no type information, assume compatible
+        if not outputs or not inputs:
+            return True
+
+        # Check that each required input type has a matching output type
+        output_types = {o if isinstance(o, str) else o.get('type', '') for o in outputs}
+        input_types = {i if isinstance(i, str) else i.get('type', '') for i in inputs}
+
+        # Check for incompatibilities (non-empty intersection required)
+        if input_types and output_types:
+            common = output_types & input_types
+            if not common and 'any' not in output_types and 'any' not in input_types:
+                return False
+
+        return True
 
     def _validate_strict(self, blocks: List[Any], initial_data: Dict[str, Any], result: ValidationResult) -> None:
         """Strict mode additional checks."""
@@ -325,12 +347,14 @@ class ChainExecutor:
         snapshots: List[Tuple[int, Dict[str, Any]]] = []
         chain_result.status = ChainStatus.RUNNING
 
-        for i, step in enumerate(chain._blocks if hasattr(chain, '_blocks') else []):
+        for i, step in enumerate(blocks):
             step_type = step.get("type", "block") if isinstance(step, dict) else "block"
             
             if step_type == "condition":
-                # Handle condition steps by delegating to chain's execute
-                # For simplicity, we track them as a single step
+                # Condition steps are not directly executable by ChainExecutor;
+                # they are evaluated and resolved by the LogicChain itself.
+                # Skipping here avoids a crash and lets the chain handle branching.
+                logger.debug("ChainExecutor: Condition step skipped (not executable)")
                 continue
 
             block = step.get("block", step) if isinstance(step, dict) else step
@@ -420,7 +444,7 @@ class ChainExecutor:
             result = block.execute(data, context)
             duration_ms = (time.time() - step_start) * 1000
 
-            if result.get("success", True) is not False:
+            if result.get("success", True):
                 return StepResult(
                     step_index=index,
                     block_name=block_name,
@@ -444,7 +468,7 @@ class ChainExecutor:
                 result = block.execute(data, context)
                 duration_ms = (time.time() - step_start) * 1000
 
-                if result.get("success", True) is not False:
+                if result.get("success", True):
                     return StepResult(
                         step_index=index,
                         block_name=block_name,

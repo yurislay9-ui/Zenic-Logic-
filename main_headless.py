@@ -190,6 +190,8 @@ def main():
         logger.info("Shutting down gracefully...")
         governor.stop_monitoring()
         server.shutdown()
+        from src.server.http_handler import _shutdown_loop
+        _shutdown_loop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown_handler)
@@ -240,6 +242,8 @@ def main():
 
         governor.stop_monitoring()
         server.shutdown()
+        from src.server.http_handler import _shutdown_loop
+        _shutdown_loop()
         logger.info("Server stopped.")
 
 

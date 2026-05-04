@@ -64,23 +64,19 @@ class TestSemanticParser:
         assert intent.language == "python"
 
     def test_parse_language_detection_kotlin(self, parser):
-        """Language detection depends on parser implementation.
-        Kotlin may need explicit code blocks for detection."""
-        intent = parser.parse("crear funcion en kotlin")
-        # Parser may not detect language from text alone without code blocks
-        assert intent.language in ["kotlin", "python", ""]
+        """Should detect Kotlin from code blocks; without them detection is unreliable."""
+        intent = parser.parse("crear funcion en kotlin ```kotlin\nfun hello(): String = \"Hi\"\n```")
+        assert intent.language == "kotlin"
 
     def test_parse_language_detection_go(self, parser):
-        """Language detection depends on parser implementation.
-        Go may need explicit code blocks for detection."""
-        intent = parser.parse("crear funcion en go")
-        assert intent.language in ["go", "python", ""]
+        """Should detect Go from code blocks; without them detection is unreliable."""
+        intent = parser.parse("crear funcion en go ```go\nfunc main() { fmt.Println(\"Hi\") }\n```")
+        assert intent.language == "go"
 
     def test_parse_language_detection_javascript(self, parser):
-        """Language detection depends on parser implementation.
-        JavaScript may need explicit code blocks for detection."""
-        intent = parser.parse("crear funcion en javascript")
-        assert intent.language in ["javascript", "python", ""]
+        """Should detect JavaScript from code blocks; without them detection is unreliable."""
+        intent = parser.parse("crear funcion en javascript ```javascript\nfunction hello() { return 1; }\n```")
+        assert intent.language == "javascript"
 
     def test_parse_code_extraction(self, parser):
         """Should extract code from markdown code blocks."""

@@ -176,6 +176,9 @@ class ReasoningEngine:
         # Save to memory
         self._save_to_memory(problem, final_conclusion, "step_by_step", avg_confidence)
 
+        elapsed = time.time() - start
+        self._total_time += elapsed
+
         return ReasoningResult(
             answer=final_conclusion,
             confidence=avg_confidence,
@@ -664,7 +667,7 @@ class ReasoningEngine:
         if "TODO" in answer or "FIXME" in answer:
             issues.append("Answer contains unresolved TODO markers")
             score -= 0.1
-        if "pass" in answer and len(answer) < 100:
+        if re.search(r'\bpass\b', answer) and len(answer) < 100:
             issues.append("Answer appears to be a placeholder")
             score -= 0.15
         if any(kw in answer.lower() for kw in ["eval(", "exec(", "os.system("]):

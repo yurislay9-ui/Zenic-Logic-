@@ -22,6 +22,8 @@ from src.core.shared.db_initializer import get_connection
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["TheoremCache"]
+
 
 class TheoremCache:
     """
@@ -81,15 +83,18 @@ class TheoremCache:
                 pass
 
         # Fallback para otros lenguajes: normalizar por regex
-        structure = re.sub(r'\b\w+\b', 'X', code)
+        structure = re.sub(r'\b(?!def|class|return|if|for|while|try|with|import|from|else|elif|pass|raise|except|async|await|yield|break|continue|lambda|not|and|or|is|in|True|False|None)\w+\b', 'X', code)
         structure = re.sub(r'".*?"', '"S"', structure)
         structure = re.sub(r"'.*?'", "'S'", structure)
         structure = re.sub(r'#.*', '', structure)
         return hashlib.sha256(structure.encode()).hexdigest()
 
-    def _hash(self, intent):
-        """Hash compuesto basado en operacion, objetivo y target."""
+    def _hash(self, intent, code=None):
+        """Hash compuesto basado en operacion, objetivo, target y codigo."""
         composite = f"{intent.op}|{intent.goal}|{intent.target}"
+        if code:
+            code_hash = hashlib.sha256(code.encode()).hexdigest()[:16]
+            composite = f"{composite}|{code_hash}"
         return hashlib.sha256(composite.encode()).hexdigest()
 
     def lookup(self, intent, code=None, language="python"):
@@ -100,13 +105,14 @@ class TheoremCache:
         try:
             conn = get_connection("theorem_cache.sqlite")
             # Busqueda directa por hash compuesto
+            intent_hash = self._hash(intent, code)
             r = conn.execute(
                 "SELECT solution_payload, hit_count FROM theorems WHERE structural_hash=?",
-                (self._hash(intent),)).fetchone()
+                (intent_hash,)).fetchone()
             if r:
                 conn.execute(
                     "UPDATE theorems SET hit_count=hit_count+1, last_used=CURRENT_TIMESTAMP WHERE structural_hash=?",
-                    (self._hash(intent),))
+                    (intent_hash,))
                 conn.commit()
                 return {"source": "composite_hash", "data": json.loads(r[0]), "hits": r[1]}
 
@@ -137,10 +143,14 @@ class TheoremCache:
                 skeleton_hash = self._skeleton_hash(code, language)
             conn = get_connection("theorem_cache.sqlite")
             conn.execute(
-                """INSERT OR REPLACE INTO theorems
+                """INSERT INTO theorems
                 (structural_hash, operation, goal, proof_result, solution_payload, skeleton_hash)
-                VALUES (?,?,?,?,?,?)""",
-                (self._hash(intent), intent.op, intent.goal, proof,
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(structural_hash) DO UPDATE SET
+                    proof_result=excluded.proof_result,
+                    solution_payload=excluded.solution_payload,
+                    skeleton_hash=excluded.skeleton_hash""",
+                (self._hash(intent, code), intent.op, intent.goal, proof,
                  json.dumps(sol), skeleton_hash))
             conn.commit()
 
@@ -200,8 +210,8 @@ class TheoremCache:
         try:
             conn = get_connection("theorem_cache.sqlite")
             count = conn.execute("SELECT COUNT(*) FROM theorems").fetchone()[0]
-            total_hits = conn.execute("SELECT SUM(hit_count) FROM theorems").fetchone()[0] or 0
-            avg_hits = conn.execute("SELECT AVG(hit_count) FROM theorems").fetchone()[0] or 0
+            total_hits = conn.execute("SELECT COALESCE(SUM(hit_count), 0) FROM theorems").fetchone()[0]
+            avg_hits = conn.execute("SELECT COALESCE(AVG(hit_count), 0) FROM theorems").fetchone()[0]
             max_hits_row = conn.execute(
                 "SELECT hit_count FROM theorems ORDER BY hit_count DESC LIMIT 1"
             ).fetchone()
@@ -225,4 +235,4 @@ class TheoremCache:
             conn.commit()
             logger.info("Cache cleared")
         except Exception as e:
-            logger.debug("Cache clear error: %s", e)
+            logger.warning("Cache clear error: %s", e)

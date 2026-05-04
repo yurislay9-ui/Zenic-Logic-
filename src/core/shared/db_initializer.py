@@ -15,14 +15,21 @@ import threading
 from pathlib import Path
 import os
 import logging
+import atexit
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "get_data_dir", "get_db_path", "get_projects_dir", "get_connection",
+    "close_all_connections", "write_lock", "initialize_databases",
+]
 
 # ============================================================
 #  CONNECTION POOL - Reutiliza conexiones SQLite
 # ============================================================
 
-_db_connections = {}
+_db_connections = {}       # {db_name: sqlite3.Connection}
+_db_write_locks = {}       # {db_name: threading.Lock} — one lock per connection for write ops
 _db_lock = threading.Lock()
 
 
@@ -74,6 +81,9 @@ def get_connection(db_name: str) -> sqlite3.Connection:
 
     El pool mantiene una conexion por DB, thread-safe con lock.
     Si la conexion esta rota, crea una nueva.
+
+    IMPORTANT: For write operations, use the connection's write lock
+    via `with db_initializer.write_lock(db_name):` to ensure thread safety.
     """
     key = db_name
     with _db_lock:
@@ -92,6 +102,7 @@ def get_connection(db_name: str) -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         _optimize_pragma(conn)
         _db_connections[key] = conn
+        _db_write_locks[key] = threading.Lock()
         return conn
 
 
@@ -104,6 +115,41 @@ def close_all_connections():
             except Exception as e:
                 logger.debug(f"close_all_connections: Failed to close connection: {e}")
         _db_connections.clear()
+        _db_write_locks.clear()
+
+
+# Register cleanup on process exit to prevent leaked DB connections
+atexit.register(close_all_connections)
+
+
+class write_lock:
+    """
+    Context manager to acquire the per-connection write lock.
+
+    Usage:
+        conn = get_connection("graph_ast.sqlite")
+        with write_lock("graph_ast.sqlite"):
+            conn.execute("INSERT INTO ...")
+            conn.commit()
+
+    This ensures that only one thread writes to a given database at a time,
+    preventing 'database is locked' errors and data corruption.
+    """
+
+    def __init__(self, db_name: str):
+        self._db_name = db_name
+
+    def __enter__(self):
+        lock = _db_write_locks.get(self._db_name)
+        if lock is not None:
+            lock.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        lock = _db_write_locks.get(self._db_name)
+        if lock is not None:
+            lock.release()
+        return False
 
 
 def initialize_databases():

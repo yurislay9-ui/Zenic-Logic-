@@ -19,11 +19,11 @@ Cuando Z3 NO esta disponible (Android/Termux):
 """
 
 import time
-import random
-import hashlib
 import ast
 import logging
 import gc
+
+__all__ = ["Z3Solver", "HAS_Z3"]
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +296,6 @@ class Z3Solver:
             results["overall_status"] = "ERROR"
 
         # Free memory
-        import gc
         gc.collect()
 
         return results
@@ -392,7 +391,6 @@ class Z3Solver:
             logger.error("Z3 null-safety proof error: %s", e)
             return {"status": "ERROR", "solver_type": "Z3", "message": str(e)}
         finally:
-            import gc
             gc.collect()
 
     def _z3_prove_type_safety(self, variables_with_types):
@@ -562,7 +560,6 @@ class Z3Solver:
             logger.error("Z3 type-safety proof error: %s", e)
             return {"status": "ERROR", "solver_type": "Z3", "message": str(e)}
         finally:
-            import gc
             gc.collect()
 
     def _z3_prove_invariant(self, invariant_func, variables, domains):
@@ -616,7 +613,6 @@ class Z3Solver:
             logger.error("Z3 invariant proof error: %s", e)
             return {"status": "ERROR", "solver_type": "Z3", "message": str(e)}
         finally:
-            import gc
             gc.collect()
 
     def _z3_invariant_enumerated(self, invariant_func, variables, domains):
@@ -835,14 +831,10 @@ class Z3Solver:
 
                 if kind == "index_bounds":
                     # 0 <= index < len (assume len is a large constant)
+                    # Try to find a violation: index < 0 or index >= len
                     for var_name in inv_vars:
                         if var_name in z3_vars:
-                            solver.add(z3_vars[var_name] >= 0)
-                            # Add the negation to find a violation
-                            neg_solver = z3_module.Solver()
-                            neg_solver.set("timeout", self.timeout_ms // max(len(invariants_info), 1))
-                            neg_solver.add(z3_vars[var_name] < 0)
-                            # We'll check below
+                            solver.add(z3_module.Or(z3_vars[var_name] < 0, z3_vars[var_name] >= 1000000))
 
                 elif kind == "no_div_zero":
                     for var_name in inv_vars:
@@ -865,8 +857,7 @@ class Z3Solver:
                     high = inv.get("high", 100)
                     for var_name in inv_vars:
                         if var_name in z3_vars:
-                            solver.add(z3_vars[var_name] < low)
-                            solver.add(z3_vars[var_name] > high)
+                            solver.add(z3_module.Or(z3_vars[var_name] < low, z3_vars[var_name] > high))
 
             # Check if any violation is reachable
             result = solver.check()
@@ -905,7 +896,6 @@ class Z3Solver:
             logger.error("Z3 code invariant proof error: %s", e)
             return {"status": "ERROR", "solver_type": "Z3_INVARIANT", "message": str(e)}
         finally:
-            import gc
             gc.collect()
 
     def _z3_prove_pattern_invariants(self, raw_code, variables_info):
@@ -1196,7 +1186,6 @@ class Z3Solver:
             result["solver_type"] = "AC3_FALLBACK"
             return result
         finally:
-            import gc
             gc.collect()
 
     def _classify_domain(self, values):
@@ -1271,7 +1260,8 @@ class Z3Solver:
                 try:
                     dec_str = z3_val.as_decimal(6)
                     return float(dec_str)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Z3Solver: Numeric value conversion failed: %s", e)
                     return str(z3_val)
 
             elif domain_type == "BOOLEAN":
@@ -1318,7 +1308,8 @@ class Z3Solver:
                                     z3_vars[constraint.var2] == z3_const2,
                                 )
                             )
-                except Exception:
+                except Exception as e:
+                    logger.debug("Z3Solver: Enum constraint pair failed: %s", e)
                     continue
 
         if valid_pairs:

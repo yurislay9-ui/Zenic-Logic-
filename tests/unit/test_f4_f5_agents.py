@@ -144,7 +144,7 @@ class TestCodeAgentFallbackOptimize:
         code = "try:\n    x = 1\nexcept:\n    pass"
         inp = CodeInput(task="optimize", language="python", existing_code=code)
         result = code_agent.fallback(inp)
-        assert "bare" in result.code.lower() or "except" in result.code.lower()
+        assert "bare" in result.code.lower() or "except Exception" in result.code.lower()
         assert result.source == "fallback"
 
     def test_fallback_optimize_detects_open_without_with(self, code_agent):
@@ -152,7 +152,7 @@ class TestCodeAgentFallbackOptimize:
         code = "def read_file(path):\n    f = open(path)\n    return f.read()"
         inp = CodeInput(task="optimize", language="python", existing_code=code)
         result = code_agent.fallback(inp)
-        assert "resource" in result.code.lower() or "open" in result.code.lower()
+        assert "with open" in result.code.lower() or "resource" in result.code.lower()
 
     def test_fallback_optimize_empty_code(self, code_agent):
         """Should handle empty code for optimization."""

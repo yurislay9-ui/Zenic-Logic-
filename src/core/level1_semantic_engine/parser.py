@@ -10,11 +10,18 @@ import re
 import logging
 from collections import Counter
 from src.core.shared.contracts import IntentPayload, OperationType, GoalType
-from src.core.semantic_engine import SemanticEngine
-from src.core.smart_memory import SmartMemory
 
 
 logger = logging.getLogger(__name__)
+
+_STOP_WORDS = frozenset({
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+    'would', 'could', 'should', 'may', 'might', 'can', 'shall',
+    'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+    'it', 'its', 'this', 'that', 'these', 'those', 'and', 'or',
+    'but', 'not', 'no', 'if', 'then', 'than', 'so', 'as', 'up',
+})
 
 
 class SemanticParser:
@@ -141,13 +148,7 @@ class SemanticParser:
         text = re.sub(r'```.*?```', ' ', text, flags=re.DOTALL)
         text = re.sub(r'[^\w\s]', ' ', text)
         tokens = text.split()
-        stops = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-                 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
-                 'would', 'could', 'should', 'may', 'might', 'can', 'shall',
-                 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-                 'it', 'its', 'this', 'that', 'these', 'those', 'and', 'or',
-                 'but', 'not', 'no', 'if', 'then', 'than', 'so', 'as', 'up'}
-        return [t for t in tokens if t not in stops and len(t) > 1]
+        return [t for t in tokens if t not in _STOP_WORDS and len(t) > 1]
 
     def _build_tfidf(self, corpus):
         doc_freq = Counter()
@@ -212,26 +213,26 @@ class SemanticParser:
             if cached and cached.get("operation") and cached.get("goal"):
                 try:
                     return IntentPayload(
-                        op=OperationType(cached["operation"]),
-                        goal=GoalType(cached["goal"]),
+                        op=cached["operation"],
+                        goal=cached["goal"],
                         target=cached.get("target", "unknown"),
                         confidence=cached.get("importance", 0.5),
                         language=cached.get("language", "python"),
                         context=text,
                     )
-                except (ValueError, KeyError):
+                except (ValueError, KeyError, TypeError):
                     pass  # Fall through to normal parsing
 
         # Try SemanticEngine for better classification if available
         if self._semantic_engine and self._semantic_engine.is_loaded:
             try:
                 classification = self._semantic_engine.classify_intent(text)
-                if classification and classification.get("op"):
-                    # SemanticEngine gave us a result — use it
+                if classification and hasattr(classification, 'operation') and classification.operation:
+                    # SemanticEngine returned a SemanticResult dataclass
                     result = IntentPayload(
-                        op=OperationType(classification["op"]),
-                        goal=GoalType(classification.get("goal", "FEATURE_ADD")),
-                        confidence=classification.get("confidence", 0.8),
+                        op=classification.operation,
+                        goal=classification.goal if hasattr(classification, 'goal') else "FEATURE_ADD",
+                        confidence=classification.confidence if hasattr(classification, 'confidence') else 0.8,
                         context=text,
                     )
                     # Cache the result in SmartMemory

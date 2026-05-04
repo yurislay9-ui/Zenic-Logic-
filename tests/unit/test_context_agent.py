@@ -157,12 +157,11 @@ class TestCable1CollectEntries:
         assert entries == []
 
     def test_handles_memory_error(self, context_agent, mock_smart_memory):
-        mock_smart_memory._working_memory = Exception("DB error")
-        # No debe crashear
-        try:
-            entries = context_agent._collect_entries("test", "SEARCH", "FEATURE_ADD")
-        except Exception:
-            pass  # El agente maneja errores graciosamente
+        # Use a list containing an object without .timestamp to trigger AttributeError during iteration
+        mock_smart_memory._working_memory = [object()]
+        entries = context_agent._collect_entries("test", "SEARCH", "FEATURE_ADD")
+        # Agent should handle the error gracefully and return a list
+        assert isinstance(entries, list)
 
 
 # ============================================================
@@ -189,8 +188,10 @@ class TestCable2ScoreEntries:
         ]
 
         scored = context_agent._score_entries(entries, "CREATE", "FEATURE_ADD")
-        # La entrada con CREATE + FEATURE_ADD tiene más relevance pero menos recency
-        # El score combinado depende de los pesos
+        # Entries should be sorted by relevance_score in descending order
+        # Verify scoring produces a valid ordering with relevance_score set
+        assert all(e.relevance_score > 0 for e in scored)
+        assert scored[0].relevance_score >= scored[1].relevance_score
 
     def test_scores_by_importance(self, context_agent):
         entries = [

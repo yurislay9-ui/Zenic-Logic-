@@ -86,6 +86,17 @@ class CodeTransformer:
                             f"# Added return type annotation to '{func_name}'"
                         )
 
+        # Phase 1.5: Inject `from typing import Any` if -> Any was added but not imported
+        if any('-> Any' in line for line in modified_lines):
+            has_any_import = any('from typing import' in line and 'Any' in line for line in modified_lines)
+            if not has_any_import:
+                for i, line in enumerate(modified_lines):
+                    if line.startswith('from typing import'):
+                        modified_lines[i] = line.replace('from typing import', 'from typing import Any,')
+                        break
+                else:
+                    modified_lines.insert(0, 'from typing import Any\n')
+
         # Phase 2: Apply solver insights as defensive checks
         if solver_insights and solver_insights.get("violated_constraints"):
             # Add defensive checks at module level after imports
@@ -375,6 +386,9 @@ class CodeTransformer:
         args_str = ", ".join(args_list) if args_list else "*args, **kwargs"
         return_type = " -> Any" if not has_return_type else ""
 
+        # Add typing import if -> Any is used in generated code
+        typing_import = "from typing import Any\n\n" if return_type else ""
+
         # Solver constraint header
         solver_header = ""
         if solver_insights and solver_insights.get("status") == "PROVEN":
@@ -386,7 +400,7 @@ class CodeTransformer:
         if complexity > 10:
             # High complexity: decompose into helper functions
             helper_name = f"_{target_name}_core"
-            return f'''def {target_name}({args_str}){return_type}:
+            return f'''{typing_import}def {target_name}({args_str}){return_type}:
     """Optimized by TITAN OMNISCALE X.
     Original complexity: {complexity}. Decomposed into helper for clarity.
     """
@@ -402,7 +416,7 @@ def {helper_name}({args_str}){return_type}:
 '''
         elif has_nested_if:
             # Nested conditionals: suggest early-return pattern
-            return f'''def {target_name}({args_str}){return_type}:
+            return f'''{typing_import}def {target_name}({args_str}){return_type}:
     """Optimized by TITAN OMNISCALE X.
     Nested conditionals converted to early-return pattern.
     """
@@ -414,7 +428,7 @@ def {helper_name}({args_str}){return_type}:
 '''
         elif has_try_except and complexity > 5:
             # Has exception handling with moderate complexity
-            return f'''def {target_name}({args_str}){return_type}:
+            return f'''{typing_import}def {target_name}({args_str}){return_type}:
     """Optimized by TITAN OMNISCALE X.
     Exception handling improved with specific exception types.
     """
@@ -432,10 +446,10 @@ def {helper_name}({args_str}){return_type}:
                 null_guard = f'''
     # Null-safety guard (solver insight)
     for arg_name in [{', '.join(f'"{a}"' for a in args_list[:3])}]:
-        if arg_name is None:
+        if locals().get(arg_name) is None:
             raise ValueError(f"{{arg_name}} must not be None")
 '''
-            return f'''def {target_name}({args_str}){return_type}:
+            return f'''{typing_import}def {target_name}({args_str}){return_type}:
     """Optimized by TITAN OMNISCALE X."""
 {solver_header}{null_guard}
     pass

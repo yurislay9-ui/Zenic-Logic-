@@ -38,6 +38,7 @@ import os
 import re
 import json
 import time
+import secrets
 import logging
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
@@ -141,7 +142,7 @@ class AppGenerator:
                 "template_type": plan.template_type,
                 "db_name": project_name + ".db",
                 "port": plan.config_vars.get("port", 8000),
-                "secret_key": plan.config_vars.get("secret_key", "change-this-in-production"),
+                "secret_key": plan.config_vars.get("secret_key", secrets.token_hex(32)),
                 "debug": True,
                 "version": "1.0.0",
             },
@@ -299,6 +300,9 @@ class AppGenerator:
         for entity in entities:
             name = entity.get("name", "Item")
             fields = entity.get("fields", [])
+            # Validate entity name — only alphanumeric + underscore allowed
+            if not re.match(r'^[a-zA-Z_]\w*$', name.lower()):
+                raise ValueError(f"Invalid entity name: {name}. Only alphanumeric characters and underscores allowed.")
             columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
             for f in fields:
                 parts = f.split(":")
@@ -460,7 +464,7 @@ from datetime import datetime
             params_str = ", ".join(create_params)
             cols_str = ", ".join(insert_cols)
             vals_str = ", ".join(insert_vals)
-            param_tuple = ", ".join(f"{{p}}" for p in create_params)
+            param_tuple = ", ".join(create_params)
 
             update_sets = []
             for f in fields:
@@ -784,7 +788,7 @@ class Config:
     DEBUG = True
     PORT = {plan.config_vars.get('port', 8000)}
     HOST = "0.0.0.0"
-    SECRET_KEY = "{plan.config_vars.get('secret_key', 'change-this-in-production')}"
+    SECRET_KEY = "{plan.config_vars.get('secret_key', secrets.token_hex(32))}"
     DATABASE_NAME = "{plan.config_vars.get('db_name', project_name + '.db')}"
 
     # Pagination

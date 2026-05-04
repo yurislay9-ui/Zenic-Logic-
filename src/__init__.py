@@ -8,6 +8,11 @@ Protocolo Abortivo y Razonamiento Parcial.
 Compatible con Android (Termux + proot-distro).
 """
 
-from src.core.orchestrator import TitanOrchestrator
-
 __all__ = ["TitanOrchestrator"]
+
+
+def __getattr__(name):
+    if name == "TitanOrchestrator":
+        from src.core.orchestrator import TitanOrchestrator
+        return TitanOrchestrator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

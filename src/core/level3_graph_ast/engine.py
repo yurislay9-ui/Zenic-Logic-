@@ -20,6 +20,8 @@ from src.core.shared.db_initializer import get_connection
 
 logger = logging.getLogger(__name__)
 
+SKIP_DIRS = {'.git', 'node_modules', 'venv', '__pycache__', '.venv', 'dist', 'build'}
+
 
 class GraphASTEngine:
     """Motor de AST usando ast nativo para Python, regex para otros."""
@@ -55,6 +57,8 @@ class GraphASTEngine:
         # Recolectar todos los nodos primero, luego batch insert
         all_nodes = []
         for f in base_path.rglob("*"):
+            if any(skip in f.parts for skip in SKIP_DIRS):
+                continue
             if f.suffix in [".py", ".kt", ".go", ".js", ".ts", ".java", ".rs"]:
                 try:
                     lang = self._detect_language(f.suffix)
@@ -134,7 +138,9 @@ class GraphASTEngine:
         }
         pattern = patterns.get(language, r'(?:def|function|fun|func)\s+(\w+)\s*[\(\{]')
         for match in re.finditer(pattern, code):
-            name = match.group(1) or (match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(1))
+            name = match.group(1) or (match.group(2) if match.lastindex and match.lastindex >= 2 else None)
+            if name is None:
+                continue
             content_hash = hashlib.sha256(match.group(0).encode()).hexdigest()[:16]
             nodes.append({
                 "file_path": file_path, "node_type": "function",
@@ -145,7 +151,7 @@ class GraphASTEngine:
         return nodes
 
     def _store_node(self, node_data):
-        """Insertar un solo nodo usando connection pool."""
+        """Insertar un solo nodo usando connection pool.  Kept for single-node use cases."""
         try:
             conn = get_connection("graph_ast.sqlite")
             conn.execute(

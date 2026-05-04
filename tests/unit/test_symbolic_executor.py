@@ -5,10 +5,11 @@ Tests the symbolic execution engine including SymbolicValue,
 SymbolicPath, and SymbolicExecutor classes.
 """
 
+import os
 import sys
 import pytest
 
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.core.shared.symbolic_executor import (
     SymbolicValue,
@@ -68,7 +69,7 @@ class TestSymbolicValue:
         assert sv.concrete is None
         # repr should not show concrete since it's None
         r = repr(sv)
-        assert "=" not in r or "None" not in r
+        assert not ("=" in r and "None" in r), f"Repr should not show concrete value when it is None: {r}"
 
 
 # ============================================================

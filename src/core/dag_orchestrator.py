@@ -35,51 +35,21 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 from src.config.loader import load_settings
-from src.core.shared.db_initializer import initialize_databases, get_projects_dir
-from src.core.level1_semantic_engine.parser import SemanticParser
-from src.core.level2_macro_router.router import MacroRouter
-from src.core.level3_graph_ast.engine import GraphASTEngine
-from src.core.level4_apa_planner.planner import APAPlanner
-from src.core.level5_structural_swarm.scrap_agent import GitHubScrapAgent
-from src.core.level5_structural_swarm.ast_surgeon import ASTSurgeon
-from src.core.level6_reflexion_sandbox.executor import ReflexionSandbox
-from src.core.level7_merkle_ledger.ledger import MerkleLedger
-from src.core.level8_theorem_cache.cache import TheoremCache
-from src.core.shared.contracts import OperationType, GoalType, RoutePath
-from src.core.shared.sandbox_isolation import (
-    get_isolation_manager, SandboxWorkspace, shutdown_isolation
-)
+from src.core.shared.db_initializer import get_projects_dir
+
+# Base class with shared initialization, public API, backward-compat
+from src.core.orchestrator_base import BaseOrchestrator
+
+# Step dispatcher for unified step execution
+from src.core.step_dispatcher import StepDispatcher
 
 # 3-Layer AI Architecture - Now via ModelManager for hybrid lazy loading
 from src.core.model_manager import ModelManager, get_model_manager, init_model_manager
 from src.core.smart_memory import SmartMemory
-from src.core.subtask_descriptor import SubtaskDescriptor
-from src.core.abortive_protocol import AbortiveProtocol
-from src.core.partial_reasoning import PartialReasoningManager
-from src.core.code_generator import CodeGenerator
-from src.core.code_transformer import CodeTransformer
-from src.core.analysis_utils import AnalysisUtils
 
-# Extended AI Architecture
-from src.core.thinking_engine import ThinkingEngine, GenerationPlan
-from src.core.app_generator import AppGenerator
-from src.core.automation_engine import AutomationEngine
-from src.core.schema_designer import SchemaDesigner
-
-# Phase 7: Real Engines
-from src.core.action_executor import ExecutorRegistry, get_default_registry
-from src.core.logic_builder import LogicBuilder
-from src.core.auth_service import AuthService
-
-# Phase 8: Intelligence
-from src.core.reasoning_engine import ReasoningEngine, ReasoningMode, ReasoningResult
-from src.core.chain_validator import ChainValidator, ChainExecutor, execute_chain_safe, validate_chain, RecoveryAction
-
-# Agent Framework (F1-F5)
-from src.core.agents import AgentRunner, AgentCache
+# Agent Framework (F1-F5) - DAG-specific agents
 from src.core.agents.base import BaseAgent
 from src.core.agents.schemas import IntentOutput, CriticalityOutput
-from src.core.agents.intent_agent import IntentAgent
 from src.core.agents.surgical_agent import SurgicalAgent
 from src.core.agents.context_agent import ContextAgent
 from src.core.agents.reasoning_agent import ReasoningAgent
@@ -91,6 +61,12 @@ from src.core.agents.criticality_agent import CriticalityAgent
 from src.core.fractal_generator import FractalGenerator
 
 logger = logging.getLogger(__name__)
+
+# === Extracted Constants (previously hardcoded inline) ===
+MAX_MEMORY_SNIPPET_LEN = 500      # Max chars for memory save snippets
+SANDBOX_TTL_MULTIPLIER = 3        # Sandbox TTL = timeout * multiplier
+SANDBOX_TTL_MIN = 120             # Minimum sandbox TTL in seconds
+MAX_CODE_SNIPPET_LEN = 200        # Max chars for code context snippets
 
 
 # ============================================================
@@ -109,6 +85,7 @@ class DAGNode:
 
 
 # Grafo del pipeline - reemplaza el if/elif de 185+ lineas con ~30 lineas
+# Note: PIPELINE_DAG is mutable; consider copying in __init__ for isolation
 PIPELINE_DAG: Dict[str, DAGNode] = {
     "CACHE_CHECK": DAGNode(
         name="CACHE_CHECK",
@@ -363,7 +340,7 @@ class TitanAgent(BaseAgent):
 #  DAGOrchestrator - Orquestador basado en DAG
 # ============================================================
 
-class DAGOrchestrator:
+class DAGOrchestrator(BaseOrchestrator):
     """
     Orquestador del pipeline de 8 niveles basado en DAG con TitanAgent (F1).
 
@@ -372,186 +349,84 @@ class DAGOrchestrator:
     transiciones son condicionales. TitanAgent decide las transiciones
     no triviales usando el LLM, con fallback a tablas estáticas.
 
-    Ventajas sobre el orquestador original:
-    - 75% menos código (1,179 → ~300 líneas de lógica central)
-    - Soporta ciclos de feedback (reintentar pasos, saltar irrelevantes)
-    - Router de criticalidad integrado (FAST/STANDARD/DEEP)
-    - Fallback determinista = comportamiento original garantizado
+    Inherits from BaseOrchestrator which provides:
+    - All shared initialization methods
+    - Public API methods (generate_app, build_logic, reason, etc.)
+    - Backward-compat delegation methods
+    - Shared properties
+
+    DAG-specific additions:
+    - DAGNode, TitanAgent, PIPELINE_DAG definitions
+    - DAG execution engine (execute method)
+    - Node executor methods (_exec_*)
+    - F5 correction loop (_apply_f5_corrections)
+    - Criticality routing
+    - Fractal app generation
     """
 
     def __init__(self) -> None:
-        initialize_databases()
-        self.settings = load_settings()
-        self.p_dir = self.settings.get("project_dir", ".")
-        self.request_count = 0
-        self._current_client_id = "default"  # Brecha B: Track current client
+        self._pipeline_dag = dict(PIPELINE_DAG)
 
-        # ── 8-Level Pipeline Components ──
-        self.parser = SemanticParser()
-        self.router = MacroRouter()
-        self.ast_engine = GraphASTEngine()
-        self.planner = APAPlanner()
-        self.scrap = GitHubScrapAgent()
-        self.surgeon = ASTSurgeon()
-        self.sandbox = ReflexionSandbox()
-        self.ledger = MerkleLedger()
-        self.cache = TheoremCache()
+        # 1. Common state
+        settings = load_settings()
+        self._init_common_state()
 
-        # ── 3-Layer AI Architecture (Hybrid Lazy Loading via ModelManager) ──
-        # ModelManager gestiona carga/descarga automática de modelos para
-        # proteger el teléfono del sobrecalentamiento y consumo excesivo de RAM
+        # 2. Pipeline components
+        self._init_pipeline_components(settings)
+
+        # 3. 3-Layer AI Architecture (Hybrid Lazy Loading via ModelManager)
         self._model_mgr = init_model_manager(
-            lazy_load=True,        # No cargar modelos en __init__
-            idle_timeout_s=300,    # Auto-unload tras 5 min sin uso
-            ram_budget_mb=768,     # Max 768MB para modelos en RAM
+            lazy_load=True,
+            idle_timeout_s=300,
+            ram_budget_mb=768,
         )
-        # Obtener referencias lazy (modelos NO se cargan hasta primer uso)
         self._semantic = self._model_mgr.semantic_engine
         self._ai = self._model_mgr.mini_ai_engine
         self._memory = SmartMemory(semantic_engine=self._semantic)
+        self._init_ai_architecture(self._semantic, self._ai, self._memory)
 
-        # Wire SemanticEngine into parser
-        if self._semantic and self._semantic.is_loaded:
-            self.parser.set_semantic_engine(self._semantic)
-        if self._memory:
-            self.parser.set_smart_memory(self._memory)
+        # 4. Extended architecture (with defaults)
+        self._init_extended_with_defaults()
 
-        # ── Isolation Manager ──
-        self._isolation_manager = get_isolation_manager()
-        self._pending_resumptions = {}
+        # 5. Decomposed sub-modules
+        self._init_decomposed_modules()
 
-        # ── Extended AI Architecture ──
-        self._thinking = ThinkingEngine(
-            mini_ai=self._ai, semantic_engine=self._semantic,
-            smart_memory=self._memory,
-        )
-        self._template_engine = None
-        try:
-            from src.core.template_engine import TemplateEngine
-            self._template_engine = TemplateEngine()
-        except ImportError:
-            logger.warning("DAGOrchestrator: TemplateEngine not available")
-
-        # ── Phase 7: Real Engines ──
-        self._executor_registry = get_default_registry()
-        self._logic_builder = LogicBuilder(template_engine=self._template_engine)
-        self._auth = AuthService()
-
-        # ── Phase 8: Intelligence ──
-        self._reasoning = ReasoningEngine(
-            mini_ai=self._ai, semantic_engine=self._semantic,
-            smart_memory=self._memory,
-        )
-        self._chain_validator = ChainValidator()
-        self._chain_executor = ChainExecutor(
-            default_recovery=RecoveryAction.SKIP, max_retries=1
-        )
-
-        # ── App & Automation ──
-        self._app_gen = AppGenerator(
-            thinking_engine=self._thinking,
-            template_engine=self._template_engine,
-        )
-        self._automation = AutomationEngine(
-            thinking_engine=self._thinking,
-            template_engine=self._template_engine,
-            executor_registry=self._executor_registry,
-        )
-        self._schema_designer = SchemaDesigner(thinking_engine=self._thinking)
-
-        # ── Decomposed Sub-Modules ──
-        self._abortive = AbortiveProtocol(self)
-        self._partial_reasoning = PartialReasoningManager(self)
-        self._code_gen = CodeGenerator(self)
-        self._code_transform = CodeTransformer()
-        self._analysis = AnalysisUtils(self)
-
-        # ── Agent Framework (F1-F5) ──
-        self._agent_runner = AgentRunner(
-            mini_ai=self._ai, semantic_engine=self._semantic,
-            smart_memory=self._memory, enable_cache=True,
-        )
-        if self._semantic and self._semantic.is_loaded:
-            self._agent_runner._cache.set_semantic_engine(self._semantic)
-
-        self._intent_agent = SurgicalAgent(
+        # 6. DAG-specific agents
+        context_agent = ContextAgent(
             semantic_engine=self._semantic, smart_memory=self._memory,
         )
-        self._context_agent = ContextAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-        )
-        self._reasoning_agent = ReasoningAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-        )
-        self._business_logic_agent = BusinessLogicAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-        )
-        self._code_agent = CodeAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-            template_engine=self._template_engine,
-        )
-        self._automation_agent = AutomationAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-        )
-        self._validation_agent = ValidationAgent(
-            semantic_engine=self._semantic, smart_memory=self._memory,
-        )
-
-        # ── CriticalityAgent (F4): Dynamic Criticality Router ──
-        self._criticality_agent = CriticalityAgent(
+        criticality_agent = CriticalityAgent(
             semantic_engine=self._semantic, smart_memory=self._memory,
             macro_router=self.router,
         )
-
-        # ── TitanAgent (F1) - Meta-router del DAG ──
-        self._titan_agent = TitanAgent()
-
-        # ── FractalGenerator (Brecha C) - Generación multi-archivo ──
-        self._fractal_gen = FractalGenerator(
-            code_agent=self._code_agent,
+        titan_agent = TitanAgent()
+        fractal_gen = FractalGenerator(
+            code_agent=CodeAgent(
+                semantic_engine=self._semantic, smart_memory=self._memory,
+                template_engine=self._template_engine,
+            ),
             ast_surgeon=self.surgeon,
-            agent_runner=self._agent_runner,
+            agent_runner=None,  # Will be set after _init_agent_framework
             mini_ai=self._ai,
         )
 
-        # ── God-Level Improvements ──
-        # A) Auto-Scraping YAML (Inversión de Control de Conocimiento)
-        self._niche_auto_scraper = None
-        self._niche_cron = None
-        try:
-            from src.core.niche_auto_scraper import NicheAutoUpdater, NicheCronScheduler
-            if self._template_engine:
-                niche_loader = self._template_engine._get_niche_loader()
-                if niche_loader:
-                    self._niche_auto_scraper = NicheAutoUpdater(
-                        niche_loader=niche_loader,
-                        scrap_agent=self.scrap,
-                    )
-                    self._niche_cron = NicheCronScheduler(
-                        auto_updater=self._niche_auto_scraper,
-                        interval_hours=24,
-                    )
-                    logger.info("DAGOrchestrator: NicheAutoScraper + Cron initialized")
-        except ImportError as e:
-            logger.debug(f"DAGOrchestrator: NicheAutoScraper not available: {e}")
+        # 7. Agent framework (F1-F5) + DAG-specific agents
+        self._init_agent_framework(
+            context_agent=context_agent,
+            criticality_agent=criticality_agent,
+            titan_agent=titan_agent,
+            fractal_gen=fractal_gen,
+        )
 
-        # B) Context Pointer Engine (Vectorización de Firmas)
-        self._context_pointer_engine = None
-        try:
-            from src.core.context_pointer_engine import SignatureIndex
-            self._context_pointer_engine = SignatureIndex(project_root=self.p_dir)
-            logger.info("DAGOrchestrator: ContextPointerEngine initialized")
-        except ImportError as e:
-            logger.debug(f"DAGOrchestrator: ContextPointerEngine not available: {e}")
+        # Fix FractalGenerator agent_runner (now available)
+        if self._fractal_gen:
+            self._fractal_gen._agent_runner = self._agent_runner
 
-        # C) Low-Power Sequential Mode (Dinámico por Hardware)
-        self._low_power_mode = None
-        try:
-            from src.core.low_power_sequential import LowPowerSequentialMode
-            self._low_power_mode = LowPowerSequentialMode(governor=None)
-            logger.info("DAGOrchestrator: LowPowerSequentialMode initialized")
-        except ImportError as e:
-            logger.debug(f"DAGOrchestrator: LowPowerSequentialMode not available: {e}")
+        # 8. Step dispatcher
+        self._step_dispatcher = StepDispatcher(self)
+
+        # 9. God-level improvements
+        self._init_god_level_improvements()
 
         # Log status
         sem_s = "LAZY" if not self._model_mgr.semantic_loaded else "ACTIVE"
@@ -562,13 +437,12 @@ class DAGOrchestrator:
             f"TitanAgent(F1)=ready | SurgicalAgent(F2)=ready | "
             f"ContextAgent(F3)=ready | CriticalityAgent(F4)=ready | "
             f"ValidationAgent(F5)=ready | "
-            f"DAG={len(PIPELINE_DAG)} nodes | "
+            f"DAG={len(self._pipeline_dag)} nodes | "
             f"ModelManager=lazy(idle=300s, budget=768MB)"
         )
 
-        # Escanear proyecto si existe
-        if Path(self.p_dir).exists():
-            self.ast_engine.scan_project(self.p_dir)
+        # 10. Scan project
+        self._scan_project()
 
     # ============================================================
     #  DAG EXECUTION ENGINE - Corazón del orquestador
@@ -594,20 +468,21 @@ class DAGOrchestrator:
         self._current_client_id = client_id
 
         # Reset context tracking para deduplicación cross-agent
-        self._context_agent.reset_agent_tracking()
+        if self._context_agent:
+            self._context_agent.reset_agent_tracking()
 
         # Contexto que fluye a través del DAG
         ctx: Dict[str, Any] = {
             "msg": msg,
-            "client_id": client_id,  # Brecha B: client_id in context
+            "client_id": client_id,
             "start_time": start_time,
             "intent": None,
             "intent_output": None,
-            "context_output": None,   # F3: ContextAgent output
-            "compressed_context": "",  # F3: Contexto pre-comprimido
-            "token_budget": {},         # F3: Presupuesto de tokens
-            "criticality_output": None, # F4: CriticalityAgent output
-            "criticality_adjustments": {},  # F4: Ajustes de criticalidad para agentes
+            "context_output": None,
+            "compressed_context": "",
+            "token_budget": {},
+            "criticality_output": None,
+            "criticality_adjustments": {},
             "ast_analysis": {},
             "routing": None,
             "plan": None,
@@ -619,23 +494,23 @@ class DAGOrchestrator:
             "sandbox_workspace": None,
             "trial": None,
             "node_result": None,
-            "iteration_counts": {},  # Anti-ciclo infinito
-            "validation_output": None,  # F5: ValidationAgent output
-            "validation_risk_score": 0.0,  # F5: Risk score del código
-            "validation_issues": [],  # F5: Issues detectados
-            "correction_loop": False,  # F5: Estamos en bucle de corrección
-            "correction_count": 0,  # F5: Contador de ciclos de corrección
+            "iteration_counts": {},
+            "validation_output": None,
+            "validation_risk_score": 0.0,
+            "validation_issues": [],
+            "correction_loop": False,
+            "correction_count": 0,
         }
 
         # Ejecutar DAG desde CACHE_CHECK
         current_node = "CACHE_CHECK"
-        max_total_steps = 20  # Safety: máximo 20 pasos total
+        max_total_steps = 20
 
         for step in range(max_total_steps):
-            if current_node == "DONE" or current_node not in PIPELINE_DAG:
+            if current_node == "DONE" or current_node not in self._pipeline_dag:
                 break
 
-            dag_node = PIPELINE_DAG[current_node]
+            dag_node = self._pipeline_dag[current_node]
 
             # Anti-ciclo: trackear iteraciones por nodo
             ctx["iteration_counts"][current_node] = ctx["iteration_counts"].get(current_node, 0) + 1
@@ -655,15 +530,12 @@ class DAGOrchestrator:
 
             # Si el resultado es un dict con "status" terminado (CACHED, ABORTIVE, etc.)
             if isinstance(node_result, dict) and node_result.get("_dag_done"):
-                # Remover flag interno y devolver
                 result = {k: v for k, v in node_result.items() if k != "_dag_done"}
                 return result
 
             # Determinar siguiente nodo
             result_key = node_result if isinstance(node_result, str) else "*"
-            next_node = self._resolve_transition(
-                current_node, result_key, ctx
-            )
+            next_node = self._resolve_transition(current_node, result_key, ctx)
             current_node = next_node
 
         # Si llegamos aquí sin DONE, devolver resultado del contexto
@@ -671,21 +543,15 @@ class DAGOrchestrator:
         return self._build_response(ctx, "COMPLETED", elapsed)
 
     def set_client_id(self, client_id: str):
-        """Brecha B: Set the client_id for multi-client isolation.
-        
-        Updates client_id on SmartMemory and stores it for sandbox workspace creation.
-        """
+        """Brecha B: Set the client_id for multi-client isolation."""
         self._memory.set_client_id(client_id)
         self._current_client_id = client_id
         logger.info(f"DAGOrchestrator: client_id set to '{client_id}'")
 
     def _resolve_transition(self, current_node: str, result_key: str,
                             ctx: Dict) -> str:
-        """
-        Resuelve la transición del DAG. Usa TitanAgent para decisiones
-        no triviales, fallback a tabla estática.
-        """
-        dag_node = PIPELINE_DAG.get(current_node)
+        """Resuelve la transición del DAG."""
+        dag_node = self._pipeline_dag.get(current_node)
         if not dag_node:
             return "DONE"
 
@@ -697,7 +563,6 @@ class DAGOrchestrator:
 
         # 2. Nodos con transición dinámica (INTENT, PLAN)
         if current_node in ("INTENT", "PLAN"):
-            # Intentar TitanAgent (LLM) si está disponible
             if self._ai and self._ai.is_loaded:
                 try:
                     titan_input = {
@@ -709,13 +574,15 @@ class DAGOrchestrator:
                             "criticality": ctx.get("routing").criticality if ctx.get("routing") else "standard",
                         },
                     }
-                    llm_result = self._titan_agent.fallback(titan_input)
-                    if llm_result and llm_result in PIPELINE_DAG:
+                    if hasattr(self, '_agent_runner') and self._agent_runner is not None:
+                        llm_result = self._agent_runner.run(self._titan_agent, titan_input)
+                    else:
+                        llm_result = self._titan_agent.fallback(titan_input)
+                    if llm_result and llm_result in self._pipeline_dag:
                         return llm_result
                 except Exception as e:
                     logger.debug(f"TitanAgent LLM fallback: {e}")
 
-            # Fallback determinista
             return self._titan_agent.fallback({
                 "current_node": current_node,
                 "result": result_key,
@@ -739,7 +606,6 @@ class DAGOrchestrator:
             elapsed = int((time.time() - ctx["start_time"]) * 1000)
             logger.info(f"SmartMemory: Cache hit ({cached['source']})")
             ctx["final_code"] = cached.get("response", "")
-            # Retornar resultado final directamente
             return {
                 "status": "CACHED",
                 "code": cached.get("response", ""),
@@ -760,7 +626,6 @@ class DAGOrchestrator:
             intent_output, context=ctx["msg"]
         )
 
-        # Extraer código del mensaje
         code_lang, raw_code = SurgicalAgent._extract_code_block(ctx["msg"])
         if raw_code:
             intent.raw_code = raw_code
@@ -776,25 +641,25 @@ class DAGOrchestrator:
             f"SurgicalAgent(F2): {intent_output.operation}/{intent_output.goal} "
             f"(source={intent_output.source}, conf={intent_output.confidence:.2f})"
         )
-        return intent_output.operation  # Transición dinámica por operation
+        return intent_output.operation
 
     async def _exec_context_prepare(self, ctx: Dict) -> str:
         """Nodo CONTEXT_PREPARE (F3): Prepara contexto óptimo para downstream agents."""
+        if not self._context_agent:
+            return "*"
+
         intent_output = ctx.get("intent_output")
         msg = ctx["msg"]
 
-        # ContextAgent prepara contexto comprimido + presupuesto de tokens
         context_result = self._context_agent.prepare_context(
             message=msg,
             intent_output=intent_output,
         )
 
-        # Guardar en contexto del DAG para uso de downstream agents
         ctx["context_output"] = context_result
         ctx["compressed_context"] = context_result.compressed_context
         ctx["token_budget"] = context_result.token_budget
 
-        # Log métricas de compresión
         logger.info(
             f"ContextAgent(F3): {context_result.entries_used}/{context_result.entries_total} entries "
             f"ratio={context_result.compression_ratio:.2f} "
@@ -817,9 +682,7 @@ class DAGOrchestrator:
         intent = ctx.get("intent")
         if not intent:
             return "miss"
-        cache_hit = self.cache.lookup(
-            intent, intent.raw_code, intent.language
-        )
+        cache_hit = self.cache.lookup(intent, intent.raw_code, intent.language)
         if cache_hit:
             elapsed = int((time.time() - ctx["start_time"]) * 1000)
             ctx["final_code"] = cache_hit["data"].get("code", "")
@@ -843,24 +706,14 @@ class DAGOrchestrator:
         return "*"
 
     async def _exec_criticality_route(self, ctx: Dict) -> str:
-        """
-        Nodo CRITICALITY_ROUTE (F4): Ruteo Dinámico de Criticalidad.
+        """Nodo CRITICALITY_ROUTE (F4): Ruteo Dinámico de Criticalidad."""
+        if not self._criticality_agent:
+            return "*"
 
-        Unifica la inferencia de criticalidad desde múltiples señales:
-        1. MacroRouter (ya ejecutado en ROUTE) → baseline criticality
-        2. SurgicalAgent (F2) → intent context
-        3. SmartMemory → historical importance
-        4. CriticalityAgent → fusión ponderada con ajustes
-
-        Output: CriticalityOutput canónico que alimenta todos los agentes.
-        """
         intent_output = ctx.get("intent_output")
         routing = ctx.get("routing")
-
-        # Criticalidad base del MacroRouter
         router_crit = routing.criticality if routing else 2
 
-        # Ejecutar CriticalityAgent (LLM → fallback)
         crit_output = self._criticality_agent.assess_with_runner(
             runner=self._agent_runner,
             intent_output=intent_output,
@@ -868,22 +721,18 @@ class DAGOrchestrator:
             existing_criticality=router_crit,
         )
 
-        # Guardar en contexto del DAG
         ctx["criticality_output"] = crit_output
         ctx["criticality_adjustments"] = crit_output.adjustments
 
-        # Propagar ajustes a agentes downstream (cableado F4)
+        # Propagar ajustes a agentes downstream
         if crit_output.adjustments:
-            # CodeAgent: ajustar generación según criticalidad
             if hasattr(self._code_agent, 'set_criticality_adjustments'):
                 self._code_agent.set_criticality_adjustments(crit_output.adjustments)
-            # BusinessLogicAgent: ajustar ejecución según criticalidad
             if hasattr(self._business_logic_agent, 'set_criticality_adjustments'):
                 self._business_logic_agent.set_criticality_adjustments(crit_output.adjustments)
 
-        # Override del routing.criticality con la evaluación dinámica de F4
+        # Override del routing.criticality
         if routing and crit_output.level != router_crit:
-            # F4 puede elevar criticalidad pero MacroRouter no la baja
             if crit_output.level > router_crit:
                 routing.criticality = crit_output.level
                 logger.info(
@@ -892,7 +741,7 @@ class DAGOrchestrator:
                     f"(path={crit_output.path}, reason={crit_output.reason[:80]})"
                 )
 
-        # F4: Ajustar presupuesto de contexto de F3 según criticalidad
+        # F4: Ajustar presupuesto de contexto de F3
         context_output = ctx.get("context_output")
         if context_output and crit_output.adjustments:
             budget_modifier = crit_output.adjustments.get(
@@ -919,27 +768,20 @@ class DAGOrchestrator:
 
         ctx["plan"] = self.planner.generate_plan(routing)
 
-        # Protocolo abortivo
         if ctx["plan"].solver_status == "TIMEOUT_SUBDIVIDE_REQUIRED":
             return "abortive"
 
-        # Router de criticalidad: F4 → TitanAgent mapping
-        # F4 proporciona el nivel canónico; si no está, usar MacroRouter
         if crit_output and isinstance(crit_output, CriticalityOutput):
-            return crit_output.path  # "low_crit", "standard", "high_crit"
+            return crit_output.path
 
-        # Fallback: usar mapping estático de TitanAgent
         crit = routing.criticality if routing else 2
         return self._titan_agent.CRITICALITY_PATHS.get(crit, "standard")
 
     async def _exec_solver_verify(self, ctx: Dict) -> str:
         """Nodo SOLVER_VERIFY: Verificación Z3 para alta criticalidad."""
         plan = ctx.get("plan")
-        # La verificación Z3 ya se ejecutó en APAPlanner
         if plan and plan.solver_status in ("PROVEN", "SAT", "PARTIAL"):
             return "pass"
-        # Si el solver falló o no pudo verificar, reportar el fallo
-        # Esto permite que el pipeline decida si continuar con precaución o abortar
         if plan and plan.solver_status == "TIMEOUT_SUBDIVIDE_REQUIRED":
             return "fail_timeout"
         if plan and plan.solver_status in ("UNSAT", "UNKNOWN", "TIMEOUT"):
@@ -948,12 +790,11 @@ class DAGOrchestrator:
                 f"Formal verification FAILED for high-criticality path."
             )
             return "fail"
-        # Sin plan o estado indeterminado: fallar conservadoramente
         logger.warning("SOLVER_VERIFY: No plan or unknown solver status. Failing conservatively.")
         return "fail"
 
     async def _exec_steps(self, ctx: Dict) -> str:
-        """Nodo EXECUTE_STEPS: Ejecutar pasos del plan (el dispatch compacto)."""
+        """Nodo EXECUTE_STEPS: Ejecutar pasos del plan via StepDispatcher."""
         plan = ctx.get("plan")
         intent = ctx.get("intent")
         if not plan or not intent:
@@ -964,15 +805,13 @@ class DAGOrchestrator:
         explanations = ctx["explanations"]
         lang = ctx["lang"]
 
-        # F3: Inyectar contexto comprimido en explanations para agentes downstream
+        # F3: Inyectar contexto comprimido en explanations
         compressed_ctx = ctx.get("compressed_context", "")
         if compressed_ctx:
-            explanations.append(f"[F3 Context] {compressed_ctx[:200]}")
+            explanations.append(f"[F3 Context] {compressed_ctx[:MAX_CODE_SNIPPET_LEN]}")
 
-        # F5: Si estamos en bucle de corrección, ajustar CodeAgent para
-        # generar código más defensivo y aplicar PATCH_FIX automático
+        # F5: Si estamos en bucle de corrección, aplicar auto-fix
         if ctx.get("correction_loop") and ctx.get("validation_issues"):
-            # Aplicar correcciones automáticas basadas en los issues del F5
             final_code = ctx.get("final_code", code)
             if final_code:
                 corrected_code = self._apply_f5_corrections(
@@ -985,11 +824,10 @@ class DAGOrchestrator:
                         f"[F5 AUTO-FIX] Applied {len(ctx['validation_issues'])} corrections"
                     )
 
-        for step in plan.steps:
-            result_code, code, explanations = await self._execute_step(
-                step, intent, code, result_code, explanations,
-                lang, ctx["ast_analysis"], plan
-            )
+        # Use StepDispatcher for unified step execution
+        result_code, code, explanations = await self._step_dispatcher.execute_plan_steps(
+            plan, intent, code, explanations, lang, ctx["ast_analysis"],
+        )
 
         ctx["code"] = code
         ctx["result_code"] = result_code
@@ -998,27 +836,14 @@ class DAGOrchestrator:
         return "*"
 
     async def _exec_validate(self, ctx: Dict) -> str:
-        """
-        Nodo VALIDATE (F5): Enjambre de Revisión Secuencial.
-
-        Después de EXECUTE_STEPS, el flujo pasa OBLIGATORIAMENTE por
-        ValidationAgent. Si detecta risk_score > 0.0, fuerza un bucle
-        de corrección en CodeAgent antes de entregar el código final.
-
-        El bucle de corrección inyecta los issues detectados como
-        instrucciones de corrección en el contexto, para que el
-        siguiente ciclo de EXECUTE_STEPS sepa exactamente qué arreglar.
-        Máximo 3 ciclos de corrección (max_retries en DAGNode).
-        """
+        """Nodo VALIDATE (F5): Enjambre de Revisión Secuencial."""
         final_code = ctx.get("final_code", "")
         lang = ctx.get("lang", "python")
 
-        # Skip validación si no hay código generado
         if not final_code or not final_code.strip():
             logger.info("VALIDATE(F5): No code to validate, proceeding to SANDBOX")
             return "clean"
 
-        # Ejecutar ValidationAgent con reglas de seguridad + calidad
         v_out = self._validation_agent.validate_with_runner(
             self._agent_runner,
             target="code",
@@ -1030,12 +855,10 @@ class DAGOrchestrator:
         risk_score = v_out.risk_score
         issues = v_out.issues
 
-        # Guardar resultado de validación en contexto
         ctx["validation_output"] = v_out
         ctx["validation_risk_score"] = risk_score
         ctx["validation_issues"] = issues
 
-        # Si no hay issues o risk_score == 0.0, código limpio → SANDBOX
         if risk_score <= 0.0 or not issues:
             logger.info(
                 f"VALIDATE(F5): Code CLEAN (risk={risk_score:.2f}, issues=0). "
@@ -1043,13 +866,11 @@ class DAGOrchestrator:
             )
             return "clean"
 
-        # Hay issues: registrar y preparar bucle de corrección
         logger.warning(
             f"VALIDATE(F5): ISSUES DETECTED (risk={risk_score:.2f}, "
             f"issues={len(issues)}). Forcing correction loop."
         )
 
-        # Construir instrucciones de corrección para el siguiente ciclo
         correction_instructions = []
         for issue in issues:
             sev = getattr(issue, 'severity', 'warning')
@@ -1059,15 +880,10 @@ class DAGOrchestrator:
                 f"[F5 CORRECTION] {sev.upper()}: {code_id} - {msg}"
             )
 
-        # Inyectar correcciones en explanations para que EXECUTE_STEPS las vea
         ctx["explanations"].extend(correction_instructions)
-
-        # Marcar que estamos en un ciclo de corrección para que CodeAgent
-        # pueda ajustar su comportamiento (generar código más defensivo)
         ctx["correction_loop"] = True
         ctx["correction_count"] = ctx.get("correction_count", 0) + 1
 
-        # Si excedemos el máximo de correcciones, proceder con advertencia
         if ctx["correction_count"] > 3:
             logger.warning(
                 f"VALIDATE(F5): Max correction loops reached ({ctx['correction_count']}). "
@@ -1079,165 +895,7 @@ class DAGOrchestrator:
             )
             return "clean"
 
-        # Forzar bucle de vuelta a EXECUTE_STEPS para corrección
         return "issues_found"
-
-    async def _execute_step(self, step, intent, code, result_code,
-                            explanations, lang, ast_analysis, plan):
-        """Ejecuta UN paso del plan. Compacto vs if/elif original."""
-        action = step.action
-
-        # Dispatch compacto por acción
-        if action == "ANALYZE_STRUCTURE" and code:
-            a = self.ast_engine.analyze_structure(code, lang)
-            explanations.append(
-                f"Structure: {a['functions']} funcs, {a['classes']} classes, "
-                f"max complexity {a['max_complexity']}"
-            )
-        elif action == "SCRAPE_PATTERNS":
-            q = step.constraints.get("query", intent.scrap_query)
-            # SmartScraper: Auto-routing multi-fuente (GitHub + DevDocs + IconStack + Picsum)
-            smart_result = await self.scrap.smart_fetch(q, lang)
-            if smart_result.get("success") and smart_result.get("content"):
-                source_name = smart_result.get("source", "github")
-                explanations.append(
-                    f"SmartScraper: Found content via {source_name}"
-                )
-                content = smart_result["content"]
-                if not code:
-                    code = content
-            else:
-                # Fallback: buscar en todas las fuentes
-                all_results = await self.scrap.fetch_all_sources(q, lang)
-                best_content = ""
-                best_source = ""
-                for src in ["github", "devdocs", "iconstack", "picsum"]:
-                    if src in all_results and all_results[src]:
-                        best_content = all_results[src]
-                        best_source = src
-                        break
-                if best_content:
-                    explanations.append(
-                        f"SmartScraper: Found content via {best_source} (fallback)"
-                    )
-                    if not code:
-                        code = best_content
-                else:
-                    explanations.append("SmartScraper: No results. Using local generation.")
-        elif action == "GENERATE_CODE":
-            result_code = self._code_gen.generate_contextual_code(
-                intent, ast_analysis, plan, lang
-            )
-            explanations.append(f"Code generated for {intent.op}")
-        elif action == "REPLACE_AST_NODE" and code and step.target_node_name:
-            insights = self._code_gen.extract_solver_insights(plan.solver_proof) if plan else None
-            if self._ai.is_loaded:
-                pattern = self._ai.suggest_pattern(step.target_node_name, str(intent))
-                explanations.append(f"MiniAI pattern: {pattern}")
-            new_snippet = self._code_transform.optimize_function(
-                step.target_node_name, lang, ast_analysis, insights
-            )
-            result_code = self.surgeon.mutate_node(
-                code, step.target_node_name, new_snippet, lang
-            )
-            explanations.append(f"'{step.target_node_name}' replaced via AST")
-        elif action == "DELETE_AST_NODE" and code and step.target_node_name:
-            result_code = self.surgeon.delete_function(
-                code, step.target_node_name, lang
-            )
-            explanations.append(f"'{step.target_node_name}' deleted via AST")
-        elif action == "TRACE_EXECUTION" and code:
-            a = self.ast_engine.analyze_structure(code, lang)
-            for fn in a.get("function_names", []):
-                explanations.append(f"  - Traced: {fn}")
-        elif action == "PATCH_FIX":
-            result_code = self._analysis.apply_fix(code, intent, lang)
-            explanations.append("Fix patch applied")
-        elif action == "QUALITY_REPORT" and code:
-            report = self._analysis.generate_quality_report(
-                self.ast_engine.analyze_structure(code, lang), code, lang
-            )
-            explanations.append(report)
-        elif action == "EXPLAIN_CODE":
-            if code:
-                base = self._analysis.explain_code(code, lang, ast_analysis)
-                if self._ai.is_loaded:
-                    violations = []
-                    if "eval(" in code or "exec(" in code:
-                        violations.append("dangerous_call")
-                    if "os.system(" in code:
-                        violations.append("command_injection")
-                    if violations:
-                        ai_exp = self._ai.explain_violation(code[:200], violations)
-                        if ai_exp:
-                            base += f" | AI: {ai_exp}"
-                explanations.append(base)
-            else:
-                explanations.append(self._analysis.explain_concept(intent))
-        elif action == "SEARCH_DEFINITION" and code:
-            nodes = self.ast_engine.get_node_info(intent.target)
-            if nodes:
-                for n in nodes[:5]:
-                    explanations.append(
-                        f"Found: {n['node_type']} '{n['name']}' "
-                        f"(complexity: {n.get('complexity', 'N/A')})"
-                    )
-            else:
-                explanations.append(f"'{intent.target}' not found")
-        elif action in ("SYMBOLIC_VALIDATION", "SYNTAX_VALIDATION"):
-            if self._validation_agent and code:
-                v_out = self._validation_agent.validate_with_runner(
-                    self._agent_runner, target="code", content=code,
-                    rules=["security", "quality"], language=lang,
-                )
-                if v_out.issues:
-                    explanations.append(
-                        f"Validation: {len(v_out.issues)} issues "
-                        f"(risk={v_out.risk_score:.2f})"
-                    )
-                else:
-                    explanations.append("Validation: No issues")
-        elif action == "SCAFFOLD_FRACTAL":
-            # Brecha C: Generación Fractal (Top-Down) multi-archivo
-            from src.core.agents.intent_shared import infer_template_type
-            project_type = infer_template_type(
-                str(intent.op), intent.raw_code or str(intent)
-            )
-            fractal_result = self._fractal_gen.generate_project(
-                description=str(intent),
-                project_type=project_type,
-                project_name=intent.target or "generated_project",
-                language=lang,
-                output_dir="",
-            )
-            if fractal_result.spec and fractal_result.spec.files:
-                # Construir código final como representación del proyecto
-                project_repr = []
-                for f_bp in fractal_result.spec.files:
-                    content = getattr(f_bp, '_generated_content', '')
-                    if content:
-                        project_repr.append(f"# === {f_bp.path} ===\n{content}")
-                result_code = "\n\n".join(project_repr)
-                explanations.append(
-                    f"Fractal: {len(fractal_result.files_generated)} files, "
-                    f"phase={fractal_result.current_phase}"
-                )
-            else:
-                explanations.append("Fractal: Fallback to standard generation")
-        elif action == "ANALYZE_AND_RESPOND":
-            if code:
-                explanations.append(self._analysis.analyze_and_respond(code, intent, ast_analysis))
-            else:
-                explanations.append(self._analysis.general_response(intent))
-        elif action == "QUICK_ANALYSIS":
-            explanations.append("Quick analysis completed")
-        elif action == "FULL_ANALYSIS" and code:
-            explanations.append(self._analysis.full_analysis(code, intent, ast_analysis, lang))
-        elif action == "CHECK_DEPENDENCIES" and code:
-            deps = self._analysis.check_dependencies(code, intent.target, lang)
-            explanations.extend(deps)
-
-        return result_code, code, explanations
 
     async def _exec_abortive(self, ctx: Dict) -> str:
         """Nodo ABORTIVE: Protocolo abortivo."""
@@ -1254,8 +912,8 @@ class DAGOrchestrator:
         intent = ctx.get("intent")
 
         workspace = self._isolation_manager.create_workspace(
-            ttl_seconds=max(self.sandbox.timeout_seconds * 3, 120),
-            client_id=ctx.get("client_id", "default")  # Brecha B: Pass client_id
+            ttl_seconds=max(self.sandbox.timeout_seconds * SANDBOX_TTL_MULTIPLIER, SANDBOX_TTL_MIN),
+            client_id=ctx.get("client_id", "default")
         )
         ctx["sandbox_workspace"] = workspace
 
@@ -1266,7 +924,7 @@ class DAGOrchestrator:
             final_code, lang, intent.target if intent else "unknown"
         )
         ctx["trial"] = trial
-        return trial.status  # "PASS", "FAIL", "FAIL_K_PATH"
+        return trial.status
 
     async def _exec_partial_reasoning(self, ctx: Dict) -> str:
         """Nodo PARTIAL_REASONING: Razonamiento parcial para K-Path."""
@@ -1329,15 +987,15 @@ class DAGOrchestrator:
                 success=True, response_length=len(final_code)
             )
             self._memory.add_working(
-                msg, final_code[:500], intent.op if intent else "",
+                msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op if intent else "",
                 intent.goal if intent else "", importance
             )
             self._memory.save_to_cache(
-                msg, final_code[:500], intent.op if intent else "",
+                msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op if intent else "",
                 intent.goal if intent else "", importance
             )
 
-            # F3: Save procedural pattern if context agent tracked high-value context
+            # F3: Save procedural pattern
             context_output = ctx.get("context_output")
             if context_output and context_output.relevant_memories:
                 for mem in context_output.relevant_memories[:2]:
@@ -1346,7 +1004,7 @@ class DAGOrchestrator:
                             self._memory.learn_pattern(
                                 pattern_name=f"{intent.op if intent else 'unknown'}_solution",
                                 pattern_type="solution",
-                                description=mem.get("solution", "")[:200],
+                                description=mem.get("solution", "")[:MAX_CODE_SNIPPET_LEN],
                                 success=True,
                             )
                         except Exception:
@@ -1373,7 +1031,6 @@ class DAGOrchestrator:
         else:
             status = "NO_OP"
 
-        # Log request
         self._analysis.log_request(
             ctx.get("intent"), status, elapsed,
             solver_status=ctx.get("plan", None) and ctx["plan"].solver_status or "",
@@ -1382,19 +1039,14 @@ class DAGOrchestrator:
 
         return self._build_response(ctx, status, elapsed)
 
+    # ============================================================
+    #  F5 CORRECTION LOGIC
+    # ============================================================
+
     def _apply_f5_corrections(self, code: str, issues: list, lang: str) -> str:
         """
         F5: Aplica correcciones automáticas basadas en los issues detectados
         por ValidationAgent.
-
-        Correcciones automáticas por tipo de issue:
-        - dangerous_eval → Reemplaza eval() con ast.literal_eval()
-        - dangerous_exec → Envuelve exec() en sandbox
-        - command_injection → Reemplaza os.system() con subprocess
-        - shell_injection → Elimina shell=True
-        - pickle_deserialization → Reemplaza con json
-        - bare_except → Agrega Exception
-        - weak_hash → Reemplaza md5/sha1 con sha256
         """
         import re as _re
         corrected = code
@@ -1403,22 +1055,17 @@ class DAGOrchestrator:
             issue_code = getattr(issue, 'code', '')
             severity = getattr(issue, 'severity', 'warning')
 
-            # Solo corregir automáticamente issues de severity error
             if severity != 'error':
                 continue
 
             if issue_code == 'dangerous_eval':
-                # Reemplazar eval(x) con ast.literal_eval(x) si es posible
                 corrected = _re.sub(
-                    r'\beval\s*\(', 'ast.literal_eval(',
-                    corrected
+                    r'\beval\s*\(', 'ast.literal_eval(', corrected
                 )
-                # Agregar import si no existe
                 if 'ast.literal_eval' in corrected and 'import ast' not in corrected:
                     corrected = 'import ast\n' + corrected
 
             elif issue_code == 'command_injection':
-                # Reemplazar os.system(cmd) con subprocess.run(cmd, shell=False)
                 corrected = _re.sub(
                     r'os\.system\s*\(\s*([^)]+)\s*\)',
                     r'subprocess.run(\1, shell=False, capture_output=True)',
@@ -1428,7 +1075,6 @@ class DAGOrchestrator:
                     corrected = 'import subprocess\n' + corrected
 
             elif issue_code == 'shell_injection':
-                # Eliminar shell=True
                 corrected = _re.sub(
                     r'subprocess\.\w+\s*\(([^)]*?)shell\s*=\s*True',
                     r'subprocess.run(\1shell=False',
@@ -1436,7 +1082,6 @@ class DAGOrchestrator:
                 )
 
             elif issue_code == 'pickle_deserialization':
-                # Agregar advertencia en comentario (no se puede auto-corregir seguro)
                 corrected = _re.sub(
                     r'pickle\.loads?\s*\(',
                     'json.loads(  # F5: Replaced unsafe pickle\n        ',
@@ -1444,27 +1089,25 @@ class DAGOrchestrator:
                 )
 
             elif issue_code == 'bare_except':
-                # Reemplazar except: con except Exception:
                 corrected = _re.sub(
-                    r'except\s*:',
-                    'except Exception:',
-                    corrected
+                    r'except\s*:', 'except Exception:', corrected
                 )
 
             elif issue_code in ('weak_hash_md5', 'weak_hash_sha1'):
-                # Reemplazar hashlib.md5/sha1 con sha256
                 if 'md5' in issue_code:
                     corrected = _re.sub(
-                        r'hashlib\.md5\b', 'hashlib.sha256',
-                        corrected
+                        r'hashlib\.md5\b', 'hashlib.sha256', corrected
                     )
                 elif 'sha1' in issue_code:
                     corrected = _re.sub(
-                        r'hashlib\.sha1\b', 'hashlib.sha256',
-                        corrected
+                        r'hashlib\.sha1\b', 'hashlib.sha256', corrected
                     )
 
         return corrected
+
+    # ============================================================
+    #  RESPONSE BUILDER
+    # ============================================================
 
     def _build_response(self, ctx: Dict, status: str, elapsed: int) -> Dict:
         """Construye la respuesta final del pipeline."""
@@ -1507,7 +1150,6 @@ class DAGOrchestrator:
             response["mini_ai_stats"] = self._ai.stats
             response["semantic_stats"] = self._semantic.stats
             response["memory_stats"] = self._memory.stats
-            # F3: Incluir métricas de contexto en respuesta exitosa
             context_output = ctx.get("context_output")
             if context_output:
                 response["context_metrics"] = {
@@ -1517,7 +1159,6 @@ class DAGOrchestrator:
                     "token_budget": context_output.token_budget,
                     "source": context_output.source,
                 }
-            # F5: Incluir métricas de validación en respuesta
             v_out = ctx.get("validation_output")
             if v_out:
                 response["validation_metrics"] = {
@@ -1530,50 +1171,15 @@ class DAGOrchestrator:
         return response
 
     # ============================================================
-    #  PUBLIC API - Idéntica al TitanOrchestrator original
+    #  DAG-SPECIFIC PUBLIC API
     # ============================================================
-
-    async def resume_from_partial(self, resumption_token: str,
-                                   subtask_index: Optional[int] = None) -> Dict[str, Any]:
-        return await self._partial_reasoning.resume_from_partial(resumption_token, subtask_index)
-
-    async def generate_app(self, request: str, project_name: str = "",
-                           output_dir: str = "") -> Dict[str, Any]:
-        result = self._app_gen.generate_app(request, project_name, output_dir)
-        if result.status == "generated" and self._memory:
-            self._memory.save_project(
-                project_name=result.name, project_type=result.template_type,
-                description=request, path=result.path, status="generated",
-                entities=[e.get("name", "") for e in result.entities],
-                endpoints=[str(ep) for ep in result.endpoints],
-            )
-            self._memory.save_episode(
-                event_type="app_generated",
-                description=f"Generated {result.template_type} app: {result.name}",
-                context=request[:200], outcome="success", importance=0.8,
-            )
-        return {
-            "status": result.status, "project_name": result.name,
-            "template_type": result.template_type, "path": result.path,
-            "files": result.files, "endpoints": result.endpoints,
-            "entities": result.entities, "generation_time_s": result.generation_time_s,
-            "error": result.error,
-        }
 
     async def generate_fractal_app(self, description: str,
                                     project_name: str = "generated_project",
                                     project_type: str = "",
                                     language: str = "python",
                                     output_dir: str = "") -> Dict[str, Any]:
-        """
-        Brecha C: Genera una app completa usando Generación Fractal (Top-Down).
-
-        Divide el trabajo en 3 fases para respetar el límite de 600 tokens
-        del Qwen3-0.6B:
-          Fase 1 (Estructural): Árbol de directorios + nombres de archivos
-          Fase 2 (Esqueletos): Clases y funciones vacías con docstrings
-          Fase 3 (Relleno): Lógica implementada item por item
-        """
+        """Brecha C: Genera una app completa usando Generación Fractal (Top-Down)."""
         fractal_result = self._fractal_gen.generate_project(
             description=description,
             project_type=project_type,
@@ -1582,7 +1188,6 @@ class DAGOrchestrator:
             output_dir=output_dir,
         )
 
-        # Guardar en SmartMemory
         if self._memory and fractal_result.status == "complete":
             self._memory.save_project(
                 project_name=project_name,
@@ -1613,247 +1218,26 @@ class DAGOrchestrator:
             "error": fractal_result.error,
         }
 
-    async def generate_automation(self, description: str,
-                                   output_dir: str = "") -> Dict[str, Any]:
-        automation_design = None
-        if self._automation_agent:
-            automation_design = self._automation_agent.design_with_runner(
-                self._agent_runner, description,
-            )
-        result = self._automation.generate_automation_project(description, output_dir)
-        if automation_design:
-            result["automation_agent"] = {
-                "name": automation_design.name,
-                "triggers": [{"type": t.type, "config": t.config} for t in automation_design.triggers],
-                "actions": [{"type": a.type, "config": a.config} for a in automation_design.actions],
-                "source": automation_design.source,
-            }
-        return {
-            "status": result.get("status", "unknown"),
-            "path": result.get("path", ""),
-            "files": result.get("files", []),
-            "automation_agent": result.get("automation_agent"),
-        }
-
-    async def design_schema(self, description: str) -> Dict[str, Any]:
-        schema = self._schema_designer.design_schema(description)
-        return {
-            "status": "designed",
-            "tables": [{"name": t.name, "columns": len(t.columns)} for t in schema.tables],
-            "sql": self._schema_designer.generate_sql(schema),
-            "models": self._schema_designer.generate_models(schema),
-            "init_sql": self._schema_designer.generate_init_sql(schema),
-        }
-
-    async def list_projects(self, status: str = "") -> List[Dict[str, Any]]:
-        return self._memory.list_projects(status) if self._memory else []
-
-    async def list_automations(self) -> List[Dict[str, Any]]:
-        return self._automation.list_workflows()
-
-    async def think(self, query: str, context: str = "") -> Dict[str, Any]:
-        result = self._thinking.reason(query, context)
-        return {
-            "answer": result.answer, "confidence": result.confidence,
-            "source": result.source, "context_used": result.context_used,
-            "thinking_time_s": result.thinking_time_s,
-        }
-
-    async def register_user(self, username: str, email: str, password: str,
-                           role: str = "user") -> Dict[str, Any]:
-        return self._auth.register_user(username, email, password, role) if self._auth else {"error": "AuthService N/A"}
-
-    async def login_user(self, username: str, password: str) -> Dict[str, Any]:
-        return self._auth.login_user(username, password) if self._auth else {"error": "AuthService N/A"}
-
-    async def verify_token(self, token: str) -> Dict[str, Any]:
-        try:
-            return self._auth.verify_token(token) if self._auth else {"error": "AuthService N/A"}
-        except Exception as e:
-            return {"error": str(e)}
-
-    async def build_logic(self, description: str) -> Dict[str, Any]:
-        if self._business_logic_agent:
-            output = self._business_logic_agent.execute_with_runner(
-                self._agent_runner, operation_type="custom",
-                data={"description": description}, description=description,
-            )
-            result = {
-                "success": output.success, "data": output.data,
-                "side_effects": output.side_effects, "insights": output.insights,
-                "errors": output.errors, "source": output.source,
-            }
-            if self._logic_builder:
-                chain = self._logic_builder.build_from_description(description)
-                blocks = [b.name for b in chain.blocks]
-                result["blocks"] = blocks
-                result["block_count"] = len(blocks)
-                result["generated_code"] = self._logic_builder.generate_process_method(blocks)
-            return result
-        if not self._logic_builder:
-            return {"error": "LogicBuilder not available"}
-        chain = self._logic_builder.build_from_description(description)
-        blocks = [b.name for b in chain.blocks]
-        return {"blocks": blocks, "block_count": len(blocks),
-                "generated_code": self._logic_builder.generate_process_method(blocks)}
-
-    async def list_logic_blocks(self, category: str = "") -> List[Dict[str, Any]]:
-        if not self._logic_builder:
-            return []
-        return [{"name": b.name, "category": b.category, "description": b.description,
-                 "inputs": b.inputs, "outputs": b.outputs}
-                for b in self._logic_builder.list_blocks(category)]
-
-    async def execute_action(self, action_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        if not self._executor_registry:
-            return {"error": "ExecutorRegistry not available"}
-        result = await self._executor_registry.execute_action(action_type, config, {})
-        return {"success": result.success, "data": result.data,
-                "error": result.error, "duration_ms": result.duration_ms}
-
-    async def reason(self, query: str, mode: str = "auto",
-                     context: str = "") -> Dict[str, Any]:
-        if self._reasoning_agent:
-            actual_mode = mode if mode != "auto" else "step_by_step"
-            output = self._reasoning_agent.reason_with_runner(
-                self._agent_runner, query, mode=actual_mode, context=context,
-            )
-            return {"answer": output.answer, "confidence": output.confidence,
-                    "mode": output.mode, "steps": len(output.steps),
-                    "refinements": output.refinements, "source": output.source,
-                    "duration_ms": output.total_duration_ms}
-        if not self._reasoning:
-            return {"error": "ReasoningEngine not available"}
-        result = self._reasoning.reason(query, mode=mode, context=context)
-        return {"answer": result.answer, "confidence": result.confidence,
-                "mode": result.mode.value, "steps": len(result.steps),
-                "source": result.source, "duration_ms": result.total_duration_ms}
-
-    async def validate_logic_chain(self, description: str) -> Dict[str, Any]:
-        if self._validation_agent:
-            output = self._validation_agent.validate_with_runner(
-                self._agent_runner, target="chain", content=description,
-                rules=["compatibility", "completeness"], language="python",
-            )
-            return {
-                "is_valid": output.is_valid,
-                "can_execute": output.is_valid or not any(
-                    i.severity == "error" for i in output.issues
-                ),
-                "issues": [{"severity": i.severity, "code": i.code,
-                            "message": i.message, "line": i.line,
-                            "suggestion": i.suggestion} for i in output.issues],
-                "suggestions": output.suggestions,
-                "risk_score": output.risk_score, "source": output.source,
-            }
-        if not self._logic_builder:
-            return {"error": "LogicBuilder not available"}
-        chain = self._logic_builder.build_from_description(description)
-        validation = self._chain_validator.validate(chain)
-        return {
-            "is_valid": validation.is_valid,
-            "can_execute": validation.can_execute,
-            "errors": [{"code": e.code, "message": e.message} for e in validation.errors],
-            "warnings": [{"code": e.code, "message": e.message} for e in validation.warnings],
-        }
-
-    async def execute_logic_chain(self, description: str,
-                                   data: Optional[Dict[str, Any]] = None,
-                                   recovery: str = "skip") -> Dict[str, Any]:
-        if not self._logic_builder:
-            return {"error": "LogicBuilder not available"}
-        chain = self._logic_builder.build_from_description(description)
-        recovery_map = {"retry": RecoveryAction.RETRY, "skip": RecoveryAction.SKIP,
-                       "fallback": RecoveryAction.FALLBACK, "abort": RecoveryAction.ABORT,
-                       "rollback": RecoveryAction.ROLLBACK}
-        executor = ChainExecutor(default_recovery=recovery_map.get(recovery, RecoveryAction.SKIP), max_retries=1)
-        result = executor.execute(chain, data or {}, validate_first=True)
-        return {
-            "status": result.status.value, "steps_completed": result.steps_completed,
-            "steps_failed": result.steps_failed, "steps_skipped": result.steps_skipped,
-            "rollback_count": result.rollback_count, "total_duration_ms": result.total_duration_ms,
-            "final_data": result.final_data, "error": result.error,
-        }
+    # ============================================================
+    #  DAG-SPECIFIC INTELLIGENCE STATUS
+    # ============================================================
 
     async def get_intelligence_status(self) -> Dict[str, Any]:
-        return {
-            "reasoning_engine": self._reasoning.stats if self._reasoning else {},
-            "ai_layers": {
-                "layer1_semantic": {"available": self._semantic.is_loaded if self._semantic else False},
-                "layer2_qwen": {"available": self._ai.is_loaded if self._ai else False},
-                "layer3_memory": {"available": self._memory is not None},
-            },
-            "thinking_engine": self._thinking.stats,
-            "dag_orchestrator": {
-                "nodes": len(PIPELINE_DAG),
-                "titan_agent": "F1_ACTIVE",
-                "criticality_paths": ["FAST", "STANDARD", "DEEP"],
-            },
+        """Obtiene estado del sistema de inteligencia (Phase 8)."""
+        base_status = await BaseOrchestrator.get_intelligence_status(self)
+        base_status["dag_orchestrator"] = {
+            "nodes": len(self._pipeline_dag),
+            "titan_agent": "F1_ACTIVE",
+            "criticality_paths": ["FAST", "STANDARD", "DEEP"],
         }
+        return base_status
 
     async def get_system_status(self) -> Dict[str, Any]:
-        return {
-            "pipeline": "DAG-based (v16)",
-            "dag_nodes": len(PIPELINE_DAG),
-            "titan_agent": "F1_ACTIVE",
-            "ai": {
-                "qwen_loaded": self._ai.is_loaded if self._ai else False,
-                "semantic_loaded": self._semantic.is_loaded if self._semantic else False,
-                "memory_available": self._memory is not None,
-            },
-            "thinking_engine": self._thinking.stats,
-            "memory_stats": self._memory.enhanced_stats if self._memory else {},
-            "agent_framework": {
-                "runner_stats": self._agent_runner.stats if self._agent_runner else {},
-                "titan_agent": self._titan_agent.stats,
-                "intent_agent": self._intent_agent.stats if self._intent_agent else {},
-                "reasoning_agent": self._reasoning_agent.stats if self._reasoning_agent else {},
-                "validation_agent": self._validation_agent.stats if self._validation_agent else {},
-            },
-            "request_count": self.request_count,
-        }
-
-    # ============================================================
-    #  BACKWARD COMPATIBILITY - Delegaciones idénticas al original
-    # ============================================================
-
-    async def _handle_abortive_protocol(self, intent, routing, plan, ast_analysis, start_time):
-        return await self._abortive.handle_abortive_protocol(intent, routing, plan, ast_analysis, start_time)
-
-    def _generate_subtasks(self, intent, ast_analysis, plan=None):
-        return self._abortive.generate_subtasks(intent, ast_analysis, plan)
-
-    async def _execute_subtask(self, subtask, depth=0, max_depth=2):
-        return await self._abortive.execute_subtask(subtask, depth, max_depth)
-
-    def _merge_subtask_results(self, subtask_results, language="python"):
-        return self._abortive.merge_subtask_results(subtask_results, language)
-
-    def _generate_intelligent_code(self, intent, ast_analysis, lang):
-        return self._code_gen.generate_intelligent_code(intent, ast_analysis, lang)
-
-    def _extract_solver_insights(self, solver_proof):
-        return self._code_gen.extract_solver_insights(solver_proof)
-
-    def _extract_ast_context(self, ast_analysis):
-        return self._code_gen.extract_ast_context(ast_analysis)
-
-    def _extract_symbolic_insights(self, sandbox_result):
-        return self._code_gen.extract_symbolic_insights(sandbox_result)
-
-    def _generate_contextual_code(self, intent, ast_analysis, plan, lang):
-        return self._code_gen.generate_contextual_code(intent, ast_analysis, plan, lang)
-
-    def _apply_fix(self, code, intent, lang):
-        return self._analysis.apply_fix(code, intent, lang)
-
-    def _explain_code(self, code, lang, ast_analysis):
-        return self._analysis.explain_code(code, lang, ast_analysis)
-
-    def _explain_concept(self, intent):
-        return self._analysis.explain_concept(intent)
-
-    def _log_request(self, intent, status, elapsed_ms, cache_hit=False,
-                    solver_status="", mcts_sims=0):
-        return self._analysis.log_request(intent, status, elapsed_ms, cache_hit,
-                                          solver_status, mcts_sims)
+        """Obtiene estado completo del sistema."""
+        base_status = await BaseOrchestrator.get_system_status(self)
+        base_status["pipeline"] = "DAG-based (v16)"
+        base_status["dag_nodes"] = len(self._pipeline_dag)
+        base_status["titan_agent"] = "F1_ACTIVE"
+        if self._titan_agent:
+            base_status["agent_framework"]["titan_agent"] = self._titan_agent.stats
+        return base_status

@@ -16,6 +16,7 @@ Modo de uso:
 import os
 import logging
 import threading
+import atexit
 
 # Cargar .env ANTES de cualquier otro import (variables de entorno)
 from src.core.env_loader import load_env
@@ -144,9 +145,14 @@ class TitanApp(App):
         self.status_label.color = (1, 1, 0.5, 1)
         self.btn.disabled = True
 
-        # Configurar handler compartido
-        configure_handler(self.engine, governor=None, platform_tag="kivy")
-
+        # Configurar handler compartido con rate limiter básico para Kivy
+        rate_limiter = RateLimiter(
+            max_requests_per_minute=30,
+            burst_size=5,
+            global_max_concurrent=10,
+        )
+        configure_handler(self.engine, governor=None, platform_tag="kivy",
+                          rate_limiter=rate_limiter)
         def run_server():
             try:
                 self.server = ThreadedHTTPServer(('0.0.0.0', 5000), TitanHTTPHandler)
@@ -242,6 +248,23 @@ class TitanApp(App):
 # ============================================================
 #  PUNTO DE ENTRADA
 # ============================================================
+
+def _cleanup():
+    """Graceful shutdown: stop server, close DB connections."""
+    try:
+        if hasattr(TitanApp, '_instance') and TitanApp._instance:
+            app_inst = TitanApp._instance
+            if app_inst.server:
+                app_inst.server.shutdown()
+    except Exception:
+        pass
+    try:
+        from src.server.http_handler import _shutdown_loop
+        _shutdown_loop()
+    except Exception:
+        pass
+
+atexit.register(_cleanup)
 
 if __name__ == '__main__':
     initialize_databases()

@@ -13,11 +13,21 @@ import json
 import os
 import sys
 import unittest
+import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 # Agregar raiz del proyecto al path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
+
+@pytest.fixture(autouse=True)
+def _prevent_env_reload(monkeypatch):
+    """Prevent real .env loading during tests."""
+    try:
+        import src.core.env_loader as env_mod
+        monkeypatch.setattr(env_mod, '_loaded', True)
+    except ImportError:
+        pass
 
 class TestEnvLoader(unittest.TestCase):
     """Tests para el cargador de variables de entorno (.env)."""
@@ -69,7 +79,6 @@ class TestEnvLoader(unittest.TestCase):
         from src.core.env_loader import get_github_token, _loaded
         # Reset para test limpio
         import src.core.env_loader as env_mod
-        env_mod._loaded = True  # Evitar reload del .env real
 
         with patch.dict(os.environ, {
             "GITHUB_TOKEN": "primary_token",
@@ -82,7 +91,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: usa GITHUB_API_KEY si no hay GITHUB_TOKEN."""
         from src.core.env_loader import get_github_token
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {
             "GITHUB_API_KEY": "fallback_token",
@@ -96,7 +104,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: retorna vacio si no hay token."""
         from src.core.env_loader import get_github_token
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {}, clear=True):
             result = get_github_token()
@@ -106,7 +113,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: valores truthy para booleanos."""
         from src.core.env_loader import get_env_bool
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         for val in ("true", "yes", "1", "on"):
             with patch.dict(os.environ, {"TEST_BOOL": val}, clear=False):
@@ -117,7 +123,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: valores falsy para booleanos."""
         from src.core.env_loader import get_env_bool
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         for val in ("false", "no", "0", "off"):
             with patch.dict(os.environ, {"TEST_BOOL": val}, clear=False):
@@ -128,7 +133,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: parsea enteros correctamente."""
         from src.core.env_loader import get_env_int
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {"TEST_INT": "42"}, clear=False):
             result = get_env_int("TEST_INT")
@@ -138,7 +142,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: retorna default si no existe o es invalido."""
         from src.core.env_loader import get_env_int
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {}, clear=True):
             result = get_env_int("NONEXISTENT_INT", default=99)
@@ -148,7 +151,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: parsea lista separada por comas."""
         from src.core.env_loader import get_env_list
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {"TEST_LIST": "a, b, c"}, clear=False):
             result = get_env_list("TEST_LIST")
@@ -158,7 +160,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: configuracion por defecto del scraper."""
         from src.core.env_loader import get_scraper_config
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {}, clear=True):
             config = get_scraper_config()
@@ -177,7 +178,6 @@ class TestEnvLoader(unittest.TestCase):
         """Test: configuracion custom desde entorno."""
         from src.core.env_loader import get_scraper_config
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
         with patch.dict(os.environ, {
             "SCRAPER_TIMEOUT": "15",
@@ -198,7 +198,6 @@ class TestGitHubMetrics(unittest.TestCase):
     def setUp(self):
         """Configura el entorno para cada test."""
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
     def test_metrics_init_defaults(self):
         """Test: inicializacion con defaults."""
@@ -304,7 +303,6 @@ class TestGitHubScrapAgent(unittest.TestCase):
     def setUp(self):
         """Configura el entorno para cada test."""
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
     def _make_scraper(self, env=None):
         """Helper: crea un scraper con entorno mockeado."""
@@ -338,7 +336,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
 
     def test_scraper_init_without_token(self):
         """Test: scraper funciona sin token (modo limitado)."""
-        scraper = self._make_scraper({})
+        scraper = self._make_scraper({"GITHUB_TOKEN": "", "GITHUB_API_KEY": ""})
         self.assertEqual(scraper._config["github_token"], "")
 
     def test_detect_source_code(self):
@@ -387,7 +385,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
         # Simular cache existente
         scraper._cache["github:auth python:python"] = "cached_code_result"
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("auth python", "python", "github")
         )
         self.assertTrue(result["success"])
@@ -404,7 +402,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
 
         scraper.fetch_github_code = mock_fetch
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("test query", "python", "unknown_source")
         )
         self.assertEqual(result["source"], "github")
@@ -419,7 +417,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
 
         scraper.fetch_github_code = mock_fetch_github
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.fetch_modern_code("auth login", "kotlin")
         )
         self.assertEqual(result, "backward_compat_code")
@@ -441,7 +439,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_resp
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_picsum()
             )
             self.assertTrue(bool(result))
@@ -468,7 +466,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_resp
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_picsum("1200x800")
             )
             self.assertTrue(bool(result))
@@ -492,7 +490,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_resp
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_picsum("3840x2160")  # 4K - deberia limitar
             )
             self.assertTrue(bool(result))
@@ -508,7 +506,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             # Simular que la API falla
             mock_urlopen.side_effect = Exception("API unavailable")
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_iconstack("login")
             )
             self.assertTrue(bool(result))
@@ -527,7 +525,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
 
             for icon_name in ["login", "logout", "menu", "settings", "home",
                               "user", "search", "add", "delete", "edit"]:
-                result = asyncio.get_event_loop().run_until_complete(
+                result = asyncio.run(
                     scraper.fetch_iconstack(icon_name)
                 )
                 self.assertTrue(bool(result), f"Expected result for icon '{icon_name}'")
@@ -541,7 +539,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
         with patch("src.core.level5_structural_swarm.scrap_agent.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.side_effect = Exception("API unavailable")
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_iconstack("xyzzy_nonexistent_icon_12345")
             )
             self.assertEqual(result, "")
@@ -558,7 +556,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_resp
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_github_code("test query", "python")
             )
 
@@ -570,7 +568,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
 
     def test_fetch_github_code_without_token(self):
         """Test: GitHub funciona sin token (modo 60 req/h)."""
-        scraper = self._make_scraper()
+        scraper = self._make_scraper({"GITHUB_TOKEN": "", "GITHUB_API_KEY": ""})
 
         with patch("src.core.level5_structural_swarm.scrap_agent.urllib.request.urlopen") as mock_urlopen:
             mock_resp = MagicMock()
@@ -580,7 +578,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_urlopen.return_value = mock_resp
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_github_code("test query", "python")
             )
 
@@ -604,7 +602,7 @@ class TestGitHubScrapAgent(unittest.TestCase):
             )
             mock_urlopen.side_effect = error
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 scraper.fetch_github_code("test query", "python")
             )
             self.assertEqual(result, "")  # No crashea, retorna vacio
@@ -649,7 +647,6 @@ class TestFetchAllSources(unittest.TestCase):
     def setUp(self):
         """Configura el entorno para cada test."""
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
     def _make_scraper(self, env=None):
         """Helper: crea un scraper con entorno mockeado."""
@@ -677,7 +674,7 @@ class TestFetchAllSources(unittest.TestCase):
         scraper.fetch_iconstack = AsyncMock(return_value="iconstack_icons")
         scraper.fetch_picsum = AsyncMock(return_value="picsum_image")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.fetch_all_sources("test query", "python")
         )
 
@@ -700,7 +697,7 @@ class TestFetchAllSources(unittest.TestCase):
         scraper.fetch_iconstack = AsyncMock(side_effect=Exception("API down"))
         scraper.fetch_picsum = AsyncMock(return_value="picsum_image")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.fetch_all_sources("test query", "python")
         )
 
@@ -720,7 +717,7 @@ class TestFetchAllSources(unittest.TestCase):
         scraper.fetch_iconstack = AsyncMock(return_value="")
         scraper.fetch_picsum = AsyncMock(return_value="")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.fetch_all_sources("nonexistent query", "python")
         )
 
@@ -735,7 +732,6 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
     def setUp(self):
         """Configura el entorno para cada test."""
         import src.core.env_loader as env_mod
-        env_mod._loaded = True
 
     def _make_scraper(self, env=None):
         """Helper: crea un scraper con entorno mockeado."""
@@ -758,7 +754,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_github_code = AsyncMock(return_value="code_result")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("implement auth function example", "python", "auto")
         )
         self.assertEqual(result["source"], "github")
@@ -768,7 +764,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_devdocs = AsyncMock(return_value="docs_result")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("python docs api reference syntax method", "python", "auto")
         )
         self.assertEqual(result["source"], "devdocs")
@@ -778,7 +774,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_iconstack = AsyncMock(return_value="icons_result")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("icon for login button", "", "auto")
         )
         self.assertEqual(result["source"], "iconstack")
@@ -788,7 +784,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_picsum = AsyncMock(return_value="picsum_result")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("hero image for dashboard", "", "auto")
         )
         self.assertEqual(result["source"], "picsum")
@@ -798,7 +794,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_github_code = AsyncMock(return_value="github_code")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("icon for login", "", "github")
         )
         self.assertEqual(result["source"], "github")
@@ -808,7 +804,7 @@ class TestSmartFetchAutoRouting(unittest.TestCase):
         scraper = self._make_scraper()
         scraper.fetch_picsum = AsyncMock(return_value="picsum_result")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             scraper.smart_fetch("auth function", "python", "picsum")
         )
         self.assertEqual(result["source"], "picsum")

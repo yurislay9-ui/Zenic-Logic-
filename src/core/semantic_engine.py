@@ -32,7 +32,6 @@ import re
 import time
 import json
 import logging
-import sqlite3
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 import numpy as np
@@ -42,10 +41,6 @@ logger = logging.getLogger(__name__)
 # === Model Configuration ===
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 EMBEDDING_DIM = 384
-DB_PATH = os.path.join(
-    os.path.expanduser("~"), ".titan_omniscale", "db", "semantic_cache.sqlite"
-)
-
 # Intent prototype embeddings (pre-computed on first use)
 INTENT_PROTOTYPES = {
     "CREATE": [
@@ -283,8 +278,9 @@ class SemanticEngine:
         if not self.is_loaded:
             return None
 
-        # Check cache
-        cache_key = text[:200]  # Truncate for cache key
+        # Check cache — use full hash to avoid collisions from truncated keys
+        import hashlib as _hashlib
+        cache_key = _hashlib.sha256(text.encode()).hexdigest()
         if cache_key in self._embed_cache:
             return self._embed_cache[cache_key]
 
@@ -298,9 +294,8 @@ class SemanticEngine:
                 if norm > 0:
                     emb = emb / norm
                 self._embed_cache[cache_key] = emb
-                # Limit cache size
+                # Limit cache size — evict oldest 100 entries when over 500
                 if len(self._embed_cache) > 500:
-                    # Remove oldest entries (first 100)
                     keys = list(self._embed_cache.keys())[:100]
                     for k in keys:
                         del self._embed_cache[k]

@@ -8,11 +8,12 @@ Tests the OpenAI-compatible response builder functions:
 - build_overloaded_response
 """
 
+import os
 import sys
 import time
 import pytest
 
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.server.response_builder import (
     build_normal_response,

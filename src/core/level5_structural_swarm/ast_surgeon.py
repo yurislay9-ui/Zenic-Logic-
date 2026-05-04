@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 class ASTSurgeon:
     """Cirujano de AST robusto multi-lenguaje."""
 
+    @staticmethod
+    def _iter_top_level_functions(tree):
+        """
+        Yield top-level functions and class methods only.
+        Skips nested functions (functions defined inside other functions),
+        ensuring ast.walk() does not accidentally match inner functions.
+        """
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                yield node
+            elif isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        yield item
+
     def mutate_node(self, code, target_name, new_snippet, lang="python"):
         """
         Reemplaza una funcion/metodo por un nuevo snippet.
@@ -52,39 +67,39 @@ class ASTSurgeon:
             lines = code.split('\n')
 
             # Encontrar la funcion target, incluyendo decoradores
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if node.name == target_name:
-                        # Calcular rango incluyendo decoradores
-                        start = node.lineno - 1
-                        end = node.end_lineno
+            # Only match top-level functions or class methods, not nested functions
+            for node in self._iter_top_level_functions(tree):
+                if node.name == target_name:
+                    # Calcular rango incluyendo decoradores
+                    start = node.lineno - 1
+                    end = node.end_lineno
 
-                        # Buscar decoradores antes de la funcion
-                        if node.decorator_list:
-                            first_decorator_line = min(
-                                d.lineno for d in node.decorator_list
-                            )
-                            start = first_decorator_line - 1
+                    # Buscar decoradores antes de la funcion
+                    if node.decorator_list:
+                        first_decorator_line = min(
+                            d.lineno for d in node.decorator_list
+                        )
+                        start = first_decorator_line - 1
 
-                        # Reemplazar las lineas
-                        new_lines = new_snippet.split('\n')
-                        lines[start:end] = new_lines
+                    # Reemplazar las lineas
+                    new_lines = new_snippet.split('\n')
+                    lines[start:end] = new_lines
 
-                        result = '\n'.join(lines)
+                    result = '\n'.join(lines)
 
-                        # Validar sintaxis post-mutacion
-                        try:
-                            ast.parse(result)
-                            return result
-                        except SyntaxError:
-                            # Si la mutacion rompe la sintaxis, revertir
-                            logger.warning(
-                                "Mutation of '%s' broke syntax, using regex fallback",
-                                target_name
-                            )
-                            return self._mutate_regex(
-                                code, target_name, new_snippet, "python"
-                            )
+                    # Validar sintaxis post-mutacion
+                    try:
+                        ast.parse(result)
+                        return result
+                    except SyntaxError:
+                        # Si la mutacion rompe la sintaxis, revertir
+                        logger.warning(
+                            "Mutation of '%s' broke syntax, using regex fallback",
+                            target_name
+                        )
+                        return self._mutate_regex(
+                            code, target_name, new_snippet, "python"
+                        )
         except SyntaxError:
             pass
         return self._mutate_regex(code, target_name, new_snippet, "python")
@@ -102,8 +117,12 @@ class ASTSurgeon:
                 return result
         except Exception as e:
             logger.debug("AST mutate regex fallback: %s", e)
-        # Fallback: agregar al final
-        return code + "\n" + new_snippet
+        # Fallback: return original code unchanged
+        logger.warning(
+            "Regex mutation failed for '%s', returning code unchanged",
+            target_name
+        )
+        return code
 
     def _get_function_pattern(self, target_name, lang):
         """
@@ -186,41 +205,41 @@ class ASTSurgeon:
                 lines = code.split('\n')
 
                 # Encontrar la funcion a eliminar
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        if node.name == target_name:
-                            start = node.lineno - 1
-                            end = node.end_lineno
+                # Only match top-level functions or class methods, not nested functions
+                for node in self._iter_top_level_functions(tree):
+                    if node.name == target_name:
+                        start = node.lineno - 1
+                        end = node.end_lineno
 
-                            # Incluir decoradores
-                            if node.decorator_list:
-                                first_decorator_line = min(
-                                    d.lineno for d in node.decorator_list
-                                )
-                                start = first_decorator_line - 1
+                        # Incluir decoradores
+                        if node.decorator_list:
+                            first_decorator_line = min(
+                                d.lineno for d in node.decorator_list
+                            )
+                            start = first_decorator_line - 1
 
-                            del lines[start:end]
+                        del lines[start:end]
 
-                            # Limpiar lineas en blanco residuales
-                            while (start < len(lines)
-                                   and lines[start].strip() == ''
-                                   and start > 0
-                                   and lines[start - 1].strip() == ''):
-                                del lines[start]
+                        # Limpiar lineas en blanco residuales
+                        while (start < len(lines)
+                               and lines[start].strip() == ''
+                               and start > 0
+                               and lines[start - 1].strip() == ''):
+                            del lines[start]
 
-                            result = '\n'.join(lines)
+                        result = '\n'.join(lines)
 
-                            # Validar sintaxis post-eliminacion
-                            try:
-                                ast.parse(result)
-                                return result
-                            except SyntaxError:
-                                # Revertir si rompe sintaxis
-                                logger.warning(
-                                    "Deletion of '%s' broke syntax, using regex",
-                                    target_name
-                                )
-                                return self._delete_regex(code, target_name, lang)
+                        # Validar sintaxis post-eliminacion
+                        try:
+                            ast.parse(result)
+                            return result
+                        except SyntaxError:
+                            # Revertir si rompe sintaxis
+                            logger.warning(
+                                "Deletion of '%s' broke syntax, using regex",
+                                target_name
+                            )
+                            return self._delete_regex(code, target_name, lang)
             except SyntaxError:
                 pass
         return self._delete_regex(code, target_name, lang)

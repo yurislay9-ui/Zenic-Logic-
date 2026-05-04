@@ -81,7 +81,7 @@ class AuthService:
                 self._secret_key = secrets.token_hex(32)
                 kf.write_text(self._secret_key); kf.chmod(0o600)
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.init_db()
         logger.info(f"AuthService: init (jose={JOSE_AVAILABLE}, passlib={PASSLIB_AVAILABLE})")
 
@@ -330,7 +330,8 @@ class AuthService:
             return False
         c = self._conn()
         try:
-            return c.execute("SELECT 1 FROM revoked_tokens WHERE jti = ?", (token_jti,)).fetchone() is not None
+            with self._lock:
+                return c.execute("SELECT 1 FROM revoked_tokens WHERE jti = ?", (token_jti,)).fetchone() is not None
         finally:
             c.close()
 
@@ -387,20 +388,21 @@ class AuthService:
         """Authenticate user and return tokens, or error dict."""
         c = self._conn()
         try:
-            row = c.execute("SELECT id, username, email, password_hash, role, active "
-                            "FROM users WHERE username = ? OR email = ?",
-                            (username, username)).fetchone()
-            if not row:
-                return {"error": "Invalid credentials"}
-            if not row["active"]:
-                return {"error": "Account is deactivated"}
-            if not self.verify_password(password, row["password_hash"]):
-                return {"error": "Invalid credentials"}
-            uid, role = row["id"], row["role"]
-            now = datetime.now(timezone.utc).isoformat()
-            c.execute("UPDATE users SET last_login = ?, login_count = login_count + 1, "
-                      "updated_at = ? WHERE id = ?", (now, now, uid))
-            c.commit()
+            with self._lock:
+                row = c.execute("SELECT id, username, email, password_hash, role, active "
+                                "FROM users WHERE username = ? OR email = ?",
+                                (username, username)).fetchone()
+                if not row:
+                    return {"error": "Invalid credentials"}
+                if not row["active"]:
+                    return {"error": "Account is deactivated"}
+                if not self.verify_password(password, row["password_hash"]):
+                    return {"error": "Invalid credentials"}
+                uid, role = row["id"], row["role"]
+                now = datetime.now(timezone.utc).isoformat()
+                c.execute("UPDATE users SET last_login = ?, login_count = login_count + 1, "
+                          "updated_at = ? WHERE id = ?", (now, now, uid))
+                c.commit()
             logger.info(f"AuthService: login {row['username']}")
             return {
                 "access_token": self.create_access_token(uid, role),
@@ -415,14 +417,15 @@ class AuthService:
 
     def get_user(self, user_id: int) -> Optional[Dict]:
         """Get user by ID (without password hash). Returns dict or None."""
-        c = self._conn()
-        try:
-            row = c.execute("SELECT id, username, email, role, active, created_at, "
-                            "updated_at, last_login, login_count FROM users WHERE id = ?",
-                            (user_id,)).fetchone()
-            return dict(row) if row else None
-        finally:
-            c.close()
+        with self._lock:
+            c = self._conn()
+            try:
+                row = c.execute("SELECT id, username, email, role, active, created_at, "
+                                "updated_at, last_login, login_count FROM users WHERE id = ?",
+                                (user_id,)).fetchone()
+                return dict(row) if row else None
+            finally:
+                c.close()
 
     def update_user(self, user_id: int, **fields) -> Dict:
         """Update user fields. Returns updated user dict or error dict."""
@@ -467,19 +470,20 @@ class AuthService:
     def list_users(self, role: str = "", page: int = 1) -> List[Dict]:
         """List users with optional role filter and pagination."""
         offset = (page - 1) * PAGE_SIZE
-        c = self._conn()
-        try:
-            if role:
-                rows = c.execute("SELECT id, username, email, role, active, created_at, "
-                                 "last_login, login_count FROM users WHERE role = ? "
-                                 "ORDER BY id LIMIT ? OFFSET ?", (role, PAGE_SIZE, offset)).fetchall()
-            else:
-                rows = c.execute("SELECT id, username, email, role, active, created_at, "
-                                 "last_login, login_count FROM users ORDER BY id LIMIT ? OFFSET ?",
-                                 (PAGE_SIZE, offset)).fetchall()
-            return [dict(r) for r in rows]
-        finally:
-            c.close()
+        with self._lock:
+            c = self._conn()
+            try:
+                if role:
+                    rows = c.execute("SELECT id, username, email, role, active, created_at, "
+                                     "last_login, login_count FROM users WHERE role = ? "
+                                     "ORDER BY id LIMIT ? OFFSET ?", (role, PAGE_SIZE, offset)).fetchall()
+                else:
+                    rows = c.execute("SELECT id, username, email, role, active, created_at, "
+                                     "last_login, login_count FROM users ORDER BY id LIMIT ? OFFSET ?",
+                                     (PAGE_SIZE, offset)).fetchall()
+                return [dict(r) for r in rows]
+            finally:
+                c.close()
 
     def change_password(self, user_id: int, old_password: str, new_password: str) -> bool:
         """Change password (requires current password). Returns True if changed."""
@@ -678,26 +682,27 @@ class AuthService:
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         c = self._conn()
         try:
-            # PERFORMANCE: Query by key_hash directly with index (O(1) instead of O(n))
-            row = c.execute("SELECT id, user_id, name, key_hash, permissions, active "
-                             "FROM api_keys WHERE key_hash = ? AND active = 1",
-                             (key_hash,)).fetchone()
-            if row and secrets.compare_digest(row["key_hash"], key_hash):
-                user = self.get_user(row["user_id"])
-                if not user or not user.get("active"):
-                    return None
-                now = datetime.now(timezone.utc).isoformat()
-                c.execute("UPDATE api_keys SET last_used = ?, usage_count = usage_count + 1 "
-                          "WHERE id = ?", (now, row["id"]))
-                c.commit()
-                try:
-                    perms = json.loads(row["permissions"])
-                except (json.JSONDecodeError, TypeError):
-                    perms = []
-                all_perms = self.get_user_permissions(row["user_id"]) | set(perms)
-                return {"key_id": row["id"], "user_id": row["user_id"], "name": row["name"],
-                        "role": user.get("role", "viewer"), "permissions": list(all_perms)}
-            return None
+            with self._lock:
+                # PERFORMANCE: Query by key_hash directly with index (O(1) instead of O(n))
+                row = c.execute("SELECT id, user_id, name, key_hash, permissions, active "
+                                 "FROM api_keys WHERE key_hash = ? AND active = 1",
+                                 (key_hash,)).fetchone()
+                if row and secrets.compare_digest(row["key_hash"], key_hash):
+                    user = self.get_user(row["user_id"])
+                    if not user or not user.get("active"):
+                        return None
+                    now = datetime.now(timezone.utc).isoformat()
+                    c.execute("UPDATE api_keys SET last_used = ?, usage_count = usage_count + 1 "
+                              "WHERE id = ?", (now, row["id"]))
+                    c.commit()
+                    try:
+                        perms = json.loads(row["permissions"])
+                    except (json.JSONDecodeError, TypeError):
+                        perms = []
+                    all_perms = self.get_user_permissions(row["user_id"]) | set(perms)
+                    return {"key_id": row["id"], "user_id": row["user_id"], "name": row["name"],
+                            "role": user.get("role", "viewer"), "permissions": list(all_perms)}
+                return None
         finally:
             c.close()
 
@@ -770,16 +775,17 @@ class AuthService:
         """Get auth service statistics."""
         c = self._conn()
         try:
-            return {
-                "total_users": c.execute("SELECT COUNT(*) FROM users").fetchone()[0],
-                "active_users": c.execute("SELECT COUNT(*) FROM users WHERE active = 1").fetchone()[0],
-                "revoked_tokens": c.execute("SELECT COUNT(*) FROM revoked_tokens").fetchone()[0],
-                "active_api_keys": c.execute("SELECT COUNT(*) FROM api_keys WHERE active = 1").fetchone()[0],
-                "jose_available": JOSE_AVAILABLE,
-                "passlib_available": PASSLIB_AVAILABLE,
-                "token_mode": "JWT" if JOSE_AVAILABLE else "HMAC-SHA256",
-                "hash_mode": "bcrypt" if PASSLIB_AVAILABLE else "PBKDF2-SHA256",
-            }
+            with self._lock:
+                return {
+                    "total_users": c.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+                    "active_users": c.execute("SELECT COUNT(*) FROM users WHERE active = 1").fetchone()[0],
+                    "revoked_tokens": c.execute("SELECT COUNT(*) FROM revoked_tokens").fetchone()[0],
+                    "active_api_keys": c.execute("SELECT COUNT(*) FROM api_keys WHERE active = 1").fetchone()[0],
+                    "jose_available": JOSE_AVAILABLE,
+                    "passlib_available": PASSLIB_AVAILABLE,
+                    "token_mode": "JWT" if JOSE_AVAILABLE else "HMAC-SHA256",
+                    "hash_mode": "bcrypt" if PASSLIB_AVAILABLE else "PBKDF2-SHA256",
+                }
         finally:
             c.close()
 

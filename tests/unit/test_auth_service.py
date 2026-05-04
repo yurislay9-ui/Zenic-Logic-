@@ -11,7 +11,7 @@ import time
 import pytest
 
 # Ensure project root is importable
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.core.auth_service import AuthService, ROLE_HIERARCHY, ROLE_PERMISSIONS
 

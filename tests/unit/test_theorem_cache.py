@@ -19,6 +19,7 @@ def _init_db():
     conn = get_connection("theorem_cache.sqlite")
     conn.execute("DELETE FROM theorems")
     conn.commit()
+    conn.close()
 
 
 @pytest.fixture
@@ -114,8 +115,8 @@ class TestTheoremCache:
         # Use structurally identical code (same skeleton)
         result = cache.lookup(similar_intent, PYTHON_CODE, "python")
         # Should find via skeleton hash (same structure, different composite hash)
-        if result is not None:
-            assert result["source"] == "skeleton_hash"
+        assert result is not None, "Skeleton hash lookup should find structurally similar code"
+        assert result["source"] == "skeleton_hash"
 
     def test_hit_counter_increments(self, cache, sample_intent):
         """Multiple lookups should increment hit counter.

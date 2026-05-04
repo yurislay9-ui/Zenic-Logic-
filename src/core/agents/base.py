@@ -11,9 +11,10 @@ Cada agente hereda de BaseAgent e implementa:
 import time
 import json
 import re
+import threading
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, TypeVar, Generic
+from typing import Any, Dict, List, Optional, TypeVar, Generic, Union
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class BaseAgent(ABC, Generic[T]):
         self._cache_hit_count = 0
         self._total_duration_ms = 0
         self._last_error = ""
+        self._stats_lock = threading.Lock()
 
     @property
     def stats(self) -> Dict[str, Any]:
@@ -121,23 +123,30 @@ class BaseAgent(ABC, Generic[T]):
 
     def _update_stats(self, source: str, duration_ms: int, error: str = "") -> None:
         """Actualiza estadísticas internas del agente."""
-        self._call_count += 1
-        self._total_duration_ms += duration_ms
-        if source == "llm":
-            self._llm_success_count += 1
-        elif source == "fallback":
-            self._fallback_count += 1
-        elif source == "cache":
-            self._cache_hit_count += 1
-        if error:
-            self._last_error = error
+        with self._stats_lock:
+            self._call_count += 1
+            self._total_duration_ms += duration_ms
+            if source == "llm":
+                self._llm_success_count += 1
+            elif source == "fallback":
+                self._fallback_count += 1
+            elif source == "cache":
+                self._cache_hit_count += 1
+            if error:
+                self._last_error = error
 
     @staticmethod
-    def extract_json(text: str) -> Optional[Dict[str, Any]]:
+    def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
         """
         Extrae JSON de una respuesta del LLM.
         Maneja bloques de código markdown y texto circundante.
         """
+        # Try direct parse first
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
         # Try to find JSON in markdown code block
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if json_match:
@@ -146,21 +155,35 @@ class BaseAgent(ABC, Generic[T]):
             except json.JSONDecodeError:
                 pass
 
-        # Try to find raw JSON object
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+        # Balanced-brace extraction for nested JSON objects
+        for i, ch in enumerate(text):
+            if ch == '{':
+                depth = 0
+                for j in range(i, len(text)):
+                    if text[j] == '{':
+                        depth += 1
+                    elif text[j] == '}':
+                        depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[i:j + 1])
+                        except json.JSONDecodeError:
+                            break
 
         # Try to find JSON array
-        json_match = re.search(r'\[.*\]', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+        for i, ch in enumerate(text):
+            if ch == '[':
+                depth = 0
+                for j in range(i, len(text)):
+                    if text[j] == '[':
+                        depth += 1
+                    elif text[j] == ']':
+                        depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[i:j + 1])
+                        except json.JSONDecodeError:
+                            break
 
         return None
 

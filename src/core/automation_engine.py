@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 DB_DIR = os.path.join(os.path.expanduser("~"), ".titan_omniscale", "db")
 DB_PATH = os.path.join(DB_DIR, "automation.sqlite")
+PROJECTS_DIR = os.path.join(os.path.expanduser("~"), ".titan_omniscale", "projects")
 
 
 class TriggerType(str, Enum):
@@ -262,15 +263,17 @@ class AutomationEngine:
             config = self._parse_schedule(description)
             return Trigger(type=TriggerType.SCHEDULE, config=config)
 
-        # Event patterns
-        event_keywords = ["cuando", "when", "si", "if", "al detectar", "on event"]
-        if any(kw in desc_lower for kw in event_keywords):
-            return Trigger(type=TriggerType.EVENT, config={"event_type": "custom", "description": description[:100]})
-
-        # Webhook patterns
+        # Webhook patterns (check before event to avoid substring false matches)
         webhook_keywords = ["webhook", "callback", "http post", "endpoint"]
         if any(kw in desc_lower for kw in webhook_keywords):
             return Trigger(type=TriggerType.WEBHOOK, config={"path": f"/webhook/custom"})
+
+        # Event patterns (use word-boundary matching for short keywords)
+        event_keywords = ["cuando", "when", "al detectar", "on event"]
+        event_short = ["si", "if"]
+        if any(kw in desc_lower for kw in event_keywords) or \
+           any(re.search(r'\b' + re.escape(kw) + r'\b', desc_lower) for kw in event_short):
+            return Trigger(type=TriggerType.EVENT, config={"event_type": "custom", "description": description[:100]})
 
         # Default: daily schedule
         return Trigger(type=TriggerType.SCHEDULE, config={"interval": "daily", "hour": 9})

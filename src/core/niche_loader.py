@@ -21,6 +21,7 @@ Ventajas:
 
 import os
 import logging
+import threading
 from typing import Optional, Dict, Any, List, Set
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -446,11 +447,14 @@ class NicheLoader:
 
 # === Singleton ===
 _niche_loader_instance: Optional[NicheLoader] = None
+_niche_loader_lock = threading.Lock()
 
 
 def get_niche_loader() -> NicheLoader:
     """Obtiene la instancia singleton del NicheLoader."""
     global _niche_loader_instance
     if _niche_loader_instance is None:
-        _niche_loader_instance = NicheLoader()
+        with _niche_loader_lock:
+            if _niche_loader_instance is None:
+                _niche_loader_instance = NicheLoader()
     return _niche_loader_instance

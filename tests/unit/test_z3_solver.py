@@ -5,10 +5,11 @@ Tests the Z3 SMT Solver wrapper with conditional Z3 import.
 Tests should work with or without Z3 installed.
 """
 
+import os
 import sys
 import pytest
 
-sys.path.insert(0, "/home/z/my-project/Zenic-Logic-")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.core.shared.z3_solver import Z3Solver, HAS_Z3
 from src.core.shared.constraint_solver import Constraint

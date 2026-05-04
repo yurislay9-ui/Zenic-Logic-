@@ -60,14 +60,11 @@ def main():
     try:
         client.connect(hostname, username=username, pkey=pkey, timeout=30)
     except paramiko.SSHException as e:
-        # Fallback: try AutoAddPolicy for first-time connections
-        print(f"Host key not found in known_hosts, attempting auto-accept for {hostname}...", file=sys.stderr)
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            client.connect(hostname, username=username, pkey=pkey, timeout=30)
-        except Exception as e2:
-            print(f"SSH connection error: {e2}", file=sys.stderr)
-            sys.exit(1)
+        # SECURITY: Do NOT fall back to AutoAddPolicy — that enables MITM attacks.
+        # Instead, warn the user and exit so they can add the host key manually.
+        print(f"Host key verification failed for {hostname}: {e}", file=sys.stderr)
+        print(f"To add this host, run: ssh-keyscan {hostname} >> ~/.ssh/known_hosts", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"SSH connection error: {e}", file=sys.stderr)
         sys.exit(1)

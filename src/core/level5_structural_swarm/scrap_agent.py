@@ -25,14 +25,13 @@ Arquitectura:
 - Metricas de GitHub integradas (rate_limit, search_stats)
 """
 
-import os
 import json
 import time
 import logging
 import urllib.request
 import urllib.error
 import urllib.parse
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any
 
 from src.core.env_loader import (
     load_env, get_env, get_env_int, get_env_bool,
@@ -72,6 +71,7 @@ class GitHubMetrics:
         self._search_count = 0
         self._search_results_total = 0
         self._repos_seen: set = set()
+        self._repos_seen_max = 10000
         self._last_refresh = 0.0
 
     def update_rate_limit(self, response_headers: dict):
@@ -79,15 +79,24 @@ class GitHubMetrics:
         if not self.enabled or "rate_limit" not in self.collect:
             return
 
-        self._rate_limit_remaining = int(
-            response_headers.get("X-RateLimit-Remaining", "0")
-        )
-        self._rate_limit_limit = int(
-            response_headers.get("X-RateLimit-Limit", "0")
-        )
-        self._rate_limit_reset = int(
-            response_headers.get("X-RateLimit-Reset", "0")
-        )
+        try:
+            self._rate_limit_remaining = int(
+                response_headers.get("X-RateLimit-Remaining", "0")
+            )
+        except (ValueError, TypeError):
+            self._rate_limit_remaining = 0
+        try:
+            self._rate_limit_limit = int(
+                response_headers.get("X-RateLimit-Limit", "0")
+            )
+        except (ValueError, TypeError):
+            self._rate_limit_limit = 0
+        try:
+            self._rate_limit_reset = int(
+                response_headers.get("X-RateLimit-Reset", "0")
+            )
+        except (ValueError, TypeError):
+            self._rate_limit_reset = 0
         self._rate_limit_last_check = time.time()
 
     def update_search_stats(self, total_count: int, query: str):
@@ -102,6 +111,11 @@ class GitHubMetrics:
         if not self.enabled or "repo_stats" not in self.collect:
             return
         self._repos_seen.add(repo_full_name)
+        if len(self._repos_seen) > self._repos_seen_max:
+            # Clear half to prevent unbounded growth
+            remove = list(self._repos_seen)[:len(self._repos_seen) // 2]
+            for item in remove:
+                self._repos_seen.discard(item)
 
     async def fetch_rate_limit(self, token: str = "") -> Dict[str, Any]:
         """
@@ -366,7 +380,8 @@ class GitHubScrapAgent:
             if len(self._cache) > 100:
                 # Eliminar entradas mas antiguas (FIFO simplificado)
                 keys = list(self._cache.keys())
-                for k in keys[:20]:
+                to_evict = max(20, len(self._cache) - 90)
+                for k in keys[:to_evict]:
                     del self._cache[k]
 
         return result
@@ -628,7 +643,7 @@ class GitHubScrapAgent:
         base_url = self._config.get("devdocs_url", "https://devdocs.io")
 
         # Primero buscar entradas relevantes
-        search_url = f"https://devdocs.io/docs/{doc_name}/search.json?q={urllib.parse.quote(query, safe='')}"
+        search_url = f"{base_url}/docs/{doc_name}/search.json?q={urllib.parse.quote(query, safe='')}"
         headers = {
             "User-Agent": "TITAN-SmartScraper",
             "Accept": "application/json",
@@ -701,7 +716,7 @@ class GitHubScrapAgent:
 
         # IconStack search URL
         search_url = (
-            f"https://icon-icons.com/api/search?"
+            f"{base_url}/api/search?"
             f"q={urllib.parse.quote(query, safe='')}"
             f"&style={style}"
         )
@@ -821,7 +836,7 @@ class GitHubScrapAgent:
         for match in img_pattern.findall(html)[:5]:
             url = match
             if not url.startswith("http"):
-                url = f"https://icon-icons.com{url}"
+                url = f"{self._config.get('iconstack_url', 'https://icon-icons.com')}{url}"
             name = url.split("/")[-1].replace(".png", "").replace("_", " ")
             icons.append({"name": name, "url": url, "style": "parsed"})
         return icons
@@ -908,7 +923,10 @@ class GitHubScrapAgent:
                 if "image" in content_type:
                     metadata["actual_url"] = actual_url
                     metadata["content_type"] = content_type
-                    metadata["size_bytes"] = int(content_length)
+                    try:
+                        metadata["size_bytes"] = int(content_length)
+                    except (ValueError, TypeError):
+                        metadata["size_bytes"] = 0
 
         except Exception as e:
             # Incluso si falla el HEAD, la URL probablemente funciona

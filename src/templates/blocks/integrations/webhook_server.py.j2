@@ -6,6 +6,10 @@ FastAPI router, event dispatching, and pluggable handler registration.
 
 Configuration (environment variables):
   WEBHOOK_SECRET - Default HMAC secret for signature verification
+
+SECURITY WARNING: If WEBHOOK_SECRET is not set, a default placeholder
+"CHANGE-ME" is used which MUST be changed in production. Running with
+the default secret is insecure and will log a warning at startup.
 """
 
 import hashlib
@@ -54,8 +58,15 @@ class WebhookHandler:
             prefix: URL prefix for all webhook routes.
         """
         self._default_secret: str = secret or os.environ.get(
-            "WEBHOOK_SECRET", ""
+            "WEBHOOK_SECRET", "CHANGE-ME"
         )
+        # SECURITY WARNING: Log if using default/insecure secret
+        if self._default_secret == "CHANGE-ME":
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "SECURITY: WEBHOOK_SECRET not set — using insecure default. "
+                "Set the WEBHOOK_SECRET environment variable in production!"
+            )
         self._prefix: str = prefix.rstrip("/")
 
         # path -> (handler_fn, optional per-path secret)

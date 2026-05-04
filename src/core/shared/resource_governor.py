@@ -26,10 +26,18 @@ import gc
 import time
 import threading
 import logging
-import resource
-from typing import Dict
+try:
+    import resource
+except ImportError:
+    resource = None  # Not available on Android/Termux
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ResourceGovernor", "get_governor", "init_governor",
+    "tune_gc_for_arm", "set_process_priority_low", "limit_open_files",
+]
 
 
 class ResourceGovernor:
@@ -135,15 +143,19 @@ class ResourceGovernor:
                 self._cpu_usage = 1.0 - (delta_idle / delta_total)
         except (FileNotFoundError, PermissionError, ValueError):
             # Fallback: estimar basado en tiempo de proceso
-            try:
-                usage = resource.getrusage(resource.RUSAGE_SELF)
-                user_time = usage.ru_utime
-                wall_time = time.time() - self._last_cpu_check
-                if wall_time > 0:
-                    self._cpu_usage = min(user_time / wall_time, 1.0)
-                self._last_cpu_check = time.time()
-            except Exception:
-                self._cpu_usage = 0.3  # Asumir uso moderado
+            if resource is not None:
+                try:
+                    usage = resource.getrusage(resource.RUSAGE_SELF)
+                    user_time = usage.ru_utime
+                    wall_time = time.time() - self._last_cpu_check
+                    if wall_time > 0:
+                        self._cpu_usage = min(user_time / wall_time, 1.0)
+                    self._last_cpu_check = time.time()
+                except Exception as e:
+                    self._cpu_usage = 0.3  # Asumir uso moderado
+                    logger.debug("ResourceGovernor: CPU usage estimation failed: %s", e)
+            else:
+                self._cpu_usage = 0.3  # resource module unavailable
 
     def _update_ram_usage(self):
         """Mide el uso de RAM del proceso actual."""
@@ -156,12 +168,15 @@ class ResourceGovernor:
                         break
         except (FileNotFoundError, PermissionError):
             # Fallback: resource module
-            try:
-                usage = resource.getrusage(resource.RUSAGE_SELF)
-                # ru_maxrss es en KB en Linux
-                self._ram_usage_mb = usage.ru_maxrss / 1024
-            except Exception:
-                self._ram_usage_mb = 0
+            if resource is not None:
+                try:
+                    usage = resource.getrusage(resource.RUSAGE_SELF)
+                    # ru_maxrss es en KB en Linux
+                    self._ram_usage_mb = usage.ru_maxrss / 1024
+                except Exception:
+                    self._ram_usage_mb = 0
+            else:
+                self._ram_usage_mb = 0  # resource module unavailable
 
     def _check_thermal(self):
         """Verifica si hay riesgo de throttling termico y reduce agresividad."""
@@ -287,7 +302,7 @@ class ResourceGovernor:
         if self._ram_usage_mb > self.gc_threshold_mb * 0.8:
             gc.collect(2)
 
-    def get_z3_memory_limit_mb(self):
+    def get_z3_memory_limit_mb(self) -> int:
         """
         Limite de memoria para Z3 solver.
         Z3 puede consumir muchisima RAM. Lo limitamos a 512MB
@@ -297,7 +312,7 @@ class ResourceGovernor:
         # Max 512MB para Z3, o lo que quede menos 256MB
         return max(128, min(512, int(available - 256)))
 
-    def is_ram_critical(self):
+    def is_ram_critical(self) -> bool:
         """Retorna True si la RAM esta al limite y hay que rechazar requests."""
         return self._ram_usage_mb > self.ram_limit_mb * 0.95
 
@@ -345,7 +360,7 @@ class ResourceGovernor:
             "recommendation": self.should_unload_models(),
         }
 
-    def get_status(self):
+    def get_status(self) -> Dict[str, Any]:
         """Retorna el estado actual del governor para el endpoint /health."""
         return {
             "cpu_usage_pct": round(self._cpu_usage * 100, 1),
@@ -358,25 +373,34 @@ class ResourceGovernor:
             "stats": self.stats,
         }
 
+    @property
+    def ram_usage_mb(self) -> float:
+        """Public accessor for current RAM usage in MB."""
+        return self._ram_usage_mb
+
 
 # ============================================================
 #  Singleton global - accesible desde cualquier modulo
 # ============================================================
 
 _governor = None
+_governor_lock = threading.Lock()
 
-def get_governor():
-    """Obtiene el singleton del ResourceGovernor."""
+def get_governor() -> 'ResourceGovernor':
+    """Obtiene el singleton del ResourceGovernor (thread-safe with double-checked locking)."""
     global _governor
     if _governor is None:
-        _governor = ResourceGovernor()
+        with _governor_lock:
+            if _governor is None:
+                _governor = ResourceGovernor()
     return _governor
 
-def init_governor(ram_limit_mb=None):
-    """Inicializa el governor con configuracion custom."""
+def init_governor(ram_limit_mb: Optional[int] = None) -> 'ResourceGovernor':
+    """Inicializa el governor con configuracion custom (thread-safe)."""
     global _governor
-    _governor = ResourceGovernor(ram_limit_mb=ram_limit_mb)
-    _governor.start_monitoring()
+    with _governor_lock:
+        _governor = ResourceGovernor(ram_limit_mb=ram_limit_mb)
+        _governor.start_monitoring()
     return _governor
 
 
@@ -432,10 +456,11 @@ def limit_open_files(max_files=256):
     Cada SQLite connection usa un fd. Con 4 DBs + conexiones
     concurrentes, 256 es mas que suficiente.
     """
-    try:
-        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        if soft > max_files:
-            resource.setrlimit(resource.RLIMIT_NOFILE, (max_files, hard))
-            logger.info("Open files limit: %d -> %d", soft, max_files)
-    except (ValueError, AttributeError, OSError):
-        pass
+    if resource is not None:
+        try:
+            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if soft > max_files:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (max_files, hard))
+                logger.info("Open files limit: %d -> %d", soft, max_files)
+        except (ValueError, AttributeError, OSError):
+            pass

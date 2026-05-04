@@ -1,4 +1,7 @@
 """
+DEPRECATED: This module contains legacy engine implementations that are not used
+by the current orchestrator pipeline. Kept for backward compatibility only.
+
 TITAN OMNISCALE X - Motor Completo (Pure Python)
 
 Este modulo contiene todo el motor logico sin dependencias nativas.
@@ -14,6 +17,8 @@ import shutil
 from pathlib import Path
 import os
 
+from src.core.shared.contracts import OperationType, GoalType
+
 
 # === Detectar plataforma ===
 IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
@@ -22,19 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 # === Constantes ===
-
-class OperationType:
-    CREATE = "CREATE"
-    REFACTOR = "REFACTOR"
-    DELETE = "DELETE"
-    SEARCH = "SEARCH"
-
-
-class GoalType:
-    COMPLEXITY_REDUCTION = "COMPLEXITY_REDUCTION"
-    MODERN_PATTERN = "MODERN_PATTERN"
-    BUG_FIX = "BUG_FIX"
-    FEATURE_ADD = "FEATURE_ADD"
 
 
 INTENT_KEYWORDS = {
@@ -184,17 +176,21 @@ class SimpleLedger:
     def snapshot(self, rel_path, project_dir):
         p = Path(project_dir) / rel_path
         if p.exists():
-            shutil.copy2(p, self.bk_dir / rel_path.replace("/", "_"))
+            import base64
+            safe_name = base64.urlsafe_b64encode(rel_path.encode()).decode()
+            shutil.copy2(p, self.bk_dir / safe_name)
 
     def commit(self, rel_path, content, project_dir):
         p = Path(project_dir) / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
+        h = hashlib.sha256(content.encode("utf-8")).hexdigest()
         p.write_text(content, encoding="utf-8")
-        h = hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "NEW"
         return {"file_path": rel_path, "hash_sha256": h}
 
     def rollback(self, rel_path, project_dir):
-        bk = self.bk_dir / rel_path.replace("/", "_")
+        import base64
+        safe_name = base64.urlsafe_b64encode(rel_path.encode()).decode()
+        bk = self.bk_dir / safe_name
         p = Path(project_dir) / rel_path
         if bk.exists():
             shutil.copy2(bk, p)

@@ -303,7 +303,9 @@ class TestAuthService:
     def setup_method(self):
         from src.core.auth_service import AuthService
         import tempfile
-        self.db_path = tempfile.mktemp(suffix=".db")
+        self._temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.db_path = self._temp_file.name
+        self._temp_file.close()
         self.auth = AuthService(db_path=self.db_path, secret_key="test_secret_key_for_testing_12345")
 
     def teardown_method(self):
@@ -385,8 +387,9 @@ class TestAuthService:
         self.auth.revoke_token(token)
         # Verify should fail
         try:
-            self.auth.verify_token(token)
-            # If it doesn't raise, check if it indicates revoked
+            result = self.auth.verify_token(token)
+            # If verify_token returns instead of raising, result should indicate revoked
+            assert result is None or "revoked" in str(result).lower(),                 "Revoked token should not be validated as active"
         except Exception as e:
             assert "revoked" in str(e).lower() or "invalid" in str(e).lower()
 

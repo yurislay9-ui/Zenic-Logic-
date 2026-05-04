@@ -7,6 +7,7 @@ Cableado directo al MiniAIEngine existente (Qwen3-0.6B).
 
 import time
 import json
+import threading
 import logging
 from typing import Any, Dict, Optional, TypeVar
 
@@ -55,6 +56,7 @@ class AgentRunner:
         self._cache_hits = 0
         self._llm_calls = 0
         self._fallback_calls = 0
+        self._stats_lock = threading.Lock()
 
     @property
     def stats(self) -> Dict[str, Any]:
@@ -64,7 +66,7 @@ class AgentRunner:
             "llm_calls": self._llm_calls,
             "fallback_calls": self._fallback_calls,
             "cache_hit_rate": self._cache_hits / max(self._total_calls, 1),
-            "cache_size": len(self._cache._cache) if self._cache else 0,
+            "cache_size": len(self._cache) if self._cache else 0,
         }
 
     def run(self, agent: BaseAgent, input_data: Any) -> AgentResult:
@@ -78,14 +80,16 @@ class AgentRunner:
         Returns:
             AgentResult con el resultado de la ejecución
         """
-        self._total_calls += 1
+        with self._stats_lock:
+            self._total_calls += 1
         start_time = time.time()
 
         # 1. Check cache
-        if self._enable_cache and self._cache:
+        if self._enable_cache and self._cache is not None:
             cached = self._cache.get(agent.name, input_data)
             if cached is not None:
-                self._cache_hits += 1
+                with self._stats_lock:
+                    self._cache_hits += 1
                 agent._update_stats("cache", 0)
                 return AgentResult(
                     success=True, data=cached,
@@ -111,7 +115,8 @@ class AgentRunner:
             return None
 
         for attempt in range(MAX_RETRIES + 1):
-            self._llm_calls += 1
+            with self._stats_lock:
+                self._llm_calls += 1
             try:
                 # Llamar al MiniAIEngine
                 raw_response = self._mini_ai._call_llm(
@@ -143,7 +148,7 @@ class AgentRunner:
                 agent._update_stats("llm", duration_ms)
 
                 # Cachear resultado exitoso
-                if self._enable_cache and self._cache:
+                if self._enable_cache and self._cache is not None:
                     self._cache.put(agent.name, input_data, parsed)
 
                 return AgentResult(
@@ -161,11 +166,13 @@ class AgentRunner:
     def _run_fallback(self, agent: BaseAgent, input_data: Any,
                       start_time: float) -> AgentResult:
         """Ejecuta el fallback determinista del agente."""
-        self._fallback_calls += 1
+        with self._stats_lock:
+            self._fallback_calls += 1
         try:
             fallback_result = agent.fallback(input_data)
             duration_ms = int((time.time() - start_time) * 1000)
-            agent._update_stats("fallback", duration_ms)
+            # Note: agent.fallback() already calls _update_stats internally,
+            # so we don't call it again here to avoid double-counting.
 
             return AgentResult(
                 success=True, data=fallback_result,
@@ -173,7 +180,8 @@ class AgentRunner:
             )
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            agent._update_stats("fallback", duration_ms, error=str(e))
+            # Note: agent.fallback() may have already called _update_stats
+            # before raising, so we only update if it didn't.
             logger.error(f"Agent {agent.name}: Even fallback failed: {e}")
 
             return AgentResult(
@@ -214,3 +222,13 @@ class AgentRunner:
             self._semantic_engine = semantic_engine
         if smart_memory is not None:
             self._smart_memory = smart_memory
+
+    @property
+    def cache(self):
+        """Public accessor for agent cache."""
+        return getattr(self, '_cache', None)
+
+    @property
+    def mini_ai(self):
+        """Public accessor for mini AI engine."""
+        return getattr(self, '_mini_ai', None)

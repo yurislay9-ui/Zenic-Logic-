@@ -10,7 +10,8 @@ Z3 nativas (Implies, aritmética, lógica) en vez de valid-pair tables.
 """
 
 from .constraint_solver import Constraint
-from .z3_solver import Z3Solver, HAS_Z3
+
+__all__ = ["CodeConstraintBuilder"]
 
 
 # ============================================================
@@ -42,9 +43,11 @@ class CodeConstraintBuilder:
 
         for var in non_noneable:
             for none_var in noneable:
+                # Correct null-safety: if none_var is None, then var must not be None
+                # The lambda checks: if y (the nullable var) is None, then x (the non-nullable) must not be None
                 c = Constraint(
                     var, none_var,
-                    lambda x, y: x != "None",
+                    lambda x, y: y is not None or x is not None,
                     description=f"implies {none_var} == None then {var} != None (null-safety)"
                 )
                 constraints.append(c)

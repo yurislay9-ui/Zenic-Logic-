@@ -200,6 +200,8 @@ class APAPlanner:
         """
         Ejecuta un solver rapido (5s timeout) para nodos moderados.
         Solo verifica invariantes basicas.
+
+        Incluye timeout enforcement real como _run_smt_solver.
         """
         try:
             domains = {
@@ -218,10 +220,28 @@ class APAPlanner:
 
             # Usar Z3Solver (que internamente usa Z3 o AC-3)
             z3_solver = Z3Solver(timeout_ms=self.solver_fast_timeout_ms)
-            return z3_solver.solve_constraints(domains, constraints)
+
+            # Ejecutar con timeout enforcement real
+            enforcer = TimeoutEnforcer(timeout_ms=self.solver_fast_timeout_ms)
+            result, timed_out = enforcer.execute_with_timeout(
+                z3_solver.solve_constraints, domains, constraints
+            )
+
+            if timed_out:
+                logger.warning(
+                    "Fast Solver TIMEOUT (%d ms) para %s",
+                    self.solver_fast_timeout_ms, intent.target
+                )
+                return {
+                    "status": "TIMEOUT",
+                    "assignment": None,
+                    "timeout_ms": self.solver_fast_timeout_ms,
+                }
+
+            return result
 
         except Exception as e:
-            logger.debug("Fast solver error: %s", e)
+            logger.warning("Fast solver error: %s", e)
             return {"status": "ERROR", "message": str(e)}
 
     def _action_generator(self, state, depth):

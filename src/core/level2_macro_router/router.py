@@ -14,6 +14,8 @@ Sin dependencias externas. Compatible con Android.
 """
 
 import json
+import re
+import fnmatch
 import logging
 from src.core.shared.contracts import (
     IntentPayload, RoutingPayload, CriticalityLevel, RoutePath, OperationType
@@ -54,7 +56,7 @@ class MacroRouter:
 
     def route(self, intent):
         """Enruta basado en criticidad semantica + firmas topologicas del grafo AST."""
-        target_lower = intent.target.lower()
+        target_lower = (intent.target or "unknown").lower()
         context_lower = (intent.context or "").lower()
 
         # Paso 1: Verificar firmas topologicas en el Grafo AST (Nivel 3)
@@ -123,13 +125,12 @@ class MacroRouter:
     def _check_critical_keywords(self, target_lower, context_lower):
         """Verifica si el target o contexto contienen keywords criticos desde YAML."""
         for keyword in self.critical_keywords:
-            if keyword in target_lower or keyword in context_lower:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', target_lower) or re.search(r'\b' + re.escape(keyword) + r'\b', context_lower):
                 return True
         return False
 
     def _check_critical_patterns(self, target_lower):
         """Verifica si el target coincide con patrones criticos globales desde YAML."""
-        import fnmatch
         for pattern in self.critical_patterns:
             if fnmatch.fnmatch(target_lower, pattern):
                 return True
@@ -147,9 +148,11 @@ class MacroRouter:
         """
         try:
             conn = get_connection("graph_ast.sqlite")
+            # Escape SQL LIKE wildcards to prevent unintended pattern matching
+            escaped_name = target_name.replace("%", "\\%").replace("_", "\\_")
             rows = conn.execute(
-                "SELECT name, node_type, connections, complexity FROM ast_nodes WHERE name LIKE ?",
-                (f"%{target_name}%",)
+                "SELECT name, node_type, connections, complexity FROM ast_nodes WHERE name LIKE ? ESCAPE '\\'",
+                (f"%{escaped_name}%",)
             ).fetchall()
 
             if not rows:

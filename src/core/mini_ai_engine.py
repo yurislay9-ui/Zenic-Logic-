@@ -37,8 +37,10 @@ Optimizado para:
 import re
 import json
 import time
+import threading
 import logging
 import os
+import concurrent.futures
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 
@@ -58,7 +60,7 @@ MAX_TOKENS_GENERATE = 400
 MAX_TOKENS_EXPLAIN = 200
 MAX_TOKENS_SUBTASK = 200
 
-LLM_TIMEOUT_S = 8.0            # Max seconds per LLM call
+LLM_TIMEOUT_S = 8.0            # Max seconds per LLM call (enforced via ThreadPoolExecutor)
 N_CTX = 2048                    # Context window
 N_THREADS = 4                   # CPU threads (good for ARM)
 TEMPERATURE = 0.1               # Low temperature = more deterministic
@@ -89,6 +91,8 @@ class MiniAIEngine:
         self._call_count = 0
         self._fallback_count = 0
         self._total_llm_time = 0.0
+        self._lock = threading.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         
         if auto_load:
             self.load_model()
@@ -133,6 +137,8 @@ class MiniAIEngine:
             del self._llm
             self._llm = None
             self._loaded = False
+            self._executor.shutdown(wait=False)
+            self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             logger.info("MiniAI: Model unloaded from memory")
 
     @property
@@ -158,17 +164,19 @@ class MiniAIEngine:
 
     def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Optional[str]:
         """
-        Llama al LLM con timeout y manejo de errores.
+        Llama al LLM con timeout enforcement y manejo de errores.
         Returns raw response text or None on failure.
         """
         if not self.is_loaded:
             return None
 
-        self._call_count += 1
+        with self._lock:
+            self._call_count += 1
         start = time.time()
 
-        try:
-            response = self._llm.create_chat_completion(
+        def _actual_llm_call():
+            """Inner function to submit to the executor with timeout."""
+            return self._llm.create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -177,10 +185,21 @@ class MiniAIEngine:
                 temperature=TEMPERATURE,
             )
 
+        try:
+            future = self._executor.submit(_actual_llm_call)
+            try:
+                response = future.result(timeout=LLM_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                logger.warning(f"MiniAI: LLM call timed out after {LLM_TIMEOUT_S}s for: {user_prompt[:50]}")
+                with self._lock:
+                    self._fallback_count += 1
+                return None
+
             raw = response["choices"][0]["message"]["content"]
             answer = self._extract_answer(raw)
             elapsed = time.time() - start
-            self._total_llm_time += elapsed
+            with self._lock:
+                self._total_llm_time += elapsed
 
             if elapsed > LLM_TIMEOUT_S:
                 logger.warning(f"MiniAI: Slow call ({elapsed:.1f}s) for: {user_prompt[:50]}")
@@ -190,7 +209,8 @@ class MiniAIEngine:
         except Exception as e:
             elapsed = time.time() - start
             logger.warning(f"MiniAI: LLM call failed ({elapsed:.1f}s): {e}")
-            self._fallback_count += 1
+            with self._lock:
+                self._fallback_count += 1
             return None
 
     @staticmethod
@@ -522,7 +542,7 @@ class MiniAIEngine:
         for goal, keywords in goal_keywords.items():
             score = sum(1 for kw in keywords if kw in text_lower)
             if score > best_score:
-                best_score, best_score = score, score
+                best_score = score
                 best_goal = goal
 
         return best_goal

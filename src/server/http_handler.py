@@ -27,6 +27,9 @@ import json
 import logging
 import time
 import asyncio
+import threading
+import atexit
+import os
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -41,6 +44,9 @@ from src.server.response_builder import (
 
 logger = logging.getLogger("TITAN")
 
+# Configurable CORS origin (SEC-6: avoid hardcoded wildcard)
+_cors_origin = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
+
 # ============================================================
 #  PERSISTENT ASYNCIO EVENT LOOP (performance optimization)
 #  Replaces creating a new event loop per request, which is
@@ -48,7 +54,21 @@ logger = logging.getLogger("TITAN")
 # ============================================================
 
 _shared_loop = None
-_loop_lock = __import__('threading').Lock()
+_loop_lock = threading.Lock()
+
+
+def _shutdown_loop():
+    """Close the shared event loop on shutdown."""
+    global _shared_loop
+    with _loop_lock:
+        if _shared_loop is not None and not _shared_loop.is_closed():
+            try:
+                _shared_loop.call_soon_threadsafe(_shared_loop.stop)
+                _shared_loop.close()
+                logger.info("HTTP: Shared event loop closed")
+            except Exception as e:
+                logger.debug("HTTP: Error closing event loop: %s", e)
+            _shared_loop = None
 
 
 def _get_shared_loop():
@@ -62,9 +82,19 @@ def _get_shared_loop():
 
 
 def _run_async(coro):
-    """Run an async coroutine on the shared event loop (blocking)."""
+    """Run an async coroutine on the shared event loop (thread-safe).
+    
+    Uses asyncio.run_coroutine_threadsafe() to safely submit coroutines
+    from handler threads to the shared event loop. This avoids
+    RuntimeError when multiple threads call run_until_complete concurrently.
+    """
     loop = _get_shared_loop()
-    return loop.run_until_complete(coro)
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=120)
+
+
+# Register atexit handler for shared loop cleanup (CQ-7/CQ-8)
+atexit.register(_shutdown_loop)
 
 
 class TitanHTTPHandler(BaseHTTPRequestHandler):
@@ -202,7 +232,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
             health["resources"] = gov.get_status()
             if gov.is_ram_critical():
                 health["status"] = "degraded"
-                health["reason"] = f"RAM critical: {gov._ram_usage_mb:.0f}MB"
+                health["reason"] = f"RAM critical: {gov.ram_usage_mb:.0f}MB"
 
         # Model Manager status
         if hasattr(self.orchestrator, '_model_mgr'):
@@ -238,8 +268,8 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
                 engine = TemplateEngine()
                 templates["niche_templates"] = engine.list_niches()
                 templates["niche_domains"] = engine.list_domains()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HTTP: TemplateEngine niche listing failed: %s", e)
             self._send_json(templates)
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
@@ -839,7 +869,7 @@ class TitanHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _set_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', _cors_origin)
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 

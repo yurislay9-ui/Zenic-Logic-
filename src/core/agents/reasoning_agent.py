@@ -286,7 +286,7 @@ class ReasoningAgent(BaseAgent[ReasoningOutput]):
                 step_number=s.step_number,
                 thought=s.description,
                 conclusion=s.conclusion,
-                confidence=0.5,
+                confidence=getattr(output, 'confidence', 0.5) if output.confidence is not None else 0.5,
                 source=output.source,
             ))
 
@@ -355,7 +355,7 @@ class ReasoningAgent(BaseAgent[ReasoningOutput]):
             try:
                 similar = self._smart_memory.find_similar_solutions(query, top_k=1)
                 for sol in similar:
-                    parts.append(f"Past: {sol['solution'][:100]}")
+                    parts.append(f"Past: {sol.get('solution', '')[:100]}")
             except Exception:
                 pass
 

@@ -46,7 +46,7 @@ SECURITY_PATTERNS = [
     (r'\bhashlib\.sha1\b', "weak_hash_sha1", "SHA-1 is cryptographically weak", "warning"),
     (r'SELECT\s+\*\s+FROM', "select_star", "SELECT * may expose sensitive data", "info"),
     (r'\.format\s*\(', "format_injection", "str.format() can be exploited if user-controlled", "warning"),
-    (r'%s' r'[^%]*%', "old_style_format", "Old-style string formatting (%s)", "info"),
+    (r'%[sdfi]', "old_style_format", "Old-style string formatting (%s)", "info"),
 ]
 
 # Code quality patterns
