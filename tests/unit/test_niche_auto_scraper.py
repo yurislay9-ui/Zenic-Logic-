@@ -242,7 +242,7 @@ class TestNicheAutoUpdater:
 
     def test_auto_update_no_yml(self, mock_niche_loader, mock_scrap_agent):
         """auto_update without YAML should return error."""
-        with patch("src.core.niche_auto_scraper.YAML_AVAILABLE", False):
+        with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", False):
             updater = NicheAutoUpdater(niche_loader=mock_niche_loader, scrap_agent=mock_scrap_agent)
             result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
             assert "error" in result
@@ -254,7 +254,7 @@ class TestNicheAutoUpdater:
         )
         mock_niche_loader.search = MagicMock(return_value=[mock_niche])
 
-        with patch("src.core.niche_auto_scraper.YAML_AVAILABLE", True):
+        with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", True):
             result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
 
         # notification_manager should have been suggested by firebase-admin
@@ -268,7 +268,7 @@ class TestNicheAutoUpdater:
         )
         mock_niche_loader.search = MagicMock(return_value=[mock_niche])
 
-        with patch("src.core.niche_auto_scraper.YAML_AVAILABLE", True):
+        with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", True):
             result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
 
         # stripe_payments block and Payment entity should be suggested
