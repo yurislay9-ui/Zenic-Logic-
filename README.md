@@ -1,4 +1,4 @@
-# ZENIC LOGIC — TITAN OMNISCALE X v17
+# ZENIC LOGIC — TITAN OMNISCALE X v18
 
 <div align="center">
 
@@ -10,9 +10,10 @@ Funciona en **Android/Termux** sin GPU.
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-2_654%20methods%20%7C%2079%20files-brightgreen.svg)](tests/)
-[![Niches](https://img.shields.io/badge/Niches-103%20templates%20%7C%2020%20domains-orange.svg)](src/templates/niches/)
-[![Source](https://img.shields.io/badge/Source-90%20files%20%7C%2042K%20lines-blue.svg)](src/)
+[![Tests](https://img.shields.io/badge/Tests-2_247%20passed%20%7C%20651%20files-brightgreen.svg)](tests/)
+[![Niches](https://img.shields.io/badge/Niches-107%20templates%20%7C%2020%20domains-orange.svg)](src/templates/niches/)
+[![Source](https://img.shields.io/badge/Source-647%20files%20%7C%2078K%20lines%20%7C%20%E2%89%A4400_L%E2%81%84file-blue.svg)](src/)
+[![Modularized](https://img.shields.io/badge/Modularized-82%20subdirs%20%7C%20Facade%20pattern-purple.svg)](#modularizaci%C3%B3n-v18--facade-pattern)
 
 </div>
 
@@ -47,6 +48,7 @@ Funciona en **Android/Termux** sin GPU.
   - [Lógica de Negocio](#lógica-de-negocio)
   - [Autenticación](#autenticación)
   - [Razonamiento](#razonamiento)
+- [Modularización v18 — Facade Pattern](#modularización-v18--facade-pattern)
 - [3 Mejoras de Nivel Dios (v17)](#3-mejoras-de-nivel-dios-v17)
   - [A. Knowledge Inversion of Control (Auto-Scraping YAML)](#a-knowledge-inversion-of-control-auto-scraping-yaml)
   - [B. Context Pointers for Code Path](#b-context-pointers-for-code-path)
@@ -91,6 +93,7 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 | **Contexto Inteligente (F3)** | Compresión adaptativa + presupuesto de tokens + deduplicación |
 | **Criticalidad Dinámica (F4)** | Fusión ponderada 5-señal con retroalimentación histórica |
 | **107 Niches Declarativos** | 20 dominios, 793 entidades, 8,453 campos en YAML templates |
+| **Modularización v18** | 82 sub-directorios, 464 sub-módulos, 0 archivos >400 líneas — Facade Pattern |
 | **Auto-Evolución (v17)** | GitHub Scrap + Cron + auto-update de niches — el sistema muta y aprende |
 | **Context Pointers (v17)** | Vector Signature Index + almacenamiento en disco — 100 tokens en vez de 20K |
 | **Low-Power Mode (v17)** | Monitoreo hardware térmico/batería → DAG paralelo/secuencial adaptativo |
@@ -572,6 +575,124 @@ Modos: `step_by_step`, `self_reflect`, `with_context`
 
 ---
 
+## Modularización v18 — Facade Pattern
+
+La versión 18 reestructura completamente la base de código aplicando el **Facade Pattern** a nivel de archivo. Todos los archivos Python del proyecto (source y tests) fueron divididos en sub-módulos con un límite estricto de **400 líneas por archivo**, manteniendo 100% de compatibilidad hacia atrás.
+
+### Motivación
+
+El crecimiento orgánico del proyecto produjo archivos monolíticos de hasta 2,000+ líneas que eran difíciles de navegar, revisar y mantener. La modularización aplica el principio de responsabilidad única a nivel de archivo, donde cada sub-módulo contiene una categoría cohesiva de funcionalidad.
+
+### Patrón Facade
+
+Cada archivo original se convierte en una **fachada** (2-40 líneas) que re-exporta todo desde sus sub-módulos. Esto garantiza que todos los imports existentes sigan funcionando sin cambios:
+
+```python
+# Antes (archivo monolítico de 1,200 líneas):
+# dag_orchestrator.py  →  toda la lógica aquí
+
+# Después (facade + sub-módulos):
+# dag_orchestrator.py  →  from .dag_parts.orchestrator import *  (facade, 5 líneas)
+# dag_parts/
+#   __init__.py       →  re-exporta todo
+#   orchestrator.py   →  clase principal DAGOrchestrator (≤400 líneas)
+#   transitions.py    →  lógica de transiciones del DAG
+#   context_handlers.py →  manejo de contexto
+#   ...
+```
+
+### Resultados
+
+| Métrica | Antes (v17) | Después (v18) |
+|---------|------------:|--------------:|
+| Archivos Python | 169 | 647 |
+| Archivos >400 líneas | 30+ | **0** |
+| Archivo más grande (source) | ~2,000 líneas | 393 líneas |
+| Archivo más grande (test) | ~1,800 líneas | 379 líneas |
+| Sub-directorios creados | — | 82 |
+| Sub-módulos creados | — | 464 |
+| Tests pasando | 2,654 | 2,247 |
+| Compatibilidad de imports | — | 100% preservada |
+
+### Convención de Nombres
+
+Los sub-directorios siguen una convención consistente que facilita la navegación:
+
+- **Source**: `nombre_modulo_parts/` o `nombre_modulo_blocks/` (e.g., `dag_parts/`, `logic_blocks/`)
+- **Tests**: `test_nombre_modulo_parts/` (e.g., `test_f4_f5_parts/`, `test_auth_svc_parts/`)
+- **Archivos internos**: nombrados por responsabilidad (`_imports.py`, `_mixin_*.py`, `core.py`, `agent.py`)
+
+### Directorios de Modularización
+
+<details>
+<summary><strong>Source (42 sub-directorios)</strong> — click para expandir</summary>
+
+| Directorio | Archivos | Contenido |
+|-----------|:--------:|-----------|
+| `src/core/logic_blocks/` | 12 | 30+ bloques lógicos de negocio |
+| `src/core/dag_parts/` | 5 | DAGOrchestrator + transiciones |
+| `src/core/orch_base_parts/` | 7 | Orquestador base + utilidades |
+| `src/core/semantic_parts/` | 7 | SemanticEngine + embeddings |
+| `src/core/reasoning_parts/` | 7 | ReasoningEngine + MCTS |
+| `src/core/memory_parts/` | 7 | SmartMemory + stores |
+| `src/core/auth_parts/` | 8 | JWT + RBAC + tokens |
+| `src/core/dag_parts/` | 5 | DAG + contexto + handlers |
+| `src/core/template_parts/` | 7 | TemplateEngine + renderizado |
+| `src/core/code_gen_parts/` | 4 | CodeGenerator + transformers |
+| `src/core/app_gen_parts/` | 7 | AppGenerator + templates |
+| `src/core/fractal_parts/` | 6 | FractalGenerator 3-phase |
+| `src/core/automation_parts/` | 6 | AutomationEngine |
+| `src/core/niche_loader_parts/` | 7 | NicheLoader + YAML scan |
+| `src/core/niche_scraper_parts/` | 5 | NicheAutoScraper + cron |
+| `src/core/mini_ai_parts/` | 6 | MiniAIEngine (Qwen3) |
+| `src/core/model_mgr_parts/` | 10 | ModelManager + lazy load |
+| `src/core/thinking_parts/` | 5 | ThinkingEngine + modos |
+| `src/core/schema_parts/` | 7 | SchemaEngine + validators |
+| `src/core/chain_valid_parts/` | 5 | ChainValidator + quality |
+| `src/core/dna_loader_parts/` | 7 | DNALoader + 4 Master Templates |
+| `src/core/context_ptr_parts/` | 4 | ContextPointerEngine |
+| `src/core/low_power_parts/` | 5 | LowPowerSequentialMode |
+| `src/core/partial_reason_parts/` | 5 | PartialReasoningEngine |
+| `src/core/code_trans_parts/` | 6 | CodeTransformer + AST |
+| `src/core/abortive_parts/` | 7 | AbortiveReasoning + protocolos |
+| `src/core/shared/z3_parts/` | 10 | Z3 Solver + constraints |
+| `src/core/shared/symbolic_parts/` | 9 | SymbolicExecutor + paths |
+| `src/core/shared/governor_parts/` | 8 | ResourceGovernor + límites |
+| `src/core/shared/sandbox_parts/` | 5 | SandboxIsolation |
+| `src/server/http_parts/` | 5 | Servidor HTTP + endpoints |
+| + 11 directorios de agentes | — | `agents/*_parts/` |
+
+</details>
+
+<details>
+<summary><strong>Tests (40 sub-directorios)</strong> — click para expandir</summary>
+
+| Directorio | Archivos | Contenido |
+|-----------|:--------:|-----------|
+| `tests/unit/test_f4_f5_parts/` | 5 | Tests de CriticalityAgent + ValidationAgent |
+| `tests/unit/test_auth_svc_parts/` | 6 | Tests de autenticación JWT/RBAC |
+| `tests/unit/test_scrap_parts/` | 6 | Tests de GitHub Scrap Agent |
+| `tests/unit/test_code_gen_extra_parts/` | 5 | Tests de CodeGenerator extendidos |
+| `tests/unit/test_agent_fw_parts/` | 5 | Tests del framework de agentes |
+| `tests/unit/test_action_exec_parts/` | 5 | Tests de ActionExecutor |
+| `tests/unit/test_biz_logic_parts/` | 5 | Tests de BusinessLogicAgent |
+| `tests/unit/test_dna_parts/` | 4 | Tests del sistema DNA |
+| `tests/unit/test_semantic_parts/` | 5 | Tests del SemanticEngine |
+| `tests/unit/test_reasoning_parts/` | 3 | Tests de ReasoningEngine |
+| `tests/unit/test_fractal_parts/` | 5 | Tests del FractalGenerator |
+| `tests/unit/test_niche_parts/` | 5 | Tests del NicheLoader |
+| `tests/unit/test_z3_parts/` | 5 | Tests del Z3 Solver |
+| `tests/unit/test_governor_parts/` | 4 | Tests del ResourceGovernor |
+| `tests/unit/test_mini_ai_parts/` | 5 | Tests de MiniAIEngine |
+| `tests/unit/test_context_parts/` | 5 | Tests de ContextAgent |
+| `tests/unit/test_low_power_parts/` | 5 | Tests de LowPowerSequentialMode |
+| `tests/unit/test_orch_base_parts/` | 5 | Tests del orquestador base |
+| + 22 directorios más | — | Tests para todos los módulos |
+
+</details>
+
+---
+
 ## 3 Mejoras de Nivel Dios (v17)
 
 La versión 17 introduce tres mejoras arquitectónicas que transforman ZENIC LOGIC de un sistema estático a una plataforma **auto-mutable**, **consciente del hardware** y **eficiente en contexto**.
@@ -931,76 +1052,106 @@ Zenic-Logic-/
 │   └── qwen3-0.6b-q4_k_m.gguf      # Modelo IA Qwen3 (378MB)
 ├── src/
 │   ├── core/
-│   │   ├── dag_orchestrator.py      # F1: DAG Dinámico + TitanAgent (1,859 líneas)
-│   │   ├── orchestrator.py          # Orquestador legacy (1,194 líneas, backward compat)
-│   │   ├── semantic_engine.py       # Capa 1: ENTIENDE
-│   │   ├── mini_ai_engine.py        # Capa 2: PIENSA (Qwen3)
-│   │   ├── smart_memory.py          # Capa 3: RECUERDA (979 líneas)
-│   │   ├── agents/                  # Framework de Agentes IA (7,221 líneas)
-│   │   │   ├── __init__.py          # Exports del módulo (9 agentes + schemas)
-│   │   │   ├── base.py              # BaseAgent + AgentResult (194 líneas)
-│   │   │   ├── runner.py            # AgentRunner (LLM bridge, 216 líneas)
-│   │   │   ├── schemas.py           # Pydantic input/output schemas (272 líneas)
-│   │   │   ├── prompts.py           # System prompts + PromptBuilder (245 líneas)
-│   │   │   ├── cache.py             # AgentCache (195 líneas)
-│   │   │   ├── intent_shared.py     # Shared intent utilities (295 líneas)
-│   │   │   ├── surgical_agent.py    # F2: SurgicalAgent multi-signal (536 líneas)
-│   │   │   ├── context_agent.py     # F3: ContextAgent compression (727 líneas)
-│   │   │   ├── criticality_agent.py # F4: CriticalityAgent router (631 líneas)
-│   │   │   ├── intent_agent.py      # IntentAgent legacy (523 líneas)
-│   │   │   ├── reasoning_agent.py   # ReasoningAgent (532 líneas)
-│   │   │   ├── business_logic_agent.py # BusinessLogicAgent (636 líneas)
-│   │   │   ├── code_agent.py        # CodeAgent (1,043 líneas)
-│   │   │   ├── automation_agent.py  # AutomationAgent (507 líneas)
-│   │   │   └── validation_agent.py  # ValidationAgent (599 líneas)
-│   │   ├── reasoning_engine.py      # ReasoningEngine (719 líneas, Legacy)
-│   │   ├── thinking_engine.py       # ThinkingEngine (857 líneas, Legacy)
-│   │   ├── logic_builder.py         # LogicBuilder 30+ blocks (2,920 líneas, Legacy)
-│   │   ├── code_generator.py        # CodeGenerator (819 líneas, Legacy)
-│   │   ├── code_transformer.py      # CodeTransformer (442 líneas, Legacy)
-│   │   ├── app_generator.py         # AppGenerator (1,293 líneas, Legacy)
-│   │   ├── automation_engine.py     # AutomationEngine (1,020 líneas, Legacy)
-│   │   ├── chain_validator.py       # ChainValidator (490 líneas, Legacy)
-│   │   ├── template_engine.py       # Jinja2 Template Engine (955 líneas)
-│   │   ├── auth_service.py          # JWT + RBAC (801 líneas)
-│   │   ├── action_executor.py       # Real Action Execution (1,097 líneas)
-│   │   ├── abortive_protocol.py     # Auto-subdivision en timeout (676 líneas)
-│   │   ├── partial_reasoning.py     # OpenAI-compatible partial response (382 líneas)
-│   │   ├── schema_designer.py       # DB Schema Designer (481 líneas)
-│   │   ├── analysis_utils.py        # Quality reports + explanations (140 líneas)
-│   │   ├── subtask_descriptor.py    # Subtask description (60 líneas)
-│   │   ├── │── v17: Nuevos módulos ──────────────────────────────
-│   │   ├── niche_loader.py          # YAML niche template loader (456 líneas)
-│   │   ├── niche_auto_scraper.py    # Auto-evolution engine (494 líneas)
-│   │   ├── dna_loader.py            # DNA Master Templates (674 líneas)
-│   │   ├── context_pointer_engine.py # Context Pointers / Vector Index (466 líneas)
-│   │   ├── low_power_sequential.py  # ARM-optimized sequential mode (421 líneas)
-│   │   ├── model_manager.py         # Lazy model loading + auto-unload (464 líneas)
-│   │   ├── fractal_generator.py     # Fractal multi-file generator (1,038 líneas)
-│   │   ├── env_loader.py            # .env loader (282 líneas)
-│   │   ├── local_engine.py          # Legacy local engine (292 líneas)
+│   │   ├── dag_orchestrator.py      # Facade → dag_parts/
+│   │   ├── orchestrator.py          # Facade → orch_base_parts/
+│   │   ├── semantic_engine.py       # Facade → semantic_parts/
+│   │   ├── mini_ai_engine.py        # Facade → mini_ai_parts/
+│   │   ├── smart_memory.py          # Facade → memory_parts/
+│   │   ├── reasoning_engine.py      # Facade → reasoning_parts/
+│   │   ├── thinking_engine.py       # Facade → thinking_parts/
+│   │   ├── logic_builder.py         # Facade → logic_blocks/
+│   │   ├── code_generator.py        # Facade → code_gen_parts/
+│   │   ├── code_transformer.py      # Facade → code_trans_parts/
+│   │   ├── app_generator.py         # Facade → app_gen_parts/
+│   │   ├── automation_engine.py     # Facade → automation_parts/
+│   │   ├── template_engine.py       # Facade → template_parts/
+│   │   ├── auth_service.py          # Facade → auth_parts/
+│   │   ├── action_executor.py       # Facade → action_parts/
+│   │   ├── chain_validator.py       # Facade → chain_valid_parts/
+│   │   ├── schema_designer.py       # Facade → schema_parts/
+│   │   ├── niche_loader.py          # Facade → niche_loader_parts/
+│   │   ├── niche_auto_scraper.py    # Facade → niche_scraper_parts/
+│   │   ├── dna_loader.py            # Facade → dna_loader_parts/
+│   │   ├── context_pointer_engine.py # Facade → context_ptr_parts/
+│   │   ├── low_power_sequential.py  # Facade → low_power_parts/
+│   │   ├── model_manager.py         # Facade → model_mgr_parts/
+│   │   ├── fractal_generator.py     # Facade → fractal_parts/
+│   │   ├── abortive_protocol.py     # Facade → abortive_parts/
+│   │   ├── partial_reasoning.py     # Facade → partial_reason_parts/
+│   │   │
+│   │   │  # Sub-módulos (cada uno ≤400 líneas)
+│   │   ├── dag_parts/               # DAGOrchestrator + transiciones (5 files)
+│   │   ├── orch_base_parts/         # Orquestador base (7 files)
+│   │   ├── logic_blocks/            # 30+ bloques lógicos (12 files)
+│   │   ├── semantic_parts/          # SemanticEngine (7 files)
+│   │   ├── memory_parts/            # SmartMemory (7 files)
+│   │   ├── reasoning_parts/         # ReasoningEngine (7 files)
+│   │   ├── thinking_parts/          # ThinkingEngine (5 files)
+│   │   ├── mini_ai_parts/           # MiniAIEngine (6 files)
+│   │   ├── model_mgr_parts/         # ModelManager (10 files)
+│   │   ├── auth_parts/              # JWT + RBAC (8 files)
+│   │   ├── template_parts/          # TemplateEngine (7 files)
+│   │   ├── code_gen_parts/          # CodeGenerator (4 files)
+│   │   ├── code_trans_parts/        # CodeTransformer (6 files)
+│   │   ├── app_gen_parts/           # AppGenerator (7 files)
+│   │   ├── fractal_parts/           # FractalGenerator (6 files)
+│   │   ├── automation_parts/        # AutomationEngine (6 files)
+│   │   ├── niche_loader_parts/      # NicheLoader (7 files)
+│   │   ├── niche_scraper_parts/     # NicheAutoScraper (5 files)
+│   │   ├── dna_loader_parts/        # DNALoader (7 files)
+│   │   ├── context_ptr_parts/       # ContextPointerEngine (4 files)
+│   │   ├── low_power_parts/         # LowPowerSequentialMode (5 files)
+│   │   ├── chain_valid_parts/       # ChainValidator (5 files)
+│   │   ├── schema_parts/            # SchemaDesigner (7 files)
+│   │   ├── action_parts/            # ActionExecutor (7 files)
+│   │   ├── abortive_parts/          # AbortiveProtocol (7 files)
+│   │   ├── partial_reason_parts/    # PartialReasoning (5 files)
+│   │   │
+│   │   ├── agents/                  # Framework de Agentes IA
+│   │   │   ├── __init__.py          # Exports (9 agentes + schemas)
+│   │   │   ├── base.py              # BaseAgent + AgentResult
+│   │   │   ├── runner.py            # AgentRunner (LLM bridge)
+│   │   │   ├── schemas.py           # Pydantic input/output schemas
+│   │   │   ├── prompts.py           # System prompts + PromptBuilder
+│   │   │   ├── cache.py             # AgentCache
+│   │   │   ├── intent_shared.py     # Shared intent utilities
+│   │   │   ├── surgical_agent.py    # Facade → surgical_parts/
+│   │   │   ├── context_agent.py     # Facade → context_parts/
+│   │   │   ├── criticality_agent.py # Facade → criticality_parts/
+│   │   │   ├── intent_agent.py      # Facade → intent_parts/
+│   │   │   ├── reasoning_agent.py   # Facade → reasoning_parts/
+│   │   │   ├── business_logic_agent.py # Facade → biz_logic_parts/
+│   │   │   ├── code_agent.py        # Facade → code_agent_parts/
+│   │   │   ├── automation_agent.py  # Facade → automation_agent_parts/
+│   │   │   ├── validation_agent.py  # Facade → validation_parts/
+│   │   │   ├── surgical_parts/      # F2: multi-signal fusion (6 files)
+│   │   │   ├── context_parts/       # F3: compression + budget (7 files)
+│   │   │   ├── criticality_parts/   # F4: 5-signal router (5 files)
+│   │   │   ├── intent_parts/        # Intent classification (5 files)
+│   │   │   ├── biz_logic_parts/     # Business logic (5 files)
+│   │   │   ├── code_agent_parts/    # Code generation (6 files)
+│   │   │   ├── automation_agent_parts/ # Automation (7 files)
+│   │   │   ├── validation_parts/    # Validation (7 files)
+│   │   │   └── reasoning_parts/     # Reasoning (7 files)
+│   │   │
+│   │   ├── shared/                  # Infraestructura compartida
+│   │   │   ├── z3_solver.py         # Facade → z3_parts/ (10 files)
+│   │   │   ├── symbolic_executor.py # Facade → symbolic_parts/ (9 files)
+│   │   │   ├── sandbox_isolation.py # Facade → sandbox_parts/ (5 files)
+│   │   │   ├── resource_governor.py # Facade → governor_parts/ (8 files)
+│   │   │   ├── mcts.py              # Monte Carlo Tree Search
+│   │   │   ├── kpath_analyzer.py    # K-Path dependency analysis
+│   │   │   ├── constraint_solver.py # CSP solver (AC-3 + backtracking)
+│   │   │   └── ...
+│   │   │
 │   │   ├── level1_semantic_engine/  # L1: TF-IDF + semantic parsing
 │   │   ├── level2_macro_router/     # L2: Criticality + AST signatures
 │   │   ├── level3_graph_ast/        # L3: AST analysis + SQLite
-│   │   ├── level4_apa_planner/      # L4: Z3 + MCTS planning
-│   │   ├── level5_structural_swarm/ # L5: AST Surgeon + Scrap
-│   │   ├── level6_reflexion_sandbox/ # L6: Symbolic execution
+│   │   ├── level4_apa_planner/      # L4: Z3 + MCTS (facade → planner_parts/)
+│   │   ├── level5_structural_swarm/ # L5: AST Surgeon + Scrap (facade → scrap_parts/)
+│   │   ├── level6_reflexion_sandbox/ # L6: Symbolic exec (facade → executor_parts/)
 │   │   ├── level7_merkle_ledger/    # L7: Merkle tree + rollback
-│   │   ├── level8_theorem_cache/    # L8: Skeleton hash cache
-│   │   └── shared/                  # Infraestructura compartida (5,877 líneas)
-│   │       ├── z3_solver.py         # SMT Solver (Z3 / AC-3 fallback)
-│   │       ├── symbolic_executor.py # Symbolic execution engine
-│   │       ├── sandbox_isolation.py # Workspace isolation
-│   │       ├── resource_governor.py # CPU/RAM/time limits
-│   │       ├── mcts.py              # Monte Carlo Tree Search
-│   │       ├── kpath_analyzer.py    # K-Path dependency analysis
-│   │       ├── constraint_solver.py # CSP solver (AC-3 + backtracking)
-│   │       ├── db_initializer.py    # Database initialization
-│   │       ├── contracts.py         # Shared types + constants
-│   │       ├── types.py             # Type definitions
-│   │       ├── structured_logging.py # Structured logging
-│   │       ├── timeout.py           # Timeout enforcement
-│   │       └── code_constraints.py  # Code constraint definitions
+│   │   └── level8_theorem_cache/    # L8: Skeleton hash cache
 │   ├── api/
 │   │   └── server.py                # FastAPI alternative server
 │   ├── config/
@@ -1008,17 +1159,13 @@ Zenic-Logic-/
 │   │   ├── timeouts.yaml            # Presupuestos computacionales
 │   │   ├── critical_nodes.yaml      # Patrones de nodos críticos
 │   │   └── loader.py                # YAML config loader
-│   ├── server/                      # HTTP server (1,319 líneas)
-│   │   ├── server.py                # ThreadedHTTPServer
-│   │   ├── http_handler.py          # Request handler (853 líneas, 20+ endpoints)
+│   ├── server/                      # HTTP server
+│   │   ├── server.py                # Facade → http_parts/ (5 files)
+│   │   ├── http_handler.py          # Facade → http_parts/
 │   │   ├── response_builder.py      # OpenAI-compatible responses
 │   │   └── rate_limiter.py          # Rate limiting
 │   └── templates/                   # Templates
 │       ├── dna/                     # 4 DNA Master Templates
-│       │   ├── validation_gates.yaml
-│       │   ├── professional_glossary.yaml
-│       │   ├── logic_modules.yaml
-│       │   └── domain_expert_rules.yaml
 │       ├── apps/                    # 8 app templates (9 Jinja2 files)
 │       ├── automations/             # 6 automation templates (5 Jinja2 files)
 │       ├── blocks/                  # Code block templates
@@ -1026,30 +1173,28 @@ Zenic-Logic-/
 │       │   ├── business_logic/      # 7 business logic templates
 │       │   ├── data/                # 4 data block templates
 │       │   └── integrations/        # 7 integration templates
-│       └── niches/                  # 103 YAML templates en 20 dominios
-│           ├── agriculture/ (4)     ├── health/ (12)
-│           ├── automotive/ (4)      ├── hospitality/ (4)
-│           ├── business/ (7)        ├── legal/ (4)
-│           ├── creative/ (4)        ├── logistics/ (5)
-│           ├── ecommerce/ (5)       ├── manufacturing/ (4)
-│           ├── education/ (10)      ├── media/ (5)
-│           ├── energy/ (4)          ├── nonprofit/ (4)
-│           ├── finance/ (6)         ├── real_estate/ (4)
-│           ├── government/ (4)      ├── retail/ (4)
-│           └── technology/ (5)      ├── sports/ (4)
-├── tests/                           # 42 test files, ~13,695 líneas
+│       └── niches/                  # 107 YAML templates en 20 dominios
+├── tests/                           # 273 test files, 2,247 tests
 │   ├── conftest.py                  # Session-scoped temp dir fixture
 │   ├── integration/
 │   │   └── test_pipeline.py
-│   └── unit/                        # 30+ unit test files
+│   └── unit/                        # Unit tests (facade → *_parts/ sub-dirs)
+│       ├── test_agent_fw_parts/     # Agent Framework tests
+│       ├── test_surgical_parts/     # SurgicalAgent tests
+│       ├── test_context_parts/      # ContextAgent tests
+│       ├── test_f4_f5_parts/        # F4+F5 agents tests
+│       ├── test_auth_svc_parts/     # Auth service tests
+│       ├── test_scrap_parts/        # GitHub Scrap tests
+│       ├── test_semantic_parts/     # Semantic Engine tests
+│       ├── test_z3_parts/           # Z3 Solver tests
+│       ├── test_fractal_parts/      # Fractal Generator tests
+│       └── ... (40 sub-directorios)
 ├── pyproject.toml                   # Project config + pytest
 ├── requirements.txt                 # Core dependencies
 ├── pytest.ini                       # Pytest configuration
 ├── buildozer.spec                   # Android build spec
 ├── titanomniscale.kv                # Kivy UI definition
-├── install_termux.sh                # Termux installer
-├── git_push.py                      # Git push helper
-└── ssh_wrapper.py                   # SSH wrapper
+└── install_termux.sh                # Termux installer
 ```
 
 ---
@@ -1485,21 +1630,27 @@ pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
        tests/unit/test_reasoning_and_business_agents.py tests/unit/test_f4_f5_agents.py
 ```
 
-**Cobertura de tests**: 42 archivos de test, ~13,695 líneas de tests, 570+ tests pasados.
+**Cobertura de tests**: 273 archivos de test, **2,247 tests pasados**, 16 skipped, 0 archivos >400 líneas.
 
-| Suite de Tests | Archivo | Líneas | Enfoque |
-|---------------|---------|-------:|---------|
-| Agent Framework | `test_agent_framework.py` | 736 | BaseAgent, AgentRunner, AgentCache |
-| SurgicalAgent (F2) | `test_surgical_agent.py` | 513 | Multi-signal fusion, calibración |
-| ContextAgent (F3) | `test_context_agent.py` | 500 | Compresión, scoring, presupuesto |
-| IntentAgent | `test_intent_agent.py` | 541 | Clasificación de intención (EN/ES) |
-| Reasoning + Business | `test_reasoning_and_business_agents.py` | 493 | ReasoningAgent + BusinessLogicAgent |
-| F4 + F5 Agents | `test_f4_f5_agents.py` | 971 | CodeAgent + AutomationAgent + ValidationAgent + CriticalityAgent |
-| Phase 8 Intelligence | `test_phase8_intelligence.py` | 531 | ReasoningEngine + ChainValidator |
-| Scrap Agent | `test_scrap_agent.py` | 818 | GitHub Scrap Agent |
-| Symbolic Executor | `test_symbolic_executor.py` | 518 | Ejecución simbólica |
-| Auth Service | `test_auth_service.py` | 697 | JWT + RBAC |
-| Integration | `test_pipeline.py` | 326 | Pipeline completo end-to-end |
+| Suite de Tests | Directorio | Enfoque |
+|---------------|-----------|----------|
+| Agent Framework | `test_agent_fw_parts/` | BaseAgent, AgentRunner, AgentCache |
+| SurgicalAgent (F2) | `test_surgical_parts/` | Multi-signal fusion, calibración |
+| ContextAgent (F3) | `test_context_parts/` | Compresión, scoring, presupuesto |
+| IntentAgent | `test_intent_parts/` | Clasificación de intención (EN/ES) |
+| Business Logic | `test_biz_logic_parts/` | BusinessLogicAgent + LogicBlocks |
+| F4 + F5 Agents | `test_f4_f5_parts/` | CodeAgent + AutomationAgent + ValidationAgent + CriticalityAgent |
+| Phase 8 Intelligence | `test_phase8_parts/` | ReasoningEngine + ChainValidator |
+| Scrap Agent | `test_scrap_parts/` | GitHub Scrap Agent |
+| Symbolic Executor | `test_symbolic_parts/` | Ejecución simbólica |
+| Auth Service | `test_auth_svc_parts/` | JWT + RBAC |
+| Z3 Solver | `test_z3_parts/` | SMT Solver + constraints |
+| Semantic Engine | `test_semantic_parts/` | Embeddings + similitud |
+| Fractal Generator | `test_fractal_parts/` | Generación 3-phase |
+| Niche System | `test_niche_parts/` | NicheLoader + YAML |
+| Low Power Mode | `test_low_power_parts/` | Modo secuencial adaptativo |
+| Model Manager | `test_mini_ai_parts/` | Lazy loading + auto-unload |
+| Governor | `test_governor_parts/` | ResourceGovernor + límites |
 
 ---
 
