@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TITAN OMNISCALE X v16 - Headless Server for Termux/proot-distro
+TITAN OMNISCALE X - Headless Server for Termux/proot-distro
 
 Servidor OpenAI-Compatible SIN Kivy. Disenado para correr en
 Termux + proot-distro (Debian) en tu Redmi 12R Pro.
@@ -45,22 +45,22 @@ limit_open_files()
 # Importar modulos del engine
 from src.core.shared.contracts import HAS_Z3
 from src.core.shared.db_initializer import initialize_databases
+from src.core.shared._version import TITAN_VERSION_STR, TITAN_FULL_NAME
 
-# Use DAGOrchestrator (v16) as primary, with TitanOrchestrator (v16) as fallback
+# Use DAGOrchestrator as primary, with TitanOrchestrator as fallback
 try:
     from src.core.dag_orchestrator import DAGOrchestrator
     _ORCHESTRATOR_CLASS = DAGOrchestrator
-    _ORCHESTRATOR_NAME = "DAGOrchestrator (v16)"
+    _ORCHESTRATOR_NAME = f"DAGOrchestrator ({TITAN_VERSION_STR})"
 except ImportError:
     from src.core.orchestrator import TitanOrchestrator
     _ORCHESTRATOR_CLASS = TitanOrchestrator
-    _ORCHESTRATOR_NAME = "TitanOrchestrator (v16)"
+    _ORCHESTRATOR_NAME = f"TitanOrchestrator ({TITAN_VERSION_STR})"
 
 from src.server import (
     TitanHTTPHandler, ThreadedHTTPServer,
     get_local_ip, configure_handler, RateLimiter,
 )
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
@@ -73,13 +73,13 @@ logger = logging.getLogger("TITAN")
 #  BANNER
 # ============================================================
 
-def print_banner(ip, port, solver_name, governor):
+def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
     """Imprime el banner de inicio en la terminal."""
     res = governor.get_status() if governor else {}
     banner = f"""
 +==============================================================+
-|  TITAN OMNISCALE X v16 - HEADLESS SERVER [HYBRID MODE]       |
-|  Motor de IA Quirurgico Local ({solver_name})                   |
+|  TITAN OMNISCALE X {TITAN_VERSION_STR} - HEADLESS SERVER [{server_type}]    
+|  Motor de IA Quirurgico Local ({solver_name})                   
 +==============================================================+
 |                                                              |
 |  Conecta Cline/Aide/OpenCode a:                              |
@@ -112,7 +112,7 @@ START_TIME = time.time()
 
 def main():
     parser = argparse.ArgumentParser(
-        description="TITAN OMNISCALE X v16 - Headless Server"
+        description=f"TITAN OMNISCALE X {TITAN_VERSION_STR} - Headless Server"
     )
     parser.add_argument(
         '--port', type=int, default=5000,
@@ -134,6 +134,15 @@ def main():
         '--debug', action='store_true',
         help='Modo debug con logs verbose'
     )
+    parser.add_argument(
+        '--server', type=str, default='stdlib',
+        choices=['stdlib', 'fastapi'],
+        help='Tipo de servidor: stdlib (legacy) o fastapi (SaaS)'
+    )
+    parser.add_argument(
+        '--auth', action='store_true',
+        help='Habilitar autenticacion (requiere fastapi server)'
+    )
     args = parser.parse_args()
 
     if args.debug:
@@ -146,11 +155,11 @@ def main():
     initialize_databases()
 
     solver_name = "Z3" if HAS_Z3 else "AC-3"
-    logger.info("TITAN OMNISCALE X v16.0 - Headless Server")
+    logger.info(f"{TITAN_FULL_NAME} - Headless Server")
     logger.info(f"Solver: {solver_name} | MCTS Adaptive | Symbolic Exec | Resource Governor")
     logger.info(f"RAM limit: {args.ram_limit}MB | GC tuned for ARM | Process priority: low")
 
-    # Crear orchestrator (DAGOrchestrator v16 preferred)
+    # Crear orchestrator (DAGOrchestrator preferred)
     # Con HYBRID MODE: los modelos se cargan lazy al primer request
     orchestrator = _ORCHESTRATOR_CLASS()
     logger.info(f"Orchestrator: {_ORCHESTRATOR_NAME} [HYBRID MODE]")
@@ -159,12 +168,42 @@ def main():
     if hasattr(orchestrator, '_model_mgr'):
         governor.set_model_manager(orchestrator._model_mgr)
 
-    # Crear rate limiter (proteccion contra flood en ARM)
-    rate_limiter = RateLimiter(
-        max_requests_per_minute=args.ram_limit // 64,  # ~32 RPM for 2048MB
-        burst_size=10,
-        global_max_concurrent=20,
-    )
+    # Crear AuthService si --auth o --server fastapi
+    auth_service = None
+    if args.auth or args.server == 'fastapi':
+        try:
+            from src.core.auth_service import AuthService
+            auth_service = AuthService()
+            # Ensure admin exists
+            auth_service.ensure_admin()
+            logger.info("AuthService: initialized with tenant support")
+        except Exception as e:
+            logger.warning(f"AuthService init failed (auth disabled): {e}")
+            auth_service = None
+
+    # Crear rate limiter con soporte tenant si auth habilitado
+    if auth_service is not None:
+        try:
+            from src.server.tenant_rate_limiter import TenantRateLimiter
+            rate_limiter = TenantRateLimiter(
+                max_requests_per_minute=args.ram_limit // 64,
+                burst_size=10,
+                global_max_concurrent=20,
+                default_user_rpm=args.ram_limit // 64,
+                default_user_burst=10,
+            )
+        except Exception:
+            rate_limiter = RateLimiter(
+                max_requests_per_minute=args.ram_limit // 64,
+                burst_size=10,
+                global_max_concurrent=20,
+            )
+    else:
+        rate_limiter = RateLimiter(
+            max_requests_per_minute=args.ram_limit // 64,
+            burst_size=10,
+            global_max_concurrent=20,
+        )
 
     # Configurar handler compartido con governor + rate limiter
     configure_handler(orchestrator, governor=governor,
@@ -173,6 +212,37 @@ def main():
 
     # Obtener IP
     ip = get_local_ip()
+
+    # ── FastAPI Server Mode ────────────────────────────────
+    if args.server == 'fastapi':
+        try:
+            from src.server.fastapi_app import run_fastapi_server
+        except ImportError:
+            logger.error("FastAPI no instalado. Instala con: pip install fastapi uvicorn")
+            logger.error("Usa --server stdlib para el servidor legacy")
+            sys.exit(1)
+
+        print_banner(ip, args.port, solver_name, governor, server_type="FastAPI (SaaS)")
+        logger.info("Server mode: FastAPI (SaaS-ready) | Auth: %s",
+                    "enabled" if auth_service else "disabled")
+
+        # Run FastAPI server (blocking)
+        try:
+            run_fastapi_server(
+                orchestrator=orchestrator,
+                host=args.host,
+                port=args.port,
+                auth_service=auth_service,
+                rate_limiter=rate_limiter,
+                governor=governor,
+                platform_tag="termux-proot",
+            )
+        except KeyboardInterrupt:
+            governor.stop_monitoring()
+            logger.info("Server stopped.")
+        return
+
+    # ── Stdlib Server Mode (legacy) ────────────────────────
 
     # Banner
     print_banner(ip, args.port, solver_name, governor)

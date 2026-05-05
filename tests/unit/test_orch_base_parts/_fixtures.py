@@ -82,8 +82,8 @@ def fully_mocked_orch(mock_settings):
         orch._agent_runner.stats = {}
         orch._agent_runner._cache = MagicMock()
         orch._agent_runner._cache.stats = {}
-        orch._intent_agent = MagicMock()
-        orch._intent_agent.stats = {}
+        orch._surgical_agent = MagicMock()
+        orch._surgical_agent.stats = {}
         orch._reasoning_agent = MagicMock()
         orch._reasoning_agent.stats = {}
         orch._business_logic_agent = MagicMock()

@@ -67,3 +67,4 @@ class MemoryEntry:
     access_count: int = 0
     session_id: str = ""
     client_id: str = "default"
+    tenant_id: str = "__anonymous__"

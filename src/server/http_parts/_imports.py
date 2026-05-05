@@ -19,12 +19,39 @@ from src.server.response_builder import (
     build_partial_reasoning_response,
     build_error_response,
     build_overloaded_response,
+    build_artifact_response,
 )
+
+# Open Design CORS origins
+try:
+    from src.core.open_design.config import get_open_design_config
+    _open_design_available = True
+except ImportError:
+    _open_design_available = False
 
 logger = logging.getLogger("TITAN")
 
 # Configurable CORS origin
 _cors_origin = os.environ.get("CORS_ALLOWED_ORIGIN", "*")
+
+# Build Open Design allowed origins set for dynamic CORS
+_od_allowed_origins = set()
+if _open_design_available:
+    try:
+        _od_config = get_open_design_config()
+        _od_allowed_origins = set(_od_config.open_design_origins)
+    except Exception:
+        pass
+
+def _get_cors_origin(request_origin: str = "") -> str:
+    """Resolve the Access-Control-Allow-Origin header value.
+    
+    If the request Origin matches an Open Design origin, return it specifically
+    (required for credentials=true). Otherwise fall back to the configured default.
+    """
+    if request_origin and request_origin in _od_allowed_origins:
+        return request_origin
+    return _cors_origin
 
 # Shared asyncio event loop
 _shared_loop = None

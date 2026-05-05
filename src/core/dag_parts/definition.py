@@ -84,6 +84,7 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
             "low_crit": "EXECUTE_STEPS",
             "standard": "EXECUTE_STEPS",
             "high_crit": "SOLVER_VERIFY",
+            "visual": "VISUAL_BYPASS",
         },
         default_next="EXECUTE_STEPS",
     ),
@@ -158,5 +159,16 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
         exec_method="_exec_done",
         transitions={},
         default_next="",
+    ),
+    "VISUAL_BYPASS": DAGNode(
+        name="VISUAL_BYPASS",
+        exec_method="_exec_visual_bypass",
+        transitions={
+            "success": "MEMORY_SAVE",
+            "fallback": "EXECUTE_STEPS",
+        },
+        default_next="EXECUTE_STEPS",
+        criticality_skip=[3],  # Always skip SURGICAL level for visual requests
+        max_retries=1,
     ),
 }

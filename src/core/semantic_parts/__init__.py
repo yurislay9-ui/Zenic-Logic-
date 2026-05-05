@@ -8,6 +8,8 @@ from ._imports import (
     INTENT_PROTOTYPES,
     GOAL_PROTOTYPES,
     SemanticResult,
+    HAS_NUMPY,
+    _get_numpy,
 )
 from .engine import SemanticEngine
 
@@ -18,4 +20,6 @@ __all__ = [
     "GOAL_PROTOTYPES",
     "SemanticResult",
     "SemanticEngine",
+    "HAS_NUMPY",
+    "_get_numpy",
 ]

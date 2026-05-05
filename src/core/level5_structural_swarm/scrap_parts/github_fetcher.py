@@ -10,6 +10,7 @@ Espera que la clase contenedora tenga:
   - self._metrics (GitHubMetrics)
 """
 
+import asyncio
 import json
 import time
 import logging
@@ -141,7 +142,7 @@ class GitHubFetcherMixin:
                             "GitHub: Server error %d, retrying in %ds",
                             e.code, wait
                         )
-                        time.sleep(wait)
+                        await asyncio.sleep(wait)
                         continue
                 else:
                     logger.debug("GitHub: HTTP %d for '%s'", e.code, query[:50])
@@ -154,7 +155,7 @@ class GitHubFetcherMixin:
                         "GitHub: URL error %s, retrying in %ds",
                         str(e.reason)[:50], wait
                     )
-                    time.sleep(wait)
+                    await asyncio.sleep(wait)
                     continue
                 logger.warning("GitHub: URL error: %s", e.reason)
 

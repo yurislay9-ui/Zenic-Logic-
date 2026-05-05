@@ -13,12 +13,8 @@ import logging
 try:
     import z3 as z3_module
     HAS_Z3 = True
-    logger_z3 = logging.getLogger(__name__)
-    logger_z3.info("Z3 SMT Solver disponible - verificacion formal completa habilitada")
 except ImportError:
     HAS_Z3 = False
-    logger_z3 = logging.getLogger(__name__)
-    logger_z3.info("Z3 no disponible - usando AC-3 + Backtracking CSP Solver como fallback")
 
 from .null_safety import Z3NullSafetyMixin
 from .type_safety import Z3TypeSafetyMixin

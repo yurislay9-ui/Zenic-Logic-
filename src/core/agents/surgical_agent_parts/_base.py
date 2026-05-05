@@ -4,7 +4,7 @@ SurgicalAgent BaseAgent interface + high-level API mixin.
 
 import time
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from ._imports import (
     BaseAgent, AgentResult, AgentPrompts,
@@ -21,7 +21,7 @@ class BaseInterfaceMixin:
     #  BaseAgent INTERFACE
     # ============================================================
 
-    def build_prompt(self, input_data: Any):
+    def build_prompt(self, input_data: Any) -> Tuple[str, str]:
         """Construye prompt quirúrgico para clasificación de intención."""
         if isinstance(input_data, IntentInput):
             message = input_data.message
@@ -47,7 +47,7 @@ class BaseInterfaceMixin:
             user += f"\nCtx: {context[:150]}"
         return system, user
 
-    def parse_response(self, raw_response: str, input_data: Any):
+    def parse_response(self, raw_response: str, input_data: Any) -> Optional[Any]:
         """Parsea respuesta del LLM a IntentOutput válido."""
         cleaned = self.clean_llm_text(raw_response)
         json_data = self.extract_json(cleaned)
@@ -55,7 +55,7 @@ class BaseInterfaceMixin:
             return self._dict_to_output(json_data, source="llm")
         return self._parse_freetext(cleaned, source="llm")
 
-    def fallback(self, input_data: Any) -> IntentOutput:
+    def fallback(self, input_data: Any) -> Optional[IntentOutput]:
         """Fallback determinista: SmartMemory → SemanticEngine → TF-IDF."""
         start = time.time()
 

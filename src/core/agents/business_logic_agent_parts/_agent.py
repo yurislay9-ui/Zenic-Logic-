@@ -4,7 +4,7 @@ BusinessLogicAgent — main class inheriting from mixins.
 
 import time
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ._imports import (
     logger, BaseAgent, AgentResult, BusinessInput, BusinessOutput,
@@ -45,7 +45,7 @@ class BusinessLogicAgent(FallbacksMixin, BaseAgent[BusinessOutput]):
     #  BaseAgent INTERFACE
     # ============================================================
 
-    def build_prompt(self, input_data: Any):
+    def build_prompt(self, input_data: Any) -> Tuple[str, str]:
         """Construye system + user prompt para lógica de negocio."""
         import json
         if isinstance(input_data, BusinessInput):
@@ -71,7 +71,7 @@ class BusinessLogicAgent(FallbacksMixin, BaseAgent[BusinessOutput]):
 
         return system_prompt, user_prompt
 
-    def parse_response(self, raw_response: str, input_data: Any):
+    def parse_response(self, raw_response: str, input_data: Any) -> Optional[BusinessOutput]:
         """Parsea la respuesta del LLM a un BusinessOutput válido."""
         cleaned = self.clean_llm_text(raw_response)
 

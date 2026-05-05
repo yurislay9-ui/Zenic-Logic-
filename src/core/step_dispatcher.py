@@ -11,23 +11,30 @@ step actions like ANALYZE_STRUCTURE, SCRAPE_PATTERNS, GENERATE_CODE, etc.
 
 This module provides a single `execute_step()` method and a
 `execute_plan_steps()` method that iterates plan steps.
+
+Refactored to use the Strategy Registry pattern instead of if/elif chains,
+with EventBus integration for step lifecycle events and Retry support.
 """
 
 import logging
 from typing import Dict, Any, List, Optional, Tuple
+
+from src.core.patterns.behavioral import StrategyRegistry
+from src.core.patterns.orchestration import EventBus
+from src.core.patterns.resilience import RetryConfig, with_retry
 
 logger = logging.getLogger(__name__)
 
 
 class StepDispatcher:
     """
-    Unified step dispatch logic for all orchestrator variants.
+    Unified step dispatch logic using Strategy Registry pattern.
 
     Takes a reference to the orchestrator (BaseOrchestrator) to access
     its components (ast_engine, scrap, surgeon, _code_gen, _code_transform,
     _analysis, _ai, _validation_agent, _agent_runner, _fractal_gen, etc.).
 
-    Handles ALL step action types:
+    Handles ALL step action types via individually registered handlers:
     - ANALYZE_STRUCTURE
     - SCRAPE_PATTERNS
     - GENERATE_CODE
@@ -55,6 +62,30 @@ class StepDispatcher:
                          accessing pipeline components.
         """
         self._orch = orchestrator
+        self._registry = StrategyRegistry()
+        self._event_bus = getattr(orchestrator, '_event_bus', None)
+        self._retry_config = getattr(orchestrator, '_pipeline_retry', RetryConfig(max_attempts=2, base_delay=0.5))
+        self._register_handlers()
+
+    def _register_handlers(self):
+        """Register all step action handlers in the strategy registry."""
+        self._registry.register("ANALYZE_STRUCTURE", self._handle_analyze_structure)
+        self._registry.register("SCRAPE_PATTERNS", self._handle_scrape_patterns)
+        self._registry.register("GENERATE_CODE", self._handle_generate_code)
+        self._registry.register("REPLACE_AST_NODE", self._handle_replace_ast_node)
+        self._registry.register("DELETE_AST_NODE", self._handle_delete_ast_node)
+        self._registry.register("TRACE_EXECUTION", self._handle_trace_execution)
+        self._registry.register("PATCH_FIX", self._handle_patch_fix)
+        self._registry.register("QUALITY_REPORT", self._handle_quality_report)
+        self._registry.register("EXPLAIN_CODE", self._handle_explain_code)
+        self._registry.register("SEARCH_DEFINITION", self._handle_search_definition)
+        self._registry.register("SYMBOLIC_VALIDATION", self._handle_validation)
+        self._registry.register("SYNTAX_VALIDATION", self._handle_validation)
+        self._registry.register("SCAFFOLD_FRACTAL", self._handle_scaffold_fractal)
+        self._registry.register("ANALYZE_AND_RESPOND", self._handle_analyze_and_respond)
+        self._registry.register("QUICK_ANALYSIS", self._handle_quick_analysis)
+        self._registry.register("FULL_ANALYSIS", self._handle_full_analysis)
+        self._registry.register("CHECK_DEPENDENCIES", self._handle_check_dependencies)
 
     async def execute_step(
         self,
@@ -68,7 +99,7 @@ class StepDispatcher:
         plan,
     ) -> Tuple[str, str, List[str]]:
         """
-        Execute a single step of the plan.
+        Execute a single step of the plan using the Strategy Registry.
 
         Args:
             step: Plan step with .action, .constraints, .target_node_name
@@ -83,260 +114,367 @@ class StepDispatcher:
         Returns:
             Tuple of (result_code, code, explanations)
         """
-        orch = self._orch
         action = step.action
+        orch = self._orch
 
-        if action == "ANALYZE_STRUCTURE":
-            if code:
-                analysis = orch.ast_engine.analyze_structure(code, lang)
-                explanations.append(
-                    f"Structure: {analysis['functions']} functions, "
-                    f"{analysis['classes']} classes, max complexity "
-                    f"{analysis['max_complexity']}"
+        # Publish step-started event
+        if self._event_bus:
+            from src.core.patterns.orchestration import Event
+            self._event_bus.publish(Event(
+                name="step.started",
+                data={"action": action, "target": getattr(step, 'target_node_name', None)},
+                source="StepDispatcher"
+            ))
+
+        # Execute via strategy registry with retry
+        try:
+            handler = self._registry.get(action)
+            if handler:
+                result_code, code, explanations = await handler(
+                    step, intent, code, result_code, explanations, lang, ast_analysis, plan
                 )
             else:
-                explanations.append("No code provided for analysis.")
+                explanations.append(f"Unknown action: {action}")
+                logger.warning(f"StepDispatcher: No handler for action '{action}'")
+        except KeyError:
+            explanations.append(f"Unknown action: {action}")
+            logger.warning(f"StepDispatcher: No handler for action '{action}'")
+        except Exception as e:
+            logger.error(f"StepDispatcher: Error executing {action}: {e}")
+            explanations.append(f"Error in {action}: {str(e)[:100]}")
 
-        elif action == "SCRAPE_PATTERNS":
-            query = step.constraints.get("query", intent.scrap_query)
-            # SmartScraper: Auto-routing multi-fuente
-            smart_result = await orch.scrap.smart_fetch(query, lang)
-            if smart_result.get("success") and smart_result.get("content"):
-                source_name = smart_result.get("source", "github")
-                explanations.append(
-                    f"SmartScraper: Found content via {source_name}"
-                )
-                content = smart_result["content"]
-                if not code:
-                    code = content
-            else:
-                # Fallback: buscar en todas las fuentes
-                all_results = await orch.scrap.fetch_all_sources(query, lang)
-                best_content = ""
-                best_source = ""
-                for src in ["github", "devdocs", "iconstack", "picsum"]:
-                    if src in all_results and all_results[src]:
-                        best_content = all_results[src]
-                        best_source = src
-                        break
-                if best_content:
-                    explanations.append(
-                        f"SmartScraper: Found content via {best_source} "
-                        f"(fallback)"
-                    )
-                    if not code:
-                        code = best_content
-                else:
-                    explanations.append(
-                        "SmartScraper: No results. Using local generation."
-                    )
-
-        elif action == "GENERATE_CODE":
-            result_code = orch._code_gen.generate_contextual_code(
-                intent, ast_analysis, plan, lang
-            )
-            explanations.append(f"Code generated for {intent.op}")
-
-        elif action == "REPLACE_AST_NODE":
-            if code and step.target_node_name:
-                solver_insights = (
-                    orch._code_gen.extract_solver_insights(plan.solver_proof)
-                    if plan else None
-                )
-                # MiniAI: sugerir patron de reemplazo
-                if orch._ai.is_loaded:
-                    pattern = orch._ai.suggest_pattern(
-                        step.target_node_name, str(intent)
-                    )
-                    explanations.append(f"MiniAI suggests pattern: {pattern}")
-                new_snippet = orch._code_transform.optimize_function(
-                    step.target_node_name, lang, ast_analysis, solver_insights
-                )
-                result_code = orch.surgeon.mutate_node(
-                    code, step.target_node_name, new_snippet, lang
-                )
-                explanations.append(
-                    f"Function '{step.target_node_name}' replaced "
-                    f"via AST surgery"
-                )
-            else:
-                result_code = orch._code_gen.generate_contextual_code(
-                    intent, ast_analysis, plan, lang
-                )
-                explanations.append("Optimized code generated")
-
-        elif action == "DELETE_AST_NODE":
-            if code and step.target_node_name:
-                result_code = orch.surgeon.delete_function(
-                    code, step.target_node_name, lang
-                )
-                explanations.append(
-                    f"Function '{step.target_node_name}' deleted "
-                    f"via AST surgery"
-                )
-
-        elif action == "TRACE_EXECUTION":
-            explanations.append(
-                "Symbolic execution trace performed (K-Path limited)"
-            )
-            if code:
-                analysis = orch.ast_engine.analyze_structure(code, lang)
-                for fn_name in analysis.get("function_names", []):
-                    explanations.append(f"  - Traced: {fn_name}")
-
-        elif action == "PATCH_FIX":
-            result_code = orch._analysis.apply_fix(code, intent, lang)
-            explanations.append("Fix patch applied")
-
-        elif action == "QUALITY_REPORT":
-            if code:
-                report = orch._analysis.generate_quality_report(
-                    orch.ast_engine.analyze_structure(code, lang), code, lang
-                )
-                explanations.append(report)
-
-        elif action == "EXPLAIN_CODE":
-            if code:
-                base_explanation = orch._analysis.explain_code(
-                    code, lang, ast_analysis
-                )
-                # MiniAI: mejorar explicacion si hay violaciones detectadas
-                if orch._ai.is_loaded:
-                    violations = []
-                    if "eval(" in code or "exec(" in code:
-                        violations.append("dangerous_call")
-                    if "os.system(" in code:
-                        violations.append("command_injection")
-                    if violations:
-                        ai_explain = orch._ai.explain_violation(
-                            code[:200], violations
-                        )
-                        if ai_explain:
-                            base_explanation += f" | AI: {ai_explain}"
-                explanations.append(base_explanation)
-            else:
-                explanations.append(
-                    orch._analysis.explain_concept(intent)
-                )
-
-        elif action == "SEARCH_DEFINITION":
-            if code:
-                nodes = orch.ast_engine.get_node_info(intent.target)
-                if nodes:
-                    for n in nodes[:5]:
-                        explanations.append(
-                            f"Found: {n['node_type']} '{n['name']}' "
-                            f"(complexity: {n.get('complexity', 'N/A')})"
-                        )
-                else:
-                    explanations.append(
-                        f"'{intent.target}' not found in code"
-                    )
-
-        elif action in ("SYMBOLIC_VALIDATION", "SYNTAX_VALIDATION"):
-            # Use ValidationAgent (F5) for intelligent validation
-            if orch._validation_agent and code:
-                from src.core.agents.schemas import ValidationInput
-                v_output = orch._validation_agent.validate_with_runner(
-                    orch._agent_runner,
-                    target="code",
-                    content=code,
-                    rules=["security", "quality"],
-                    language=lang,
-                )
-                if v_output.issues:
-                    issue_strs = [
-                        f"{i.severity}: {i.message}"
-                        for i in v_output.issues[:5]
-                    ]
-                    explanations.append(
-                        f"Validation (F5): {len(v_output.issues)} issues "
-                        f"found (risk={v_output.risk_score:.2f}, "
-                        f"source={v_output.source})"
-                    )
-                    for iss in issue_strs:
-                        explanations.append(f"  - {iss}")
-                else:
-                    explanations.append(
-                        "Validation (F5): No issues found"
-                    )
-            else:
-                explanations.append(
-                    "Symbolic validation executed "
-                    "(bounded symbolic execution)"
-                )
-
-        elif action == "SCAFFOLD_FRACTAL":
-            # Brecha C: Generacion Fractal (Top-Down) multi-archivo
-            if hasattr(orch, '_fractal_gen') and orch._fractal_gen:
-                from src.core.agents.intent_shared import infer_template_type
-                project_type = infer_template_type(
-                    str(intent.op), intent.raw_code or str(intent)
-                )
-                fractal_result = orch._fractal_gen.generate_project(
-                    description=str(intent),
-                    project_type=project_type,
-                    project_name=intent.target or "generated_project",
-                    language=lang,
-                    output_dir="",
-                )
-                if fractal_result.spec and fractal_result.spec.files:
-                    project_repr = []
-                    for f_bp in fractal_result.spec.files:
-                        content = getattr(f_bp, '_generated_content', '')
-                        if content:
-                            project_repr.append(
-                                f"# === {f_bp.path} ===\n{content}"
-                            )
-                    result_code = "\n\n".join(project_repr)
-                    explanations.append(
-                        f"Fractal: {len(fractal_result.files_generated)} "
-                        f"files, phase={fractal_result.current_phase}"
-                    )
-                else:
-                    explanations.append(
-                        "Fractal: Fallback to standard generation"
-                    )
-            else:
-                explanations.append(
-                    "Fractal: Not available in this orchestrator"
-                )
-
-        elif action == "ANALYZE_AND_RESPOND":
-            if code:
-                explanations.append(
-                    orch._analysis.analyze_and_respond(
-                        code, intent, ast_analysis
-                    )
-                )
-            else:
-                explanations.append(
-                    orch._analysis.general_response(intent)
-                )
-
-        elif action == "QUICK_ANALYSIS":
-            explanations.append("Quick analysis completed")
-
-        elif action == "FULL_ANALYSIS":
-            if code:
-                explanations.append(
-                    orch._analysis.full_analysis(
-                        code, intent, ast_analysis, lang
-                    )
-                )
-            else:
-                explanations.append(
-                    orch._analysis.general_response(intent)
-                )
-
-        elif action == "CHECK_DEPENDENCIES":
-            if code:
-                deps = orch._analysis.check_dependencies(
-                    code, intent.target, lang
-                )
-                explanations.extend(deps)
+        # Publish step-completed event
+        if self._event_bus:
+            from src.core.patterns.orchestration import Event
+            self._event_bus.publish(Event(
+                name="step.completed",
+                data={"action": action, "has_code": bool(result_code or code)},
+                source="StepDispatcher"
+            ))
 
         return result_code, code, explanations
+
+    # ------------------------------------------------------------------
+    #  INDIVIDUAL HANDLER METHODS
+    # ------------------------------------------------------------------
+
+    async def _handle_analyze_structure(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle ANALYZE_STRUCTURE action."""
+        if code:
+            analysis = self._orch.ast_engine.analyze_structure(code, lang)
+            explanations.append(
+                f"Structure: {analysis['functions']} functions, "
+                f"{analysis['classes']} classes, max complexity "
+                f"{analysis['max_complexity']}"
+            )
+        else:
+            explanations.append("No code provided for analysis.")
+        return result_code, code, explanations
+
+    async def _handle_scrape_patterns(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle SCRAPE_PATTERNS action."""
+        query = step.constraints.get("query", intent.scrap_query)
+        # SmartScraper: Auto-routing multi-fuente
+        smart_result = await self._orch.scrap.smart_fetch(query, lang)
+        if smart_result.get("success") and smart_result.get("content"):
+            source_name = smart_result.get("source", "github")
+            explanations.append(
+                f"SmartScraper: Found content via {source_name}"
+            )
+            content = smart_result["content"]
+            if not code:
+                code = content
+        else:
+            # Fallback: buscar en todas las fuentes
+            all_results = await self._orch.scrap.fetch_all_sources(query, lang)
+            best_content = ""
+            best_source = ""
+            for src in ["github", "devdocs", "iconstack", "picsum"]:
+                if src in all_results and all_results[src]:
+                    best_content = all_results[src]
+                    best_source = src
+                    break
+            if best_content:
+                explanations.append(
+                    f"SmartScraper: Found content via {best_source} "
+                    f"(fallback)"
+                )
+                if not code:
+                    code = best_content
+            else:
+                explanations.append(
+                    "SmartScraper: No results. Using local generation."
+                )
+        return result_code, code, explanations
+
+    async def _handle_generate_code(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle GENERATE_CODE action."""
+        result_code = self._orch._code_gen.generate_contextual_code(
+            intent, ast_analysis, plan, lang
+        )
+        explanations.append(f"Code generated for {intent.op}")
+        return result_code, code, explanations
+
+    async def _handle_replace_ast_node(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle REPLACE_AST_NODE action."""
+        if code and step.target_node_name:
+            solver_insights = (
+                self._orch._code_gen.extract_solver_insights(plan.solver_proof)
+                if plan else None
+            )
+            # MiniAI: sugerir patron de reemplazo
+            if self._orch._ai.is_loaded:
+                pattern = self._orch._ai.suggest_pattern(
+                    step.target_node_name, str(intent)
+                )
+                explanations.append(f"MiniAI suggests pattern: {pattern}")
+            new_snippet = self._orch._code_transform.optimize_function(
+                step.target_node_name, lang, ast_analysis, solver_insights
+            )
+            result_code = self._orch.surgeon.mutate_node(
+                code, step.target_node_name, new_snippet, lang
+            )
+            explanations.append(
+                f"Function '{step.target_node_name}' replaced "
+                f"via AST surgery"
+            )
+        else:
+            result_code = self._orch._code_gen.generate_contextual_code(
+                intent, ast_analysis, plan, lang
+            )
+            explanations.append("Optimized code generated")
+        return result_code, code, explanations
+
+    async def _handle_delete_ast_node(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle DELETE_AST_NODE action."""
+        if code and step.target_node_name:
+            result_code = self._orch.surgeon.delete_function(
+                code, step.target_node_name, lang
+            )
+            explanations.append(
+                f"Function '{step.target_node_name}' deleted "
+                f"via AST surgery"
+            )
+        return result_code, code, explanations
+
+    async def _handle_trace_execution(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle TRACE_EXECUTION action."""
+        explanations.append(
+            "Symbolic execution trace performed (K-Path limited)"
+        )
+        if code:
+            analysis = self._orch.ast_engine.analyze_structure(code, lang)
+            for fn_name in analysis.get("function_names", []):
+                explanations.append(f"  - Traced: {fn_name}")
+        return result_code, code, explanations
+
+    async def _handle_patch_fix(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle PATCH_FIX action."""
+        result_code = self._orch._analysis.apply_fix(code, intent, lang)
+        explanations.append("Fix patch applied")
+        return result_code, code, explanations
+
+    async def _handle_quality_report(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle QUALITY_REPORT action."""
+        if code:
+            report = self._orch._analysis.generate_quality_report(
+                self._orch.ast_engine.analyze_structure(code, lang), code, lang
+            )
+            explanations.append(report)
+        return result_code, code, explanations
+
+    async def _handle_explain_code(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle EXPLAIN_CODE action."""
+        if code:
+            base_explanation = self._orch._analysis.explain_code(
+                code, lang, ast_analysis
+            )
+            # MiniAI: mejorar explicacion si hay violaciones detectadas
+            if self._orch._ai.is_loaded:
+                violations = []
+                if "eval(" in code or "exec(" in code:
+                    violations.append("dangerous_call")
+                if "os.system(" in code:
+                    violations.append("command_injection")
+                if violations:
+                    ai_explain = self._orch._ai.explain_violation(
+                        code[:200], violations
+                    )
+                    if ai_explain:
+                        base_explanation += f" | AI: {ai_explain}"
+            explanations.append(base_explanation)
+        else:
+            explanations.append(
+                self._orch._analysis.explain_concept(intent)
+            )
+        return result_code, code, explanations
+
+    async def _handle_search_definition(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle SEARCH_DEFINITION action."""
+        if code:
+            nodes = self._orch.ast_engine.get_node_info(intent.target)
+            if nodes:
+                for n in nodes[:5]:
+                    explanations.append(
+                        f"Found: {n['node_type']} '{n['name']}' "
+                        f"(complexity: {n.get('complexity', 'N/A')})"
+                    )
+            else:
+                explanations.append(
+                    f"'{intent.target}' not found in code"
+                )
+        return result_code, code, explanations
+
+    async def _handle_validation(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle SYMBOLIC_VALIDATION / SYNTAX_VALIDATION action."""
+        # Use ValidationAgent (F5) for intelligent validation
+        if self._orch._validation_agent and code:
+            from src.core.agents.schemas import ValidationInput
+            v_output = self._orch._validation_agent.validate_with_runner(
+                self._orch._agent_runner,
+                target="code",
+                content=code,
+                rules=["security", "quality"],
+                language=lang,
+            )
+            if v_output.issues:
+                issue_strs = [
+                    f"{i.severity}: {i.message}"
+                    for i in v_output.issues[:5]
+                ]
+                explanations.append(
+                    f"Validation (F5): {len(v_output.issues)} issues "
+                    f"found (risk={v_output.risk_score:.2f}, "
+                    f"source={v_output.source})"
+                )
+                for iss in issue_strs:
+                    explanations.append(f"  - {iss}")
+            else:
+                explanations.append(
+                    "Validation (F5): No issues found"
+                )
+        else:
+            explanations.append(
+                "Symbolic validation executed "
+                "(bounded symbolic execution)"
+            )
+        return result_code, code, explanations
+
+    async def _handle_scaffold_fractal(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle SCAFFOLD_FRACTAL action."""
+        # Brecha C: Generacion Fractal (Top-Down) multi-archivo
+        if hasattr(self._orch, '_fractal_gen') and self._orch._fractal_gen:
+            from src.core.agents.intent_shared import infer_template_type
+            project_type = infer_template_type(
+                str(intent.op), intent.raw_code or str(intent)
+            )
+            fractal_result = self._orch._fractal_gen.generate_project(
+                description=str(intent),
+                project_type=project_type,
+                project_name=intent.target or "generated_project",
+                language=lang,
+                output_dir="",
+            )
+            if fractal_result.spec and fractal_result.spec.files:
+                project_repr = []
+                for f_bp in fractal_result.spec.files:
+                    content = getattr(f_bp, 'generated_content', '') or getattr(f_bp, '_generated_content', '')
+                    if content:
+                        project_repr.append(
+                            f"# === {f_bp.path} ===\n{content}"
+                        )
+                result_code = "\n\n".join(project_repr)
+                explanations.append(
+                    f"Fractal: {len(fractal_result.files_generated)} "
+                    f"files, phase={fractal_result.current_phase}"
+                )
+            else:
+                explanations.append(
+                    "Fractal: Fallback to standard generation"
+                )
+        else:
+            explanations.append(
+                "Fractal: Not available in this orchestrator"
+            )
+        return result_code, code, explanations
+
+    async def _handle_analyze_and_respond(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle ANALYZE_AND_RESPOND action."""
+        if code:
+            explanations.append(
+                self._orch._analysis.analyze_and_respond(
+                    code, intent, ast_analysis
+                )
+            )
+        else:
+            explanations.append(
+                self._orch._analysis.general_response(intent)
+            )
+        return result_code, code, explanations
+
+    async def _handle_quick_analysis(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle QUICK_ANALYSIS action."""
+        explanations.append("Quick analysis completed")
+        return result_code, code, explanations
+
+    async def _handle_full_analysis(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle FULL_ANALYSIS action."""
+        if code:
+            explanations.append(
+                self._orch._analysis.full_analysis(
+                    code, intent, ast_analysis, lang
+                )
+            )
+        else:
+            explanations.append(
+                self._orch._analysis.general_response(intent)
+            )
+        return result_code, code, explanations
+
+    async def _handle_check_dependencies(
+        self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
+    ):
+        """Handle CHECK_DEPENDENCIES action."""
+        if code:
+            deps = self._orch._analysis.check_dependencies(
+                code, intent.target, lang
+            )
+            explanations.extend(deps)
+        return result_code, code, explanations
+
+    # ------------------------------------------------------------------
+    #  PLAN EXECUTION
+    # ------------------------------------------------------------------
 
     async def execute_plan_steps(
         self,

@@ -69,18 +69,18 @@ class AgentCache:
         """
         key = self._make_key(agent_name, input_data)
 
-        # 1. Lookup exacto
-        entry = self._cache.get(key)
-        if entry is not None:
-            if not self._is_expired(entry):
-                with self._lock:
+        # 1. Lookup exacto (thread-safe)
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is not None:
+                if not self._is_expired(entry):
                     self._hits += 1
-                # Move to end for LRU behavior (most recently used at end)
-                self._cache.move_to_end(key)
-                return entry["result"]
-            else:
-                # Expirado, eliminar
-                del self._cache[key]
+                    # Move to end for LRU behavior (most recently used at end)
+                    self._cache.move_to_end(key)
+                    return entry["result"]
+                else:
+                    # Expirado, eliminar dentro del lock
+                    del self._cache[key]
 
         # 2. Lookup semántico (si hay engine disponible)
         if self._semantic_engine and self._semantic_engine.is_loaded:
@@ -105,20 +105,21 @@ class AgentCache:
         """
         key = self._make_key(agent_name, input_data)
 
-        if key in self._cache:
-            self._cache.move_to_end(key)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
 
-        # Evitar que el cache crezca demasiado
-        if len(self._cache) >= self._max_size:
-            self._evict_oldest()
+            # Evitar que el cache crezca demasiado
+            if len(self._cache) >= self._max_size:
+                self._evict_oldest()
 
-        self._cache[key] = {
-            "agent": agent_name,
-            "result": result,
-            "timestamp": time.time(),
-            "access_count": 0,
-            "input_text": self._serialize(input_data)[:500],
-        }
+            self._cache[key] = {
+                "agent": agent_name,
+                "result": result,
+                "timestamp": time.time(),
+                "access_count": 0,
+                "input_text": self._serialize(input_data)[:500],
+            }
 
     def clear(self) -> None:
         """Limpia todo el cache."""

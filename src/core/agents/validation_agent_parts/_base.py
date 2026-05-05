@@ -4,7 +4,7 @@ ValidationAgent BaseAgent interface + high-level API mixin.
 
 import time
 import logging
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Tuple
 
 from ._imports import (
     BaseAgent, AgentResult, AgentPrompts,
@@ -20,7 +20,7 @@ class BaseInterfaceMixin:
     #  BaseAgent INTERFACE
     # ============================================================
 
-    def build_prompt(self, input_data: Any):
+    def build_prompt(self, input_data: Any) -> Tuple[str, str]:
         """Construye system + user prompt para validación."""
         if isinstance(input_data, ValidationInput):
             target = input_data.target
@@ -43,7 +43,7 @@ class BaseInterfaceMixin:
 
         return system_prompt, user_prompt
 
-    def parse_response(self, raw_response: str, input_data: Any):
+    def parse_response(self, raw_response: str, input_data: Any) -> Optional[Any]:
         """Parsea la respuesta del LLM a un ValidationOutput válido."""
         cleaned = self.clean_llm_text(raw_response)
 
@@ -55,7 +55,7 @@ class BaseInterfaceMixin:
         # Try free text parsing
         return self._parse_free_text_validation(cleaned, source="llm")
 
-    def fallback(self, input_data: Any) -> ValidationOutput:
+    def fallback(self, input_data: Any) -> Optional[ValidationOutput]:
         """
         Fallback determinista: validación por reglas estáticas.
 

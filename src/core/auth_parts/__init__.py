@@ -18,16 +18,17 @@ from ._user_mixin import UserMixin
 from ._rbac_mixin import RbacMixin
 from ._api_key_mixin import ApiKeyMixin
 from ._validation_mixin import ValidationMixin
+from ._tenant_mixin import TenantMixin
 
 
 class AuthService(DbPasswordMixin, TokenMixin, UserMixin, RbacMixin,
-                  ApiKeyMixin, ValidationMixin):
+                  ApiKeyMixin, ValidationMixin, TenantMixin):
     """
     Runtime authentication service for TITAN OMNISCALE X.
 
-    Provides JWT authentication, user management, and RBAC.
-    Uses SQLite for user storage. Works with or without
-    python-jose and passlib (has fallbacks).
+    Provides JWT authentication, user management, RBAC, and
+    multi-tenant support. Uses SQLite for user storage.
+    Works with or without python-jose and passlib (has fallbacks).
     """
 
     def __init__(self, db_path: str = "", secret_key: str = ""):
@@ -49,7 +50,8 @@ class AuthService(DbPasswordMixin, TokenMixin, UserMixin, RbacMixin,
 
         self._lock = threading.RLock()
         self.init_db()
-        logger.info(f"AuthService: init (jose={JOSE_AVAILABLE}, passlib={PASSLIB_AVAILABLE})")
+        self.init_tenant_tables()
+        logger.info(f"AuthService: init (jose={JOSE_AVAILABLE}, passlib={PASSLIB_AVAILABLE}, tenants=enabled)")
 
 
 __all__ = ["AuthService"]

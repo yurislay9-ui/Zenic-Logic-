@@ -1,3 +1,0 @@
-z3_timeout_seconds: 15
-max_k_paths: 10
-mcts_max_depth: 5

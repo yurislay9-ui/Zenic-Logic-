@@ -2,6 +2,8 @@
 Initialization mixin for BaseOrchestrator.
 """
 
+import threading
+
 from ._imports import (
     logger, Path, initialize_databases, SemanticParser, MacroRouter,
     GraphASTEngine, APAPlanner, GitHubScrapAgent, ASTSurgeon,
@@ -13,6 +15,10 @@ from ._imports import (
     RecoveryAction, AgentRunner, SurgicalAgent, ReasoningAgent,
     BusinessLogicAgent, CodeAgent, AutomationAgent, ValidationAgent,
 )
+
+from src.core.patterns.orchestration import EventBus, Mediator
+from src.core.patterns.resilience import CircuitBreaker, RetryConfig
+from src.core.patterns.concurrency import ReadWriteLock
 
 
 class InitMixin:
@@ -155,7 +161,7 @@ class InitMixin:
         if self._semantic and self._semantic.is_loaded:
             self._agent_runner._cache.set_semantic_engine(self._semantic)
 
-        self._intent_agent = SurgicalAgent(
+        self._surgical_agent = SurgicalAgent(
             semantic_engine=self._semantic,
             smart_memory=self._memory,
         )
@@ -206,11 +212,37 @@ class InitMixin:
         self._fractal_gen = fractal_gen
 
     def _init_common_state(self) -> None:
-        """Initialize common state: request_count, locks, pending resumptions."""
+        """Initialize common state: request_count, locks, pending resumptions, patterns."""
         self.request_count = 0
         self._pending_resumptions = {}
+        self._resumptions_lock = threading.Lock()
         self._isolation_manager = get_isolation_manager()
         self._current_client_id = "default"
+        self._current_tenant_ctx = None  # Phase 2: TenantContext for multitenancy
+
+        # Design Pattern Infrastructure
+        self._event_bus = EventBus()
+        self._mediator = Mediator()
+        self._db_rwlock = ReadWriteLock()
+
+        # Circuit Breakers for external services
+        self._llm_circuit = CircuitBreaker(
+            name="llm_engine", failure_threshold=5, recovery_timeout=30.0
+        )
+        self._http_circuit = CircuitBreaker(
+            name="http_requests", failure_threshold=3, recovery_timeout=60.0
+        )
+        self._db_circuit = CircuitBreaker(
+            name="database", failure_threshold=10, recovery_timeout=15.0
+        )
+
+        # Default retry config for pipeline operations
+        self._pipeline_retry = RetryConfig(
+            max_attempts=3, base_delay=1.0, max_delay=30.0,
+            exponential_base=2, jitter=True, backoff_strategy="exponential"
+        )
+
+        logger.info("Pattern Infrastructure: EventBus + Mediator + CircuitBreakers + Retry initialized")
 
     def _init_god_level_improvements(self) -> None:
         """Initialize niche auto-scraper, context pointer engine, low-power mode."""

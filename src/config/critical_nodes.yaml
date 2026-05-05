@@ -1,4 +1,0 @@
-critical_patterns:
-  - "auth/*"
-  - "*_crypto.*"
-  - "transactions/*"

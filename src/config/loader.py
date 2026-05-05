@@ -294,7 +294,7 @@ def get_k_path_limit(settings: Optional[Dict[str, Any]] = None) -> int:
     return int(limits.get("max_k_paths", 10))
 
 
-def get_sandbox_timeout_s(settings: Optional[Dict[str, Any]] = None) -> Union[int, float]:
+def get_sandbox_timeout_s(settings: Optional[Dict[str, Any]] = None) -> float:
     """
     Obtiene el timeout del sandbox en segundos.
 
@@ -352,9 +352,11 @@ def get_critical_patterns(settings: Optional[Dict[str, Any]] = None) -> List[str
     if settings is None:
         settings = load_settings()
 
-    # Generar patrones glob desde los nodos criticos
+    # Try to use explicitly defined patterns first
+    patterns = settings.get("critical_patterns", [])
+    if patterns:
+        return patterns
+
+    # Fallback: generate from critical nodes
     nodes = get_critical_nodes(settings)
-    patterns = []
-    for node in nodes:
-        patterns.append(f"*{node}*")
-    return patterns
+    return [f"*{node}*" for node in nodes]

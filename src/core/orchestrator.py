@@ -129,10 +129,10 @@ class TitanOrchestrator(BaseOrchestrator):
         # ============================================================
         #  INTENT AGENT (Phase F2) - Unified intent classification
         # ============================================================
-        intent_output = self._intent_agent.classify_with_runner(
+        intent_output = self._surgical_agent.classify_with_runner(
             self._agent_runner, msg, context=""
         )
-        intent = self._intent_agent.to_intent_payload(intent_output, context=msg)
+        intent = self._surgical_agent.to_intent_payload(intent_output, context=msg)
 
         # Extraer codigo del mensaje (separado de la clasificacion)
         code_lang, raw_code = SurgicalAgent._extract_code_block(msg)

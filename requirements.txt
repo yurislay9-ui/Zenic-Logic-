@@ -11,6 +11,10 @@ pydantic>=2.0.0
 
 # Database
 aiosqlite>=0.19.0
+# Phase 3: PostgreSQL support for production VPS
+# Uncomment for Docker/production deployment:
+# psycopg2-binary>=2.9.9
+# asyncpg>=0.29.0
 
 # AI / NLP
 # llama-cpp-python>=0.3.0  # Qwen3-0.6B - uncomment if model available
@@ -25,8 +29,8 @@ aiosmtplib>=3.0.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
-# SSH / Remote Access (git_push.py, ssh_wrapper.py)
-paramiko>=3.4.0
+# SSH / Remote Access (scripts/git_push.py, scripts/ssh_wrapper.py)
+# paramiko>=3.4.0  # Only needed for scripts/git_push.py
 
 # Configuration (YAML parsing in src/config/loader.py)
 pyyaml>=6.0
@@ -36,6 +40,19 @@ pyyaml>=6.0
 
 # File operations
 aiofiles>=23.0.0
+
+# ============================================================
+#  Production Dependencies (Phase 3: VPS Deploy)
+# ============================================================
+
+# Phase 5: Observability
+# opentelemetry-api>=1.20.0
+# opentelemetry-sdk>=1.20.0
+# opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+# prometheus-client>=0.19.0
+
+# WSGI/ASGI Server
+gunicorn>=21.2.0
 
 # ============================================================
 #  Optional Dependencies
@@ -52,6 +69,9 @@ aiofiles>=23.0.0
 
 # Stripe Payments
 # stripe>=7.0.0
+
+# Phase 5: Security
+# bcrypt>=4.0.0  # Already pulled in by passlib
 
 # Google Sheets Integration
 # gspread>=5.0.0

@@ -6,7 +6,7 @@ Contains: _exec_validate through _exec_done.
 
 import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Union
 
 from src.core.smart_memory import SmartMemory
 from src.core.shared.db_initializer import get_projects_dir
@@ -85,7 +85,7 @@ class NodeExecutors2Mixin:
 
         return "issues_found"
 
-    async def _exec_abortive(self, ctx: Dict) -> str:
+    async def _exec_abortive(self, ctx: Dict) -> Union[str, Dict]:
         """Nodo ABORTIVE: Protocolo abortivo."""
         result = await self._abortive.handle_abortive_protocol(
             ctx["intent"], ctx["routing"], ctx["plan"],
@@ -105,16 +105,27 @@ class NodeExecutors2Mixin:
         )
         ctx["sandbox_workspace"] = workspace
 
-        p_dir = str(get_projects_dir())
-        self.ledger.snapshot(intent.target if intent else "unknown", p_dir, workspace=workspace)
+        try:
+            p_dir = str(get_projects_dir())
+            self.ledger.snapshot(intent.target if intent else "unknown", p_dir, workspace=workspace)
 
-        trial = await self.sandbox.validate_code(
-            final_code, lang, intent.target if intent else "unknown"
-        )
-        ctx["trial"] = trial
-        return trial.status
+            trial = await self.sandbox.validate_code(
+                final_code, lang, intent.target if intent else "unknown"
+            )
+            ctx["trial"] = trial
+            return trial.status
+        except Exception as e:
+            logger.error("SANDBOX: Validation failed with exception: %s", e)
+            # Release workspace on error
+            if workspace:
+                try:
+                    self._isolation_manager.release_workspace(workspace.sandbox_id)
+                except Exception:
+                    pass
+            ctx["trial"] = None
+            return "FAIL"
 
-    async def _exec_partial_reasoning(self, ctx: Dict) -> str:
+    async def _exec_partial_reasoning(self, ctx: Dict) -> Union[str, Dict]:
         """Nodo PARTIAL_REASONING: Razonamiento parcial para K-Path."""
         result = self._partial_reasoning.build_partial_reasoning_response(
             ctx["intent"], ctx["routing"], ctx["plan"],
@@ -134,6 +145,14 @@ class NodeExecutors2Mixin:
             workspace=workspace
         )
         ctx["merkle_node"] = node
+
+        # Release sandbox workspace after successful commit
+        if workspace:
+            try:
+                self._isolation_manager.release_workspace(workspace.sandbox_id)
+            except Exception as e:
+                logger.debug("Failed to release workspace after commit: %s", e)
+
         return "*"
 
     async def _exec_ledger_rollback(self, ctx: Dict) -> str:

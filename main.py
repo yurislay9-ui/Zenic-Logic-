@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Motor de IA Quirurgico Local v16
+TITAN OMNISCALE X - Motor de IA Quirurgico Local
 Servidor OpenAI-Compatible para Cline, Aide, OpenCode y mas.
 
 Usa modulos src/core/ con Z3 SMT Solver (con fallback AC-3),
@@ -24,8 +24,9 @@ load_env()
 
 from src.core.shared.contracts import HAS_Z3
 from src.core.shared.db_initializer import initialize_databases
+from src.core.shared._version import TITAN_VERSION_STR, TITAN_FULL_NAME
 
-# Use DAGOrchestrator (v16) as primary, with TitanOrchestrator (v16) as fallback
+# Use DAGOrchestrator as primary, with TitanOrchestrator as fallback
 try:
     from src.core.dag_orchestrator import DAGOrchestrator as _Orchestrator
 except ImportError:
@@ -33,7 +34,7 @@ except ImportError:
 
 from src.server import (
     TitanHTTPHandler, ThreadedHTTPServer,
-    get_local_ip, configure_handler,
+    get_local_ip, configure_handler, RateLimiter,
 )
 
 from kivy.app import App
@@ -54,7 +55,7 @@ IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
 # ============================================================
 
 class TitanApp(App):
-    """TITAN OMNISCALE X v16 con servidor OpenAI-compatible."""
+    """TITAN OMNISCALE X con servidor OpenAI-compatible."""
 
     def build(self):
         self.engine = _Orchestrator()
@@ -67,7 +68,7 @@ class TitanApp(App):
         solver_name = "Z3" if HAS_Z3 else "AC-3"
 
         self.title_label = Label(
-            text=f"[b]TITAN OMNISCALE X v16[/b]\nMotor de IA Quirurgico Local ({solver_name})",
+            text=f"[b]TITAN OMNISCALE X {TITAN_VERSION_STR}[/b]\nMotor de IA Quirurgico Local ({solver_name})",
             font_size='22sp', markup=True, size_hint=(1, 0.12),
             color=(0.2, 0.8, 1, 1))
 
@@ -81,7 +82,7 @@ class TitanApp(App):
             color=(1, 0.5, 0.5, 1))
 
         self.btn = Button(
-            text="INICIAR MOTOR TITAN v16", font_size='20sp', size_hint=(1, 0.1),
+            text=f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}", font_size='20sp', size_hint=(1, 0.1),
             background_color=(0.1, 0.5, 0.9, 1))
         self.btn.bind(on_press=self.toggle_engine)
 
@@ -97,8 +98,8 @@ class TitanApp(App):
 
         scroll = ScrollView(size_hint=(1, 0.48))
         self.log_label = Label(
-            text=f"Motor v16 listo. Pulsa INICIAR MOTOR para activar el servidor.\n\n"
-                 f"NOVEDADES v16:\n"
+            text=f"Motor {TITAN_VERSION_STR} listo. Pulsa INICIAR MOTOR para activar el servidor.\n\n"
+                 f"NOVEDADES {TITAN_VERSION_STR}:\n"
                  f"- {solver_name} SMT Solver (Z3 si disponible, AC-3 fallback)\n"
                  f"- MCTS real (UCB1, 100 simulaciones, depth 5)\n"
                  f"- Ejecucion Simbolica Acotada real\n"
@@ -141,7 +142,7 @@ class TitanApp(App):
     def _start_engine(self):
         ip = get_local_ip()
         self.ip_label.text = f"Conecta Cline/Aide/OpenCode a:\nhttp://{ip}:5000/v1"
-        self.status_label.text = "Iniciando motor v16..."
+        self.status_label.text = f"Iniciando motor {TITAN_VERSION_STR}..."
         self.status_label.color = (1, 1, 0.5, 1)
         self.btn.disabled = True
 
@@ -176,19 +177,19 @@ class TitanApp(App):
         self.server_running = False
         self.status_label.text = "Motor Apagado"
         self.status_label.color = (1, 0.5, 0.5, 1)
-        self.btn.text = "INICIAR MOTOR TITAN v16"
+        self.btn.text = f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}"
         self.btn.background_color = (0.1, 0.5, 0.9, 1)
         self.btn.disabled = False
         self._add_log("Motor detenido.")
 
     def _update_status_running(self, ip):
         solver_name = "Z3" if HAS_Z3 else "AC-3"
-        self.status_label.text = f"Motor v16 ACTIVO ({solver_name}) - {ip}:5000"
+        self.status_label.text = f"Motor {TITAN_VERSION_STR} ACTIVO ({solver_name}) - {ip}:5000"
         self.status_label.color = (0.3, 1, 0.3, 1)
         self.btn.text = "DETENER MOTOR"
         self.btn.background_color = (0.9, 0.3, 0.1, 1)
         self.btn.disabled = False
-        self._add_log(f"Motor v16 activo. {solver_name} + MCTS + SymbolicExec reales.")
+        self._add_log(f"Motor {TITAN_VERSION_STR} activo. {solver_name} + MCTS + SymbolicExec reales.")
 
     def _update_status_error(self, error):
         self.status_label.text = f"Error: {error}"
@@ -214,7 +215,7 @@ class TitanApp(App):
             result = loop.run_until_complete(self.engine.execute(msg))
             loop.close()
             solver_name = "Z3" if HAS_Z3 else "AC-3"
-            output = f"TITAN v16 - {result['status']}\n"
+            output = f"TITAN {TITAN_VERSION_STR} - {result['status']}\n"
             output += f"Route: {result.get('route', 'N/A')} | Crit: {result.get('criticality', 'N/A')}\n"
             output += f"Time: {result.get('processing_time_ms', 0)}ms | Hash: {result.get('hash', 'N/A')}\n"
             output += f"Solver({solver_name}): {result.get('solver_status', 'N/A')} | MCTS: {result.get('mcts_simulations', 0)} sims\n"
@@ -252,10 +253,10 @@ class TitanApp(App):
 def _cleanup():
     """Graceful shutdown: stop server, close DB connections."""
     try:
-        if hasattr(TitanApp, '_instance') and TitanApp._instance:
-            app_inst = TitanApp._instance
-            if app_inst.server:
-                app_inst.server.shutdown()
+        app = App.get_running_app()
+        if app is not None:
+            if app.server:
+                app.server.shutdown()
     except Exception:
         pass
     try:
@@ -269,7 +270,7 @@ atexit.register(_cleanup)
 if __name__ == '__main__':
     initialize_databases()
     solver_name = "Z3" if HAS_Z3 else "AC-3"
-    logger.info("TITAN OMNISCALE X v16.0 - Local Surgical AI Engine")
+    logger.info(f"{TITAN_FULL_NAME} - Local Surgical AI Engine")
     logger.info(f"Solver: {solver_name} | MCTS Real | Symbolic Exec Real | Timeout Real | Skeleton Hash")
     logger.info("OpenAI-compatible server for Cline, Aide, OpenCode")
     TitanApp().run()

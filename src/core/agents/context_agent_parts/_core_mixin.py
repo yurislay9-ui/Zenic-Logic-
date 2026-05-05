@@ -84,6 +84,10 @@ class CoreMixin:
             intent_output = None
             max_tokens = TOTAL_CONTEXT_BUDGET
 
+        # Open Design: Apply Design System budget multiplier
+        if getattr(self, '_design_system_mode', False):
+            max_tokens = int(max_tokens * getattr(self, '_design_system_budget_multiplier', 1.0))
+
         # Obtener operation/goal para scoring
         op = intent_output.operation if intent_output else "SEARCH"
         goal = intent_output.goal if intent_output else "FEATURE_ADD"
@@ -144,6 +148,10 @@ class CoreMixin:
         Este es el método que el DAGOrchestrator llama en el nodo
         CONTEXT_PREPARE.
         """
+        # Open Design: Expand context budget for Design Systems
+        if getattr(self, '_design_system_mode', False):
+            max_tokens = int(max_tokens * getattr(self, '_design_system_budget_multiplier', 1.0))
+
         input_data = {
             "message": message,
             "intent_output": intent_output,
@@ -217,6 +225,11 @@ class CoreMixin:
 
         # Aplicar presupuesto de tokens del agente
         budget = DEFAULT_TOKEN_BUDGET.get(agent_name, 100)
+
+        # Open Design: Expand budget for Design System preservation
+        if getattr(self, '_design_system_mode', False):
+            budget = int(budget * getattr(self, '_design_system_budget_multiplier', 1.0))
+
         if max_tokens:
             budget = min(budget, max_tokens)
 

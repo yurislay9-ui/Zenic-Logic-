@@ -9,9 +9,15 @@ transiciones son condicionales.
 
 import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.config.loader import load_settings
+from src.core.tenant._context import (
+    TenantContext,
+    set_current_tenant,
+    get_current_tenant,
+    clear_current_tenant,
+)
 
 # Base class with shared initialization, public API, backward-compat
 from src.core.orchestrator_base import BaseOrchestrator
@@ -153,34 +159,92 @@ class DAGOrchestrator(
     #  DAG EXECUTION ENGINE - Corazón del orquestador
     # ============================================================
 
-    async def execute(self, msg: str, client_id: str = "default") -> Dict[str, Any]:
+    async def execute(
+        self,
+        msg: str,
+        client_id: str = "default",
+        tenant_ctx: Optional[TenantContext] = None,
+    ) -> Dict[str, Any]:
         """Ejecuta el pipeline DAG con TitanAgent como meta-router.
         
         Args:
             msg: Mensaje del usuario.
             client_id: Brecha B: Client identifier for multi-client isolation.
+            tenant_ctx: TenantContext for Phase 2 multitenancy. If None,
+                        reads from thread-local storage or creates anonymous.
         """
         start_time = time.time()
         self.request_count += 1
+
+        # Phase 2: Set TenantContext for this request
+        if tenant_ctx is None:
+            tenant_ctx = get_current_tenant()
+        else:
+            set_current_tenant(tenant_ctx)
 
         # Hybrid Lazy Loading: Asegurar que los modelos estén disponibles
         # para esta request. Si están unloaded, se cargan ahora (lazy).
         self._semantic = self._model_mgr.semantic_engine
         self._ai = self._model_mgr.mini_ai_engine
 
-        # Brecha B: Set client_id for memory and workspace isolation
+        # Phase 2: Propagate tenant_id to all subsystems
+        self._memory.set_tenant_id(tenant_ctx.effective_tenant_id)
         self._memory.set_client_id(client_id)
         self._current_client_id = client_id
+        self._current_tenant_ctx = tenant_ctx
+
+        # Propagate tenant_id to MerkleLedger, TheoremCache, and GraphASTEngine
+        if hasattr(self, 'ledger') and self.ledger:
+            self.ledger.set_tenant_id(tenant_ctx.effective_tenant_id)
+        if hasattr(self, 'cache') and self.cache:
+            self.cache.set_tenant_id(tenant_ctx.effective_tenant_id)
+        if hasattr(self, 'ast_engine') and self.ast_engine:
+            self.ast_engine.set_tenant_id(tenant_ctx.effective_tenant_id)
 
         # Reset context tracking para deduplicación cross-agent
         if self._context_agent:
             self._context_agent.reset_agent_tracking()
 
-        # Contexto que fluye a través del DAG
+        # Open Design: Detect visual/UI requests for bypass routing
+        _od_detection = None
+        _is_visual_request = False
+        try:
+            from src.core.open_design import OpenDesignDetector, get_open_design_config
+            od_config = get_open_design_config()
+            if od_config.visual_bypass_enabled:
+                _od_detection = OpenDesignDetector.detect(
+                    messages=[{"role": "user", "content": msg}],
+                    headers={},
+                    body={},
+                )
+                _is_visual_request = _od_detection.get("is_visual_request", False)
+                if _is_visual_request:
+                    logger.info(
+                        "OpenDesign: visual request detected — bypassing Z3/AC-3 "
+                        "(signals=%s)", _od_detection.get("detection_signals", []),
+                    )
+                    # Propagate Design System mode to ContextAgent
+                    if self._context_agent and _od_detection.get("has_design_system"):
+                        self._context_agent.set_design_system_mode(
+                            enabled=True,
+                            budget_multiplier=od_config.design_system_budget_multiplier,
+                        )
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("OpenDesign: detection failed: %s", e)
+
+        # Contexto que fluye a través del DAG (now includes tenant info + Open Design)
         ctx: Dict[str, Any] = {
             "msg": msg,
             "client_id": client_id,
             "start_time": start_time,
+            # Phase 2: Tenant context in pipeline
+            "tenant": tenant_ctx.to_pipeline_context()["tenant"],
+            "tenant_ctx": tenant_ctx,
+            # Open Design: Visual bypass flags
+            "is_visual_request": _is_visual_request,
+            "open_design_detection": _od_detection,
             "intent": None,
             "intent_output": None,
             "context_output": None,
@@ -212,7 +276,7 @@ class DAGOrchestrator(
         max_total_steps = 20
 
         for step in range(max_total_steps):
-            if current_node == "DONE" or current_node not in self._pipeline_dag:
+            if current_node not in self._pipeline_dag:
                 break
 
             dag_node = self._pipeline_dag[current_node]
@@ -243,6 +307,15 @@ class DAGOrchestrator(
             next_node = self._resolve_transition(current_node, result_key, ctx)
             current_node = next_node
 
+        # Si el pipeline llegó al nodo DONE, ejecutar la lógica final
+        if current_node == "DONE":
+            done_result = await self._exec_done(ctx)
+            if isinstance(done_result, dict):
+                return done_result
+            # _exec_done returned a string; build response with status
+            elapsed = int((time.time() - start_time) * 1000)
+            return self._build_response(ctx, "COMPLETED", elapsed)
+
         # Si llegamos aquí sin DONE, devolver resultado del contexto
         elapsed = int((time.time() - start_time) * 1000)
         return self._build_response(ctx, "COMPLETED", elapsed)
@@ -253,12 +326,45 @@ class DAGOrchestrator(
         self._current_client_id = client_id
         logger.info(f"DAGOrchestrator: client_id set to '{client_id}'")
 
+    def set_tenant_context(self, tenant_ctx: TenantContext) -> None:
+        """Phase 2: Set the TenantContext for multi-tenant isolation.
+
+        Propagates tenant_id to SmartMemory, MerkleLedger, TheoremCache,
+        and thread-local storage so all subsystems operate within the
+        correct tenant scope.
+
+        Args:
+            tenant_ctx: TenantContext with tenant_id, plan, quotas.
+        """
+        set_current_tenant(tenant_ctx)
+        self._current_tenant_ctx = tenant_ctx
+        self._memory.set_tenant_id(tenant_ctx.effective_tenant_id)
+        if hasattr(self, 'ledger') and self.ledger:
+            self.ledger.set_tenant_id(tenant_ctx.effective_tenant_id)
+        if hasattr(self, 'cache') and self.cache:
+            self.cache.set_tenant_id(tenant_ctx.effective_tenant_id)
+        if hasattr(self, 'ast_engine') and self.ast_engine:
+            self.ast_engine.set_tenant_id(tenant_ctx.effective_tenant_id)
+        logger.info(
+            "DAGOrchestrator: tenant_context set to tenant='%s' plan='%s'",
+            tenant_ctx.effective_tenant_id, tenant_ctx.plan,
+        )
+
     def _resolve_transition(self, current_node: str, result_key: str,
                             ctx: Dict) -> str:
         """Resuelve la transición del DAG."""
         dag_node = self._pipeline_dag.get(current_node)
         if not dag_node:
             return "DONE"
+
+        # 0. Open Design: Check for visual bypass BEFORE direct transition lookup
+        # This must come first because _exec_plan returns "low_crit" for visual
+        # requests (CriticalityAgent sets path="low_crit" with source="visual_bypass"),
+        # and "low_crit" would match the direct transition table → EXECUTE_STEPS,
+        # bypassing the VISUAL_BYPASS node entirely.
+        if current_node == "PLAN" and ctx.get("is_visual_request"):
+            logger.info("OpenDesign: routing to VISUAL_BYPASS (skipping Z3/AC-3)")
+            return "VISUAL_BYPASS"
 
         # 1. Buscar en tabla de transiciones directa
         if result_key in dag_node.transitions:
@@ -268,16 +374,20 @@ class DAGOrchestrator(
 
         # 2. Nodos con transición dinámica (INTENT, PLAN)
         if current_node in ("INTENT", "PLAN"):
+            # Build context dict with visual bypass flag for TitanAgent
+            _titan_ctx = {
+                "operation": ctx.get("intent_output", IntentOutput()).operation if ctx.get("intent_output") else "SEARCH",
+                "goal": ctx.get("intent_output", IntentOutput()).goal if ctx.get("intent_output") else "",
+                "criticality": ctx.get("routing").criticality if ctx.get("routing") else "standard",
+                "is_visual_request": ctx.get("is_visual_request", False),
+            }
+
             if self._ai and self._ai.is_loaded:
                 try:
                     titan_input = {
                         "current_node": current_node,
                         "result": result_key,
-                        "context": {
-                            "operation": ctx.get("intent_output", IntentOutput()).operation if ctx.get("intent_output") else "SEARCH",
-                            "goal": ctx.get("intent_output", IntentOutput()).goal if ctx.get("intent_output") else "",
-                            "criticality": ctx.get("routing").criticality if ctx.get("routing") else "standard",
-                        },
+                        "context": _titan_ctx,
                     }
                     if hasattr(self, '_agent_runner') and self._agent_runner is not None:
                         llm_result = self._agent_runner.run(self._titan_agent, titan_input)
@@ -291,10 +401,7 @@ class DAGOrchestrator(
             return self._titan_agent.fallback({
                 "current_node": current_node,
                 "result": result_key,
-                "context": {
-                    "operation": ctx.get("intent_output", IntentOutput()).operation if ctx.get("intent_output") else "SEARCH",
-                    "criticality": ctx.get("routing").criticality if ctx.get("routing") else "standard",
-                },
+                "context": _titan_ctx,
             })
 
         # 3. Default
@@ -345,6 +452,15 @@ class DAGOrchestrator(
             response["mini_ai_stats"] = self._ai.stats
             response["semantic_stats"] = self._semantic.stats
             response["memory_stats"] = self._memory.stats
+            # Open Design: Include visual bypass info in response
+            od_detection = ctx.get("open_design_detection")
+            if od_detection and od_detection.get("is_visual_request"):
+                response["visual_bypass"] = {
+                    "enabled": True,
+                    "solver_skipped": od_detection.get("bypass_solver", False),
+                    "design_system_preserved": od_detection.get("has_design_system", False),
+                    "signals": od_detection.get("detection_signals", []),
+                }
             context_output = ctx.get("context_output")
             if context_output:
                 response["context_metrics"] = {

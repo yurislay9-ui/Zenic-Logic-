@@ -4,16 +4,19 @@
 
 **Motor de IA Quirúrgico Local — Edición Definitiva**
 
-Servidor OpenAI-Compatible para Cline, Aide, OpenCode y más.
+Servidor OpenAI-Compatible para Cline, Aide, OpenCode, Open Design y más.
 
 Funciona en **Android/Termux** sin GPU.
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-2_247%20passed%20%7C%20651%20files-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-2_247%20passed%20%7C%20272%20files-brightgreen.svg)](tests/)
 [![Niches](https://img.shields.io/badge/Niches-107%20templates%20%7C%2020%20domains-orange.svg)](src/templates/niches/)
-[![Source](https://img.shields.io/badge/Source-647%20files%20%7C%2078K%20lines%20%7C%20%E2%89%A4400_L%E2%81%84file-blue.svg)](src/)
-[![Modularized](https://img.shields.io/badge/Modularized-82%20subdirs%20%7C%20Facade%20pattern-purple.svg)](#modularizaci%C3%B3n-v18--facade-pattern)
+[![Source](https://img.shields.io/badge/Source-710%20files%20%7C%20101K%20lines-blue.svg)](src/)
+[![Modularized](https://img.shields.io/badge/Modularized-82%20subdirs%20%7C%20Facade%20pattern-purple.svg)](#modularización-v18--facade-pattern)
+[![Patterns](https://img.shields.io/badge/Patterns-26%2B%20implemented-yellow.svg)](#patrones-de-diseño)
+[![Docker](https://img.shields.io/badge/Docker-6%20services%20%7C%20Multi--stage-cyan.svg)](#despliegue-docker--vps)
+[![Open Design](https://img.shields.io/badge/Open%20Design-SSE%20%2B%20Artifact%20Tags-pink.svg)](#open-design-integration)
 
 </div>
 
@@ -26,7 +29,8 @@ Funciona en **Android/Termux** sin GPU.
   - [Pipeline de 8 Niveles](#pipeline-de-8-niveles)
   - [3 Capas de IA](#3-capas-de-ia)
   - [9 Agentes IA (Framework de Agentes)](#9-agentes-ia-framework-de-agentes)
-  - [5 Iniciativas Unificadas (F1–F5)](#5-iniciativas-unificadas-f1f5)
+  - [5 Iniciativas Unificadas (F1-F5)](#5-iniciativas-unificadas-f1f5)
+  - [DAG Dinámico — 18 Nodos](#dag-dinámico--18-nodos)
   - [Infraestructura Permanente](#infraestructura-permanente)
 - [Hardware y Modelo IA](#hardware-y-modelo-ia)
 - [Instalación](#instalación)
@@ -39,34 +43,33 @@ Funciona en **Android/Termux** sin GPU.
   - [Servidor HTTP](#servidor-http)
 - [API Endpoints](#api-endpoints)
   - [Chat Completions (OpenAI-Compatible)](#chat-completions-openai-compatible)
-  - [Listar Modelos](#listar-modelos)
-  - [Health Check](#health-check)
-  - [Niche Templates](#niche-templates)
-  - [DNA Validation System](#dna-validation-system)
+  - [Autenticación y Autorización](#autenticación-y-autorización)
+  - [Multi-Tenancy](#multi-tenancy)
   - [Generación de Apps](#generación-de-apps)
   - [Automatizaciones](#automatizaciones)
-  - [Lógica de Negocio](#lógica-de-negocio)
-  - [Autenticación](#autenticación)
   - [Razonamiento](#razonamiento)
+  - [Niche Templates](#niche-templates)
+  - [DNA Validation System](#dna-validation-system)
+  - [Sistema Endpoints (v17)](#sistema-endpoints-v17)
+  - [Cluster y Orquestación Distribuida](#cluster-y-orquestación-distribuida)
+  - [Observabilidad](#observabilidad)
+- [Open Design Integration](#open-design-integration)
 - [Modularización v18 — Facade Pattern](#modularización-v18--facade-pattern)
 - [3 Mejoras de Nivel Dios (v17)](#3-mejoras-de-nivel-dios-v17)
-  - [A. Knowledge Inversion of Control (Auto-Scraping YAML)](#a-knowledge-inversion-of-control-auto-scraping-yaml)
-  - [B. Context Pointers for Code Path](#b-context-pointers-for-code-path)
-  - [C. Dynamic Low-Power Sequential Mode](#c-dynamic-low-power-sequential-mode)
+- [Patrones de Diseño](#patrones-de-diseño)
 - [Sistema de Niches Declarativos](#sistema-de-niches-declarativos)
 - [Sistema DNA (Master Templates)](#sistema-dna-master-templates)
 - [Model Manager (Lazy Loading)](#model-manager-lazy-loading)
 - [Fractal Generator (Multi-File)](#fractal-generator-multi-file)
-- [Conectar con Cline/Aide/OpenCode](#conectar-con-clineaideopencode)
-- [Estructura del Proyecto](#estructura-del-proyecto)
-- [DAG Dinámico (F1) — Detalle](#dag-dinámico-f1--detalle)
-- [Sistema de Agentes IA — Detalle](#sistema-de-agentes-ia--detalle)
-- [Pipeline de 8 Niveles — Detalle](#pipeline-de-8-niveles--detalle)
 - [Motor SMT (Z3 / AC-3)](#motor-smt-z3--ac-3)
-- [Principio de Aislamiento Quirúrgico](#principio-de-aislamiento-quirúrgico)
-- [Configuración YAML](#configuración-yaml)
+- [Sistema de Memoria Inteligente](#sistema-de-memoria-inteligente)
+- [Motor Semántico](#motor-semántico)
+- [Resource Governor (ARM/RAM)](#resource-governor-armram)
+- [Despliegue Docker + VPS](#despliegue-docker--vps)
+- [Seguridad](#seguridad)
+- [Conectar con Cline/Aide/OpenCode/Open Design](#conectar-con-clineaideopencodeopen-design)
+- [Estructura del Proyecto](#estructura-del-proyecto)
 - [Testing](#testing)
-- [Plantillas de Generación](#plantillas-de-generación)
 - [Dependencias](#dependencias)
 - [Licencia](#licencia)
 
@@ -88,119 +91,149 @@ El proyecto funciona como un sistema de bloques LEGO donde la **infraestructura*
 | **Razonamiento Probabilístico** | MCTS real con UCB1, 4 fases, depth limit 5 |
 | **Ejecución Simbólica** | Estados simbólicos, path conditions, detección de violaciones |
 | **9 Agentes IA** | 9 agentes con Qwen3-0.6B + fallback determinista |
-| **DAG Dinámico (F1)** | Orquestador basado en grafo acíclico con TitanAgent meta-router |
+| **DAG Dinámico (F1)** | Orquestador basado en grafo acíclico de 18 nodos con TitanAgent meta-router |
 | **Ruteo Quirúrgico (F2)** | Fusión multi-señal: Memory + Semantic + LLM + TF-IDF |
 | **Contexto Inteligente (F3)** | Compresión adaptativa + presupuesto de tokens + deduplicación |
 | **Criticalidad Dinámica (F4)** | Fusión ponderada 5-señal con retroalimentación histórica |
+| **Validación (F5)** | Swarm secuencial de revisión + loop de corrección (max 3 ciclos) |
 | **107 Niches Declarativos** | 20 dominios, 793 entidades, 8,453 campos en YAML templates |
-| **Modularización v18** | 82 sub-directorios, 464 sub-módulos, 0 archivos >400 líneas — Facade Pattern |
-| **Auto-Evolución (v17)** | GitHub Scrap + Cron + auto-update de niches — el sistema muta y aprende |
-| **Context Pointers (v17)** | Vector Signature Index + almacenamiento en disco — 100 tokens en vez de 20K |
+| **Modularización v18** | 82 sub-directorios, 464 sub-módulos, 0 archivos >400 líneas |
+| **26+ Patrones de Diseño** | SAGA, Circuit Breaker, EventBus, CommandBus, CQRS, Mediator, etc. |
+| **Multi-Tenancy SaaS** | 3 planes (Free/Pro/Enterprise), aislamiento por tenant_id, GDPR purge |
+| **Open Design Integration** | SSE streaming, `<artifact>` tags, visual bypass, CORS |
+| **Auto-Evolución (v17)** | GitHub Scrap + Cron + auto-update de niches |
+| **Context Pointers (v17)** | Vector Signature Index + almacenamiento en disco |
 | **Low-Power Mode (v17)** | Monitoreo hardware térmico/batería → DAG paralelo/secuencial adaptativo |
 | **DNA Validation (v17)** | 4 Master Templates: logic_modules + domain_rules + validation_gates + glossary |
 | **Lazy Model Loading (v17)** | ModelManager: carga bajo demanda + auto-unload + RAM Budget |
 | **Fractal Generator (v17)** | Generación multi-archivo en 3 fases dentro del límite de 600 tokens |
-| **API OpenAI-Compatible** | `/v1/chat/completions` para Cline, Aide, OpenCode |
-| **Memoria Inteligente** | SmartMemory con cache semántico y aprendizaje episódico |
-| **Caché de Teoremas** | Skeleton Hash para bypass O(1) en mutaciones repetidas |
-| **Generación de Apps** | 8 templates de aplicación, 6 templates de automatización |
-| **Autenticación** | JWT + RBAC con refresh tokens |
-| **Multi-plataforma** | Desktop, Android/Termux, headless CLI |
+| **API OpenAI-Compatible** | `/v1/chat/completions` con SSE streaming |
+| **Orquestación Distribuida** | SAGA coordinator, distributed circuit breaker, task queue, leader election |
+| **Observabilidad** | OpenTelemetry tracing, Prometheus metrics, audit logging, health checks |
+| **Despliegue Docker** | Multi-stage Dockerfile, 6-service docker-compose, nginx, SSL, backups |
 
 ---
 
 ## Arquitectura del Sistema
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                    API OpenAI-Compatible                           │
-│   /v1/chat/completions  /v1/models  /health  /v1/niches          │
-│   /v1/generate/niche  /v1/dna/*  /v1/system/*                    │
-├───────────────────────────────────────────────────────────────────┤
-│                  DAG ORCHESTRATOR (F1)                             │
-│     Grafo acíclico con TitanAgent como meta-router                │
-│     + ContextPointerEngine + LowPowerSequentialMode               │
-│     CACHE_CHECK → INTENT → CONTEXT_PREPARE → AST_ANALYZE →       │
-│     THEOREM_CACHE → ROUTE → CRITICALITY_ROUTE → PLAN →           │
-│     SOLVER_VERIFY → EXECUTE_STEPS → SANDBOX → LEDGER →           │
-│     THEOREM_SAVE → MEMORY_SAVE → DONE                             │
-├──────────────────────┬────────────────────────────────────────────┤
-│   9 AGENTES IA       │         PIPELINE DE 8 NIVELES              │
-│                      │                                            │
-│  TitanAgent (F1) ────│──→ DAG Transitions + Criticality Paths     │
-│  SurgicalAgent (F2) ─│──→ L1 SemanticParser (multi-signal fusion)│
-│  ContextAgent (F3) ──│──→ Context Compression + Token Budget     │
-│  CriticalityAgent(F4)│──→ L2 MacroRouter (5-signal fusion)       │
-│  ReasoningAgent ─────│──→ L3 GraphAST Engine                     │
-│  BusinessLogicAgent ─│──→ L4 APA Planner (Z3+MCTS)              │
-│  CodeAgent ──────────│──→ L5 Structural Swarm                    │
-│  AutomationAgent ────│──→ L6 Reflexion Sandbox                   │
-│  ValidationAgent ────│──→ L7 Merkle Ledger                       │
-│                      │──→ L8 Theorem Cache                        │
-│  AgentRunner ←───────│                                            │
-│  (LLM Bridge)        │                                            │
-├──────────────────────┴────────────────────────────────────────────┤
-│                    3 CAPAS DE IA                                   │
-│  Capa 1: SemanticEngine → ENTIENDE (embeddings, similitud)       │
-│  Capa 2: MiniAIEngine (Qwen3) → PIENSA (razonamiento)           │
-│  Capa 3: SmartMemory → RECUERDA (cache, contexto, aprendizaje)   │
-├───────────────────────────────────────────────────────────────────┤
-│              v17: MEJORAS DE NIVEL DIOS                            │
-│  NicheLoader (103 YAML) │ DNALoader (4 Master Templates)         │
-│  NicheAutoScraper + Cron│ ContextPointerEngine (Vector Index)     │
-│  LowPowerSequentialMode │ ModelManager (Lazy Load + Auto-Unload)  │
-│  FractalGenerator (3-phase)                                       │
-├───────────────────────────────────────────────────────────────────┤
-│                  INFRAESTRUCTURA PERMANENTE                        │
-│  Z3 Solver | AC-3 | Sandbox | Auth JWT/RBAC | ActionExecutor     │
-│  Merkle Ledger | Theorem Cache | Resource Governor | MCTS         │
-│  Symbolic Executor | K-Path Analyzer | Constraint Solver          │
-└───────────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------------+
+|                    API OpenAI-Compatible                           |
+|   /v1/chat/completions  /v1/models  /health  /v1/niches          |
+|   /v1/generate/*  /v1/dna/*  /v1/system/*  /v1/auth/*           |
+|   /v1/tenants/*  /v1/cluster/*  /v1/saga/*  /v1/audit/*         |
++-------------------------------------------------------------------+
+|                  DAG ORCHESTRATOR (F1)                             |
+|     Grafo acíclico de 18 nodos con TitanAgent como meta-router   |
+|     + ContextPointerEngine + LowPowerSequentialMode              |
+|     + OpenDesignDetector + Visual Bypass Route                   |
+|                                                                   |
+|  CACHE_CHECK -> INTENT -> CONTEXT_PREPARE -> AST_ANALYZE ->      |
+|  THEOREM_CACHE -> ROUTE -> CRITICALITY_ROUTE -> PLAN ->          |
+|  [SOLVER_VERIFY] -> EXECUTE_STEPS -> VALIDATE -> SANDBOX ->     |
+|  LEDGER_COMMIT/ROLLBACK -> THEOREM_SAVE -> MEMORY_SAVE -> DONE   |
+|                                                                   |
+|  VISUAL_BYPASS -> MEMORY_SAVE -> DONE  (Open Design fast path)   |
++---------------------------+---------------------------------------+
+|   9 AGENTES IA            |         PIPELINE DE 8 NIVELES        |
+|                           |                                       |
+|  TitanAgent (F1) ---------|--> DAG Transitions + Criticality     |
+|  SurgicalAgent (F2) ------|--> L1 SemanticParser (multi-signal)  |
+|  ContextAgent (F3) -------|--> Context Compression + Token Budget|
+|  CriticalityAgent (F4) ---|--> L2 MacroRouter (5-signal fusion)  |
+|  ValidationAgent (F5) ----|--> Sequential Review Swarm            |
+|  ReasoningAgent ----------|--> L3 GraphAST Engine                |
+|  BusinessLogicAgent ------|--> L4 APA Planner (Z3+MCTS)         |
+|  CodeAgent ---------------|--> L5 Structural Swarm               |
+|  AutomationAgent ---------|--> L6 Reflexion Sandbox              |
+|                           |--> L7 Merkle Ledger                  |
+|  AgentRunner <----------- |--> L8 Theorem Cache                  |
+|  (LLM Bridge + Fallback)  |                                       |
++---------------------------+---------------------------------------+
+|                    3 CAPAS DE IA                                   |
+|  Capa 1: SemanticEngine -> ENTIENDE (embeddings, similitud)      |
+|  Capa 2: MiniAIEngine (Qwen3) -> PIENSA (razonamiento)          |
+|  Capa 3: SmartMemory -> RECUERDA (cache, contexto, aprendizaje)  |
++-------------------------------------------------------------------+
+|              v17: MEJORAS DE NIVEL DIOS                           |
+|  NicheLoader (107 YAML) | DNALoader (4 Master Templates)        |
+|  NicheAutoScraper + Cron | ContextPointerEngine (Vector Index)    |
+|  LowPowerSequentialMode  | ModelManager (Lazy Load + Auto-Unload)|
+|  FractalGenerator (3-phase)                                      |
++-------------------------------------------------------------------+
+|              v18: OPEN DESIGN BRIDGE                              |
+|  OpenDesignDetector | ArtifactBuilder | SSEStreamer               |
+|  Visual Bypass Route | Design System Context Preservation        |
++-------------------------------------------------------------------+
+|           PATRONES DE DISEÑO (26+)                                |
+|  SAGA | Circuit Breaker | EventBus | CommandBus | Mediator       |
+|  CQRS | Factory | Builder | Strategy | State | Visitor           |
+|  Retry | Bulkhead | Proxy | Decorator | Adapter | Bridge         |
+|  Worker Pool | Producer-Consumer | Read-Write Lock | Leader      |
+|  Election | Distributed Lock | Cluster Topology                  |
++-------------------------------------------------------------------+
+|              MULTITENANCY SaaS                                    |
+|  TenantContext | FeatureGate | TenantIsolation | Rate Limiting   |
+|  Plans: Free / Pro / Enterprise | GDPR Purge | Usage Tracking   |
++-------------------------------------------------------------------+
+|           ORQUESTACIÓN DISTRIBUIDA                                |
+|  DistributedSAGACoordinator | DistributedCircuitBreaker          |
+|  DistributedTaskQueue | LeaderElection | DistributedLockManager  |
+|  ClusterTopology | Worker | PostgreSQL/Memory Backend            |
++-------------------------------------------------------------------+
+|           OBSERVABILIDAD                                          |
+|  OpenTelemetry Tracing | Prometheus Metrics | Audit Logger       |
+|  HealthAggregator (K8s-style probes)                             |
++-------------------------------------------------------------------+
+|                  INFRAESTRUCTURA PERMANENTE                       |
+|  Z3 Solver | AC-3 | Sandbox | Auth JWT/RBAC | ActionExecutor    |
+|  Merkle Ledger | Theorem Cache | Resource Governor | MCTS        |
+|  Symbolic Executor | K-Path Analyzer | Constraint Solver         |
++-------------------------------------------------------------------+
 ```
 
 ### Pipeline de 8 Niveles
 
-| Nivel | Componente | Implementación |
-|-------|-----------|---------------|
-| L1 | Semantic Parser | TF-IDF + Cosine Similarity + SurgicalAgent (F2) |
-| L2 | Macro Router MoE | CriticalityAgent (F4) + firmas topológicas del AST |
-| L3 | Graph AST Engine | AST nativo (Python) + regex (multi-lenguaje) + SQLite |
-| L4 | APA Planner | Z3 SMT Solver (con fallback AC-3) + MCTS real |
-| L5 | Structural Swarm | AST Surgeon + GitHub Scrap Agent |
-| L6 | Reflexion Sandbox | Ejecución Simbólica Acotada + K-Path Limiting + Path Pruning |
-| L7 | Merkle Ledger | Árbol Merkle + snapshots + rollback atómico |
-| L8 | Theorem Cache | Skeleton Hash (destilación topológica) + lookup O(1) |
+| Nivel | Componente | Implementación | Archivo |
+|-------|-----------|---------------|---------|
+| L1 | Semantic Parser | TF-IDF + Cosine Similarity + SurgicalAgent (F2) | `level1_semantic_engine/parser.py` |
+| L2 | Macro Router MoE | CriticalityAgent (F4) + firmas topológicas del AST | `level2_macro_router/router.py` |
+| L3 | Graph AST Engine | AST nativo (Python) + regex (multi-lenguaje) + SQLite | `level3_graph_ast/engine.py` |
+| L4 | APA Planner | Z3 SMT Solver (con fallback AC-3) + MCTS real | `level4_apa_planner/planner.py` |
+| L5 | Structural Swarm | AST Surgeon + GitHub Scrap Agent (multi-source) | `level5_structural_swarm/` |
+| L6 | Reflexion Sandbox | Ejecución Simbólica Acotada + K-Path Limiting + Path Pruning | `level6_reflexion_sandbox/` |
+| L7 | Merkle Ledger | Árbol Merkle + snapshots + rollback atómico | `level7_merkle_ledger/ledger.py` |
+| L8 | Theorem Cache | Skeleton Hash (destilación topológica) + lookup O(1) | `level8_theorem_cache/cache.py` |
 
 ### 3 Capas de IA
 
-El sistema opera con tres capas complementarias de inteligencia artificial que trabajan en conjunto para proporcionar comprensión, razonamiento y memoria persistente:
+El sistema opera con tres capas complementares de inteligencia artificial que trabajan en conjunto para proporcionar comprensión, razonamiento y memoria persistente:
 
-- **Capa 1 — SemanticEngine (ENTIENDE)**: Motor de embeddings y similitud semántica. Utiliza TF-IDF + cosine similarity para clasificar intenciones y encontrar patrones. Con `fastembed` opcional, utiliza embeddings densos para mayor precisión. Carga automática si los embeddings están disponibles, con fallback a TF-IDF puro.
+- **Capa 1 — SemanticEngine (ENTIENDE)**: Motor de embeddings y similitud semántica. Utiliza TF-IDF + cosine similarity para clasificar intenciones y encontrar patrones. Con `fastembed` opcional, utiliza `paraphrase-multilingual-MiniLM-L12-v2` para embeddings densos de 384 dimensiones con soporte multilingual (inglés + español). Carga automática si los embeddings están disponibles, con fallback a TF-IDF puro. Soporta clasificación zero-shot con 8 operaciones (CREATE, REFACTOR, DELETE, SEARCH, ANALYZE, EXPLAIN, DEBUG, OPTIMIZE) y 7 goals (BUG_FIX, FEATURE_ADD, SECURITY_HARDEN, PERFORMANCE, MODERN_PATTERN, COMPLEXITY_REDUCTION, READABILITY).
 
-- **Capa 2 — MiniAIEngine (PIENSA)**: Copiloto semántico basado en **Qwen3-0.6B Q4_K_M** (378MB) vía `llama-cpp-python`. Ejecuta 7 tareas bounded: clasificación de intención, sugerencia de patrones, explicación de violaciones, mejora de explicaciones, inferencia de entidades, generación contextual, y razonamiento por pasos. Funciona en CPU sin GPU con ~2-5 segundos por inferencia. Carga lazy vía **ModelManager** (v17): solo se carga en la primera petición, se auto-descarga tras 5 min de inactividad.
+- **Capa 2 — MiniAIEngine (PIENSA)**: Copiloto semántico basado en **Qwen3-0.6B Q4_K_M** (378MB) vía `llama-cpp-python`. Ejecuta 7 tareas bounded: clasificación de intención, sugerencia de patrones, explicación de violaciones, mejora de explicaciones, inferencia de entidades, generación contextual, y razonamiento por pasos. Funciona en CPU sin GPU con ~2-5 segundos por inferencia. Carga lazy vía **ModelManager** (v17): solo se carga en la primera petición, se auto-descarga tras 5 min de inactividad, reduciendo RAM idle de ~730 MB a ~50 MB.
 
-- **Capa 3 — SmartMemory (RECUERDA)**: Sistema de memoria inteligente con tres almacenes: **Working Memory** (contexto inmediato, TTL configurable), **Long-term Memory** (proyectos y episodios persistentes), y **Semantic Cache** (cache de consultas frecuentes con matching semántico). Aprende de interacciones exitosas y fallidas, calculando importancia dinámica basada en tipo de operación, longitud de respuesta y resultado.
+- **Capa 3 — SmartMemory (RECUERDA)**: Sistema de memoria inteligente con seis almacenes: **Semantic Cache** (matching SHA-256 + embeddings con threshold 0.85), **Working Memory** (contexto inmediato, max 20 entries, 500 tokens), **Long-term Memory** (proyectos y soluciones persistentes, max 500 entries, similarity search con cosine >= 0.5), **Episodic Memory** (eventos con embeddings, max 200 entries), **Procedural Memory** (patrones aprendidos con success rate, max 100 entries), y **Project Memory** (continuidad entre sesiones, max 50 entries). Aprende de interacciones exitosas y fallidas, calculando importancia dinámica. Soporta consolidación automática (working → long-term) y purge GDPR por tenant.
 
 ### 9 Agentes IA (Framework de Agentes)
 
-El framework de agentes reemplaza la lógica de negocio hardcodeada con agentes IA que siguen un patrón consistente: cada agente intenta primero usar el LLM (vía AgentRunner), y si falla o no está disponible, ejecuta un fallback determinista garantizado.
+El framework de agentes reemplaza la lógica de negocio hardcodeada con agentes IA que siguen un patrón consistente: cada agente intenta primero usar el LLM (vía AgentRunner), y si falla o no está disponible, ejecuta un fallback determinista garantizado. Todos los agentes heredan de `BaseAgent(ABC)` con contrato `build_prompt()`, `parse_response()`, `fallback()`.
 
-| Agente | Fase | Líneas | Reemplaza | Cableado |
-|--------|------|-------:|-----------|----------|
-| **TitanAgent** | F1 | — | Dispatch estático if/elif (185+ líneas) | DAG transitions |
-| **SurgicalAgent** | F2 | 572 | SemanticParser + SemanticEngine + MiniAI classify | F1→F3→F4 |
-| **ContextAgent** | F3 | 752 | SmartMemory.get_working_context() + contexto disperso | F2→F4→downstream |
-| **CriticalityAgent** | F4 | 631 | MacroRouter + TitanAgent.CRITICALITY_PATHS + 3 sitios aislados | F1→F2→F3→agents |
-| **IntentAgent** | Legacy | 593 | SemanticParser + SemanticEngine + MiniAI | F2 lo reemplaza |
-| **ReasoningAgent** | F3 | 532 | ReasoningEngine + ThinkingEngine.reason() | F3 context |
-| **BusinessLogicAgent** | F3 | 636 | LogicBuilder (30+ LogicBlocks) | F4 adjustments |
-| **CodeAgent** | F4 | 1,043 | CodeGenerator + CodeTransformer + AppGenerator | F4 adjustments |
-| **AutomationAgent** | F4 | 507 | AutomationEngine keyword inference | F4 adjustments |
-| **ValidationAgent** | F5 | 599 | ChainValidator + code quality checks | F4 adjustments |
+| Agente | Iniciativa | Fallback Determinista | Cableado |
+|--------|-----------|----------------------|----------|
+| **TitanAgent** | F1 | Tablas estáticas de transición DAG | DAG transitions |
+| **SurgicalAgent** | F2 | TF-IDF + keyword matching + semantic prototypes | F1→F3→F4 |
+| **ContextAgent** | F3 | TF-IDF compression + importance-based selection | F2→F4→downstream |
+| **CriticalityAgent** | F4 | 5-signal weighted fusion (keyword 30%, baseline 25%, router 20%, memory 15%, history 10%) | F1→F2→F3→agents |
+| **ValidationAgent** | F5 | Static code analysis + AST pattern matching | F4 adjustments → correction loop |
+| **ReasoningAgent** | — | Step-by-step template reasoning | F3 context |
+| **BusinessLogicAgent** | — | 30+ LogicBlocks (invoice, inventory, CRM, etc.) | F4 adjustments |
+| **CodeAgent** | — | Pattern-based scaffolding + language templates | F4 adjustments + defensive injection |
+| **AutomationAgent** | — | Keyword inference for triggers/actions | F4 adjustments |
 
-### 5 Iniciativas Unificadas (F1–F5)
+**AgentRunner**: Orquesta LLM call → parse → cache → fallback. Cada agente rastrea estadísticas: call_count, llm_success, fallback_count, cache_hits, avg_duration_ms.
 
-Las iniciativas F1-F4 representan la evolución del orquestador estático hacia un sistema dinámico basado en DAG con agentes quirúrgicos. Cada iniciativa se "cablea" a las anteriores, creando un pipeline unificado donde la información fluye sin duplicación:
+### 5 Iniciativas Unificadas (F1-F5)
 
 | Iniciativa | Nombre | Agente Core | Estado | Cableado |
 |-----------|--------|-------------|--------|----------|
@@ -208,43 +241,83 @@ Las iniciativas F1-F4 representan la evolución del orquestador estático hacia 
 | **F2** | SurgicalAgent / IntentAgent | SurgicalAgent | Completado | F1 DAG → F3 context → F4 criticality |
 | **F3** | ContextAgent / ReasoningAgent | ContextAgent + ReasoningAgent | Completado | F2 intent → F4 budget → agents downstream |
 | **F4** | Dynamic Criticality Router | CriticalityAgent | Completado | F1 path + F2 signals + F3 budget + agents |
-| **F5** | ExplainAgent / ValidationAgent | ValidationAgent + AnalysisUtils | Completado | F4 adjustments → explain output |
+| **F5** | ValidationAgent + Correction Loop | ValidationAgent + AnalysisUtils | Completado | F4 adjustments → max 3 correction loops |
 
-**Flujo unificado de información:**
+### DAG Dinámico — 18 Nodos
+
+El `PIPELINE_DAG` define **18 nodos** formando un grafo acíclico dirigido con transiciones condicionales:
+
 ```
-User Query
-  → CACHE_CHECK (SmartMemory)
-  → INTENT (SurgicalAgent F2: multi-signal fusion)
-  → CONTEXT_PREPARE (ContextAgent F3: compression + budget)
-  → AST_ANALYZE (GraphASTEngine)
-  → THEOREM_CACHE (O(1) lookup)
-  → ROUTE (MacroRouter MoE)
-  → CRITICALITY_ROUTE (CriticalityAgent F4: 5-signal fusion → adjustments)
-  → PLAN (APA Planner: low_crit / standard / high_crit)
-  → SOLVER_VERIFY (Z3/AC-3 para criticalidad alta)
-  → EXECUTE_STEPS (CodeAgent, BusinessLogicAgent, etc.)
-  → SANDBOX (Reflexion validation)
-  → LEDGER_COMMIT / LEDGER_ROLLBACK
-  → THEOREM_SAVE → MEMORY_SAVE → DONE
+CACHE_CHECK --[hit]--> DONE
+    |__[miss]--> INTENT --> CONTEXT_PREPARE --> AST_ANALYZE --> THEOREM_CACHE
+                                                                    |
+                                                        [hit]--> DONE
+                                                        [miss]--> ROUTE --> CRITICALITY_ROUTE --> PLAN
+                                                                                               |
+                                               +------------------+------------------+------------------+
+                                               |                  |                  |                  |
+                                         [abortive]         [low_crit]         [standard]         [high_crit]
+                                               |                  |                  |                  |
+                                               v                  v                  v                  v
+                                          ABORTIVE         EXECUTE_STEPS      SOLVER_VERIFY
+                                               |                  |                  |
+                                               |                  |          [pass]--> EXECUTE_STEPS
+                                               |                  |          [fail]--> ABORTIVE
+                                               |                  v
+                                               |             VALIDATE (F5, max 3 loops)
+                                               |              |    [clean]--> SANDBOX
+                                               |              |    [issues]--> EXECUTE_STEPS
+                                               |              v
+                                               |             SANDBOX
+                                               |              |
+                                               |     +--------+----------+
+                                               |     |        |          |
+                                               |  [PASS]  [FAIL_K_PATH] [FAIL]
+                                               |     |        |          |
+                                               |     v        v          v
+                                               |  LEDGER   PARTIAL    LEDGER
+                                               |  COMMIT   REASONING  ROLLBACK
+                                               |     |                  |
+                                               |     v                  |
+                                               |  THEOREM_SAVE         |
+                                               |     |                 |
+                                               |     v                 |
+                                               |  MEMORY_SAVE         |
+                                               |     |                 |
+                                               |     v                 v
+                                               |    DONE             DONE
+                                               |
+                                               v
+                                              DONE
+
+VISUAL_BYPASS --[success]--> MEMORY_SAVE --> DONE   (Open Design fast path)
+      |__[fallback]--> EXECUTE_STEPS
 ```
+
+**Propiedades clave del DAG:**
+- Protección anti-ciclo: contador de iteración por nodo contra `max_retries`
+- Transiciones condicionales: PLAN ramifica por nivel de criticalidad
+- TitanAgent (F1) resuelve transiciones no-triviales usando LLM con fallback a tablas estáticas
+- Máximo 20 pasos totales por ejecución del pipeline
+- Visual Bypass: ruta rápida para peticiones de Open Design que salta SMT solver
 
 ### Infraestructura Permanente
 
 Los siguientes módulos **permanecen intactos** — son los cimientos sobre los que operan los agentes:
 
-| Módulo | Archivo | Líneas | Rol |
-|--------|---------|-------:|-----|
-| Z3 Solver | `shared/z3_solver.py` | 1,908 | Verificación formal SMT |
-| Symbolic Executor | `shared/symbolic_executor.py` | 1,948 | Ejecución simbólica acotada |
-| Sandbox Isolation | `shared/sandbox_isolation.py` | 620 | Workspaces aislados para pruebas |
-| Resource Governor | `shared/resource_governor.py` | 389 | Límites de CPU/RAM/tiempo |
-| MCTS | `shared/mcts.py` | 202 | Monte Carlo Tree Search (UCB1) |
-| K-Path Analyzer | `shared/kpath_analyzer.py` | 174 | Análisis de dependencias en grafo |
-| Constraint Solver | `shared/constraint_solver.py` | 254 | Solver CSP con AC-3 + backtracking |
-| Auth Service | `auth_service.py` | 796 | JWT + RBAC + refresh tokens |
-| Action Executor | `action_executor.py` | 1,097 | Ejecución real de acciones (no stubs) |
-| Merkle Ledger | `level7_merkle_ledger/` | 220 | Snapshots + rollback atómico |
-| Theorem Cache | `level8_theorem_cache/` | 228 | Skeleton Hash O(1) |
+| Módulo | Archivo | Rol |
+|--------|---------|-----|
+| Z3 Solver | `shared/z3_solver.py` → `shared/z3_parts/` | Verificación formal SMT con null-safety, type-safety, invariantes |
+| Symbolic Executor | `shared/symbolic_executor.py` → `shared/symbolic_parts/` | Ejecución simbólica acotada con path pruning |
+| Sandbox Isolation | `shared/sandbox_isolation.py` → `shared/sandbox_parts/` | Workspaces aislados para pruebas seguras |
+| Resource Governor | `shared/resource_governor.py` → `shared/governor_parts/` | Límites de CPU/RAM/tiempo/thermal |
+| MCTS | `shared/mcts.py` | Monte Carlo Tree Search con UCB1 (50 sims ARM, 100 desktop) |
+| K-Path Analyzer | `shared/kpath_analyzer.py` | Análisis de dependencias en grafo (radio 10) |
+| Constraint Solver | `shared/constraint_solver.py` | Solver CSP con AC-3 + backtracking + MRV heuristic |
+| Auth Service | `auth_service.py` → `auth_parts/` | JWT + RBAC + API keys + refresh tokens + rate limiting |
+| Action Executor | `action_executor.py` → `executors/` | 9 tipos de acción real (HTTP, webhook, DB, file, email, etc.) |
+| Merkle Ledger | `level7_merkle_ledger/` | Árbol Merkle criptográfico + snapshots + rollback atómico |
+| Theorem Cache | `level8_theorem_cache/` | Skeleton Hash O(1) + LRU eviction (500 entries/tenant) |
 
 ---
 
@@ -265,8 +338,11 @@ ZENIC LOGIC está diseñado para funcionar en hardware de consumo sin GPU:
 | **RAM del modelo** | ~500 MB en runtime |
 | **Token limit por agente** | 600 tokens máx por llamada |
 | **RAM idle (v17)** | ~50 MB (ambos modelos unloaded) |
+| **RAM límite del engine** | 2 GB (ResourceGovernor) |
+| **CPU límite** | 70% (30% para OS) |
+| **GC threshold** | 1.5 GB → forced gc.collect(2) |
 
-El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvil, pero suficientemente capaz para las tareas bounded de los agentes (clasificación de intención, razonamiento por pasos, generación de código estructurado). Con el **ModelManager** (v17), los modelos se cargan lazy y se auto-descargan tras 5 minutos de inactividad, reduciendo RAM idle de ~730 MB a ~50 MB.
+El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvil, pero suficientemente capaz para las tareas bounded de los agentes. Con el **ModelManager** (v17), los modelos se cargan lazy y se auto-descargan tras 5 minutos de inactividad, reduciendo RAM idle de ~730 MB a ~50 MB. El **ResourceGovernor** impone límites estrictos: 2GB RAM max, 70% CPU max, thermal throttling automático, y GC tuning específico para ARM (`gc.set_threshold(1000, 15, 15)`).
 
 ---
 
@@ -278,6 +354,7 @@ El modelo Qwen3-0.6B es lo suficientemente pequeño para ejecutarse en CPU móvi
 - **RAM**: Mínimo 4GB (8GB+ recomendado)
 - **Disco**: ~500MB para modelo + dependencias
 - **Opcional**: Z3 Solver para verificación formal completa
+- **Opcional**: fastembed para embeddings semánticos densos
 
 ### Instalación Rápida
 
@@ -307,13 +384,15 @@ mkdir -p models
 
 ```bash
 # Ejecutar script de instalación automática
-bash install_termux.sh
+bash scripts/install_termux.sh
 
 # O manualmente:
 pkg install python python-pip
 pip install -r requirements.txt
 # Nota: Z3 no está disponible en Termux, se usa AC-3 fallback automáticamente
 ```
+
+El script `install_termux.sh` instala `proot-distro` con Debian ARM, Python3, Z3 solver (si disponible), y crea un comando alias `titan` que lanza el servidor headless en puerto 5000 con RAM limit de 2048MB.
 
 ---
 
@@ -325,23 +404,41 @@ pip install -r requirements.txt
 python main.py
 ```
 
-La interfaz Kivy proporciona:
-- Botón **INICIAR MOTOR** para arrancar el servidor HTTP
-- Campo de texto para pruebas locales
-- Log en tiempo real de la actividad del motor
-- Indicador de solver activo (Z3 o AC-3)
+La interfaz Kivy proporciona un layout vertical con:
+- **Title Label** — Muestra versión + solver activo (Z3 o AC-3)
+- **IP Label** — URL de conexión para Cline/Aide
+- **Status Label** — Estado del engine (Running/Stopped/Error)
+- **Start/Stop Button** — Toggle del servidor HTTP
+- **Input Field** — Campo de prueba local
+- **Log ScrollView** — Log en tiempo real (200 line buffer)
+
+El servidor corre en un `threading.Thread(daemon=True)` junto al event loop de Kivy. Actualizaciones UI seguras vía `Clock.schedule_once()`.
 
 ### Modo Headless (CLI)
 
 ```bash
-python main_headless.py
+# Servidor estándar (stdlib)
+python main_headless.py --port 5000 --ram-limit 2048
+
+# Servidor FastAPI (SaaS)
+python main_headless.py --server fastapi --auth
+
+# Modo daemon (background)
+python main_headless.py --daemon
+
+# Comandos interactivos: status / models / quit
 ```
 
-Ejecuta el servidor sin interfaz gráfica, ideal para Termux o servidores.
+El modo headless aplica optimizaciones ARM al inicio: `tune_gc_for_arm()`, `set_process_priority_low()`, `limit_open_files(256)`. No requiere Kivy.
 
 ### Servidor HTTP
 
-El servidor HTTP se inicia automáticamente con cualquiera de los modos anteriores, escuchando en `0.0.0.0:5000`.
+El servidor HTTP se inicia automáticamente, escuchando en `0.0.0.0:5000`. Dos modos disponibles:
+
+| Modo | Comando | Uso |
+|------|---------|-----|
+| **stdlib** | `--server stdlib` | Ligero, compatible ARM/Termux, sin dependencias externas |
+| **FastAPI** | `--server fastapi` | Full SaaS: auth, tenants, distributed, observability |
 
 ---
 
@@ -359,11 +456,29 @@ Content-Type: application/json
     {"role": "user", "content": "crear modulo auth.py con JWT"}
   ],
   "temperature": 0.15,
-  "max_tokens": 600
+  "max_tokens": 600,
+  "stream": false
 }
 ```
 
-**Respuesta** (formato OpenAI-compatible):
+**SSE Streaming** (para Open Design y clientes que lo soporten):
+
+```http
+POST /v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "titan-omniscale-x",
+  "messages": [
+    {"role": "user", "content": "diseñar dashboard de ventas"}
+  ],
+  "stream": true
+}
+```
+
+Respuesta SSE con formato OpenAI spec: `data: {"choices":[{"delta":{"content":"..."}}]}`
+
+**Respuesta estándar** (formato OpenAI-compatible):
 
 ```json
 {
@@ -386,134 +501,60 @@ Content-Type: application/json
 }
 ```
 
-En caso de timeout del solver o límite de K-Paths, el sistema devuelve **Razonamiento Parcial** con `tool_calls` que describen la subdivisión automática de la tarea.
+En caso de timeout del solver o límite de K-Paths, el sistema devuelve **Razonamiento Parcial** con `tool_calls` que describen la subdivisión automática de la tarea (AbortiveProtocol).
 
-### Listar Modelos
-
-```http
-GET /v1/models
-```
-
-### Health Check
+### Autenticación y Autorización
 
 ```http
-GET /health
+POST /v1/auth/register    # Registro de usuario (role forzado a 'user')
+POST /v1/auth/login       # Login → JWT access + refresh tokens
+POST /v1/auth/refresh     # Renovar access token
+POST /v1/auth/logout      # Logout con token blacklisting
+GET  /v1/auth/me          # Info del usuario actual
+POST /v1/auth/api-keys    # Crear API key
+GET  /v1/auth/api-keys    # Listar API keys del usuario
 ```
 
-### Niche Templates
+**Métodos de autenticación**:
+- JWT Bearer Token (`Authorization: Bearer <token>`) — primario
+- API Key (`X-API-Key: <key>`) — acceso programático
+
+**Jerarquía de roles**: `viewer < user < manager < admin`
+
+**Resiliencia**: Circuit breaker en auth DB (5 failures → 30s recovery), retry con exponential backoff (3 intentos, 0.2s-2s jitter).
+
+### Multi-Tenancy
 
 ```http
-GET /v1/niches
-GET /v1/niches?domain=health
+GET    /v1/tenants                        # Listar tenants (manager+)
+POST   /v1/tenants                        # Crear tenant (admin)
+GET    /v1/tenants/{tenant_id}            # Detalles + quotas
+PATCH  /v1/tenants/{tenant_id}            # Actualizar plan/nombre
+DELETE /v1/tenants/{tenant_id}            # GDPR deprovision (purge total)
+POST   /v1/tenants/{tenant_id}/assign/{user_id}  # Asignar usuario
+GET    /v1/tenants/{tenant_id}/usage      # Usage + quota + storage
+GET    /v1/tenants/{tenant_id}/features   # Features del plan
 ```
 
-Lista todos los niches disponibles, con filtro opcional por dominio. Retorna nombre, conteo de entidades y bloques.
+**Planes SaaS**:
 
-```http
-GET /v1/niches/domains
-```
+| Feature | Free | Pro | Enterprise |
+|---------|------|-----|-----------|
+| RPM | 10 | 60 | 200 |
+| Daily Requests | 500 | 5,000 | 50,000 |
+| Daily Tokens | 50K | 500K | 5M |
+| Concurrent | 2 | 10 | 50 |
+| Storage | 50 MB | 500 MB | 5 GB |
+| Features | basic_pipeline, chat_completions | + app_generation, automation, schema, think, reason, chains | ALL |
 
-Lista todos los dominios con el número de niches por dominio.
+**Aislamiento**: Row-level por `tenant_id` en 17+ tablas, auto-inyección `WHERE tenant_id = ?` vía `TenantIsolation.scoped_query()`, migración automática de columnas, purge GDPR completo.
 
-```http
-GET /v1/niches/search?q=pharmacy
-```
-
-Búsqueda multi-signal por keywords (nombre, dominio, subdominio, descripción, compliance).
-
-```http
-POST /v1/generate/niche
-Content-Type: application/json
-
-{
-  "niche": "pharmacy_management",
-  "output_dir": "./output"
-}
-```
-
-Genera una aplicación completa desde un niche template declarativo. Si no se especifica `niche`, se puede pasar `description` para auto-detectar el niche más relevante.
-
-### DNA Validation System
-
-```http
-GET /v1/dna/modules?domain=finance
-GET /v1/dna/modules?q=invoice
-```
-
-Lista los logic modules (bloques atómicos de función) del DNA. Filtrables por dominio o búsqueda.
-
-```http
-GET /v1/dna/domain-rules?industry=healthcare
-```
-
-Obtiene las reglas de negocio obligatorias para una industria específica.
-
-```http
-POST /v1/dna/validate
-Content-Type: application/json
-
-{
-  "code": "def process_payment(amount): ...",
-  "niche": "ecommerce_checkout"
-}
-```
-
-Valida código contra las validation gates del DNA. Retorna pass/fail/warnings con score.
-
-```http
-POST /v1/dna/polish
-Content-Type: application/json
-
-{
-  "text": "error: can't find user"
-}
-```
-
-Pule texto técnico a lenguaje corporativo profesional usando el glossary del DNA.
-
-### System Endpoints (v17)
-
-```http
-GET /v1/system/auto-evolve
-```
-
-Estado del sistema de auto-evolución: cron scheduler, último ciclo, estadísticas de mutación.
-
-```http
-POST /v1/system/auto-evolve/trigger
-```
-
-Fuerza un ciclo inmediato de auto-evolución (scrapea GitHub trending + actualiza niches).
-
-```http
-GET /v1/system/power-mode
-```
-
-Estado del modo de bajo consumo: temperatura CPU, batería, modo activo (NORMAL/CONSERVATIVE/EMERGENCY).
-
-```http
-GET /v1/system/context-index?q=authenticate
-```
-
-Busca en el índice de firmas de código. Retorna punteros compactos a funciones relevantes.
-
-```http
-POST /v1/system/context-index
-Content-Type: application/json
-
-{
-  "code": "def process_order(items): ...",
-  "file_path": "orders.py",
-  "query": "order processing"
-}
-```
-
-Indexa código y construye contexto compacto de punteros para el LLM.
+**Usuarios anónimos**: `TenantContext.anonymous()` con 5 RPM, 100 RPD, 1 concurrent, 10MB storage.
 
 ### Generación de Apps
 
 ```http
-POST /generate/app
+POST /v1/generate/app
 Content-Type: application/json
 
 {
@@ -525,10 +566,12 @@ Content-Type: application/json
 
 **Templates disponibles**: `auth_system`, `base`, `crm`, `crud_dashboard`, `inventory`, `invoice_billing`, `task_manager`, `web_api`
 
+Feature gate: `app_generation` (requiere plan Pro+)
+
 ### Automatizaciones
 
 ```http
-POST /generate/automation
+POST /v1/generate/automation
 Content-Type: application/json
 
 {
@@ -536,42 +579,122 @@ Content-Type: application/json
 }
 ```
 
-**Templates disponibles**: `base`, `data_sync`, `email_sender`, `notification_dispatcher`, `scheduled_report`, `webhook_handler`
+**Tipos de trigger**: manual, schedule, event, webhook
+**Tipos de acción**: email, HTTP, database, file, webhook, notification, transform, schedule
+**Templates**: `base`, `data_sync`, `email_sender`, `notification_dispatcher`, `scheduled_report`, `webhook_handler`
 
-### Lógica de Negocio
-
-```http
-POST /build/logic
-Content-Type: application/json
-
-{
-  "description": "calcular factura con impuestos 16% y descuento 10%"
-}
-```
-
-### Autenticación
-
-```http
-POST /auth/register
-POST /auth/login
-POST /auth/verify
-```
-
-Sistema JWT con roles (admin, user) y refresh tokens.
+Feature gate: `automation_generation` (requiere plan Pro+)
 
 ### Razonamiento
 
 ```http
-POST /think
-Content-Type: application/json
-
-{
-  "query": "diseñar API REST para gestión de inventario",
-  "context": ""
-}
+POST /v1/think          # ThinkingEngine (modos: step_by_step, self_reflect, with_context)
+POST /v1/reason         # Advanced reasoning (Phase 8)
+POST /v1/chain/validate # Validar cadena lógica
+POST /v1/chain/execute  # Ejecutar cadena con rollback/recovery
+POST /v1/design/schema  # Diseñar esquema de BD (SQL/Python)
 ```
 
-Modos: `step_by_step`, `self_reflect`, `with_context`
+Feature gates: `thinking_engine`, `reasoning_engine`, `logic_chains`, `schema_design` (requieren plan Pro+)
+
+### Niche Templates
+
+```http
+GET  /v1/niches                 # Listar todos los niches
+GET  /v1/niches?domain=health   # Filtrar por dominio
+GET  /v1/niches/domains         # Dominios con conteo
+GET  /v1/niches/search?q=pharmacy  # Búsqueda multi-signal
+POST /v1/generate/niche         # Generar app desde niche
+```
+
+### DNA Validation System
+
+```http
+GET  /v1/dna/modules?domain=finance     # Logic modules por dominio
+GET  /v1/dna/modules?q=invoice          # Búsqueda de modules
+GET  /v1/dna/domain-rules?industry=healthcare  # Reglas de negocio
+POST /v1/dna/validate                   # Validar código contra gates
+POST /v1/dna/polish                     # Pulir texto técnico a corporativo
+```
+
+4 Master Templates: `logic_modules.yaml` (68 módulos), `domain_expert_rules.yaml` (20 reglas), `validation_gates.yaml` (121 gates), `professional_glossary.yaml` (133 términos).
+
+### Sistema Endpoints (v17)
+
+```http
+GET  /v1/system/auto-evolve            # Estado auto-evolución
+POST /v1/system/auto-evolve/trigger     # Forzar ciclo de auto-evolución
+GET  /v1/system/power-mode              # Modo de bajo consumo
+GET  /v1/system/context-index?q=auth    # Buscar en índice de firmas
+POST /v1/system/context-index           # Indexar código
+GET  /v1/system/status                  # Estado completo del sistema
+```
+
+### Cluster y Orquestación Distribuida
+
+```http
+GET  /v1/cluster/nodes          # Nodos del cluster
+GET  /v1/cluster/status         # Health del cluster
+POST /v1/tasks/enqueue          # Encolar tarea distribuida
+GET  /v1/tasks/{task_id}/status # Estado de tarea
+POST /v1/saga/start             # Iniciar saga workflow
+GET  /v1/saga/{saga_id}         # Estado de saga
+```
+
+### Observabilidad
+
+```http
+GET /health              # Liveness probe (K8s-style)
+GET /ready               # Readiness probe
+GET /metrics             # Prometheus-compatible metrics
+GET /v1/audit/events     # Query audit events
+```
+
+---
+
+## Open Design Integration
+
+ZENIC LOGIC incluye un bridge completo para integrarse con **Open Design** como motor de IA backend. El módulo `src/core/open_design/` implementa:
+
+### Componentes
+
+| Componente | Archivo | Función |
+|-----------|---------|---------|
+| **OpenDesignDetector** | `detector.py` | Detecta peticiones de Open Design vía headers, body, contenido |
+| **ArtifactBuilder** | `artifact_builder.py` | Envuelve output en tags `<artifact>` para Open Design |
+| **SSEStreamer** | `sse_streamer.py` | Streaming SSE compatible con OpenAI spec |
+| **OpenDesignConfig** | `config.py` | Configuración + env var overrides + singleton |
+
+### Visual Bypass Route
+
+Cuando se detecta una petición de Open Design, el DAG activa la ruta `VISUAL_BYPASS` que:
+1. **Salta el Z3/AC-3 Solver** — CriticalityAgent fuerza criticality 1 (FAST)
+2. **Preserva Design System prompts** — ContextAgent no comprime (2.5x budget multiplier)
+3. **Envuelve output en `<artifact>` tags** — ArtifactBuilder aplica formato XML
+4. **Stream via SSE** — SSEStreamer entrega chunks en tiempo real
+
+### Formato de Artifact
+
+```xml
+<artifact identifier="artifact-xxxx" type="application/vnd.ant.code"
+          language="html" title="Generated UI">
+    <!-- código generado aquí -->
+</artifact>
+```
+
+Tipos MIME soportados: `text/html`, `application/vnd.ant.code`, `text/css`, `application/javascript`, `text/x-python`, `application/json`, `image/svg+xml`
+
+### Detección de Señales
+
+- Header `X-Client: open-design`
+- Origin matching URLs conocidas de Open Design
+- User-Agent conteniendo "open-design"
+- Body fields: `stream=true`, `design_system`, `visual_context`
+- Contenido: tags `<artifact>`, firmas de design system, keywords UI (>=2 matches)
+
+### Configuración CORS
+
+Orígenes Open Design permitidos automáticamente: `localhost:3000`, `localhost:3001`. Configurable vía `TITAN_CORS_ORIGINS` env var.
 
 ---
 
@@ -579,13 +702,9 @@ Modos: `step_by_step`, `self_reflect`, `with_context`
 
 La versión 18 reestructura completamente la base de código aplicando el **Facade Pattern** a nivel de archivo. Todos los archivos Python del proyecto (source y tests) fueron divididos en sub-módulos con un límite estricto de **400 líneas por archivo**, manteniendo 100% de compatibilidad hacia atrás.
 
-### Motivación
-
-El crecimiento orgánico del proyecto produjo archivos monolíticos de hasta 2,000+ líneas que eran difíciles de navegar, revisar y mantener. La modularización aplica el principio de responsabilidad única a nivel de archivo, donde cada sub-módulo contiene una categoría cohesiva de funcionalidad.
-
 ### Patrón Facade
 
-Cada archivo original se convierte en una **fachada** (2-40 líneas) que re-exporta todo desde sus sub-módulos. Esto garantiza que todos los imports existentes sigan funcionando sin cambios:
+Cada archivo original se convierte en una **fachada** (2-40 líneas) que re-exporta todo desde sus sub-módulos:
 
 ```python
 # Antes (archivo monolítico de 1,200 líneas):
@@ -595,17 +714,19 @@ Cada archivo original se convierte en una **fachada** (2-40 líneas) que re-expo
 # dag_orchestrator.py  →  from .dag_parts.orchestrator import *  (facade, 5 líneas)
 # dag_parts/
 #   __init__.py       →  re-exporta todo
-#   orchestrator.py   →  clase principal DAGOrchestrator (≤400 líneas)
-#   transitions.py    →  lógica de transiciones del DAG
-#   context_handlers.py →  manejo de contexto
-#   ...
+#   orchestrator.py   →  clase principal DAGOrchestrator (<=400 líneas)
+#   definition.py     →  DAGNode + PIPELINE_DAG (18 nodos)
+#   titan_agent.py    →  TitanAgent (F1) meta-router
+#   node_executors.py →  Primeros 10 node executors
+#   node_executors2.py→  9 node executors restantes
+#   corrections.py    →  F5 correction loop + fractal app generation
 ```
 
 ### Resultados
 
 | Métrica | Antes (v17) | Después (v18) |
 |---------|------------:|--------------:|
-| Archivos Python | 169 | 647 |
+| Archivos Python | 169 | 710 |
 | Archivos >400 líneas | 30+ | **0** |
 | Archivo más grande (source) | ~2,000 líneas | 393 líneas |
 | Archivo más grande (test) | ~1,800 líneas | 379 líneas |
@@ -613,72 +734,68 @@ Cada archivo original se convierte en una **fachada** (2-40 líneas) que re-expo
 | Sub-módulos creados | — | 464 |
 | Tests pasando | 2,654 | 2,247 |
 | Compatibilidad de imports | — | 100% preservada |
-
-### Convención de Nombres
-
-Los sub-directorios siguen una convención consistente que facilita la navegación:
-
-- **Source**: `nombre_modulo_parts/` o `nombre_modulo_blocks/` (e.g., `dag_parts/`, `logic_blocks/`)
-- **Tests**: `test_nombre_modulo_parts/` (e.g., `test_f4_f5_parts/`, `test_auth_svc_parts/`)
-- **Archivos internos**: nombrados por responsabilidad (`_imports.py`, `_mixin_*.py`, `core.py`, `agent.py`)
+| Líneas totales Python | — | 101,000+ |
 
 ### Directorios de Modularización
 
 <details>
-<summary><strong>Source (42 sub-directorios)</strong> — click para expandir</summary>
+<summary><strong>Source (42+ sub-directorios)</strong> — click para expandir</summary>
 
 | Directorio | Archivos | Contenido |
 |-----------|:--------:|-----------|
-| `src/core/logic_blocks/` | 12 | 30+ bloques lógicos de negocio |
-| `src/core/dag_parts/` | 5 | DAGOrchestrator + transiciones |
-| `src/core/orch_base_parts/` | 7 | Orquestador base + utilidades |
-| `src/core/semantic_parts/` | 7 | SemanticEngine + embeddings |
-| `src/core/reasoning_parts/` | 7 | ReasoningEngine + MCTS |
-| `src/core/memory_parts/` | 7 | SmartMemory + stores |
-| `src/core/auth_parts/` | 8 | JWT + RBAC + tokens |
-| `src/core/dag_parts/` | 5 | DAG + contexto + handlers |
-| `src/core/template_parts/` | 7 | TemplateEngine + renderizado |
-| `src/core/code_gen_parts/` | 4 | CodeGenerator + transformers |
-| `src/core/app_gen_parts/` | 7 | AppGenerator + templates |
-| `src/core/fractal_parts/` | 6 | FractalGenerator 3-phase |
-| `src/core/automation_parts/` | 6 | AutomationEngine |
-| `src/core/niche_loader_parts/` | 7 | NicheLoader + YAML scan |
-| `src/core/niche_scraper_parts/` | 5 | NicheAutoScraper + cron |
-| `src/core/mini_ai_parts/` | 6 | MiniAIEngine (Qwen3) |
-| `src/core/model_mgr_parts/` | 10 | ModelManager + lazy load |
-| `src/core/thinking_parts/` | 5 | ThinkingEngine + modos |
-| `src/core/schema_parts/` | 7 | SchemaEngine + validators |
-| `src/core/chain_valid_parts/` | 5 | ChainValidator + quality |
-| `src/core/dna_loader_parts/` | 7 | DNALoader + 4 Master Templates |
-| `src/core/context_ptr_parts/` | 4 | ContextPointerEngine |
-| `src/core/low_power_parts/` | 5 | LowPowerSequentialMode |
-| `src/core/partial_reason_parts/` | 5 | PartialReasoningEngine |
-| `src/core/code_trans_parts/` | 6 | CodeTransformer + AST |
-| `src/core/abortive_parts/` | 7 | AbortiveReasoning + protocolos |
-| `src/core/shared/z3_parts/` | 10 | Z3 Solver + constraints |
-| `src/core/shared/symbolic_parts/` | 9 | SymbolicExecutor + paths |
-| `src/core/shared/governor_parts/` | 8 | ResourceGovernor + límites |
+| `src/core/dag_parts/` | 6 | DAGOrchestrator + definición + TitanAgent + executors + corrections |
+| `src/core/orch_base_parts/` | 7 | Orquestador base (Init, API, Phase7, Phase8, Compat mixins) |
+| `src/core/agents/` + 11 `_parts/` | 40+ | 9 agentes + BaseAgent + Runner + Cache + Schemas |
+| `src/core/semantic_parts/` | 7 | SemanticEngine + embeddings + classify + search + lifecycle |
+| `src/core/reasoning_parts/` | 7 | ReasoningEngine + steps + context + reflection |
+| `src/core/memory_parts/` | 7 | SmartMemory + cache + long-term + episodes + database |
+| `src/core/auth_parts/` | 8 | JWT + RBAC + API keys + tokens + validation + tenant |
+| `src/core/template_parts/` | 7 | TemplateEngine + core + block + builtin + resolve + utils |
+| `src/core/code_gen_parts/` | 4 | CodeGenerator + contextual + pipeline + extractors |
+| `src/core/code_trans_parts/` | 6 | CodeTransformer + refactor + optimizer + fixer |
+| `src/core/app_gen_parts/` | 7 | AppGenerator + core + file/service/template generators |
+| `src/core/fractal_parts/` | 6 | FractalGenerator 3-phase (structure + skeletons + fill) |
+| `src/core/automation_parts/` | 6 | AutomationEngine + execution + CRUD + project gen |
+| `src/core/niche_loader_parts/` | 7 | NicheLoader + loading + query + stats + singleton |
+| `src/core/niche_scraper_parts/` | 5 | NicheAutoScraper + trending + updater + scheduler |
+| `src/core/mini_ai_parts/` | 6 | MiniAIEngine (Qwen3) + lifecycle + fallbacks + tasks |
+| `src/core/model_mgr_parts/` | 10 | ModelManager + singleton + monitor + RAM + AI access + semantic + unload |
+| `src/core/thinking_parts/` | 5 | ThinkingEngine + planning + context + reasoning |
+| `src/core/schema_parts/` | 7 | SchemaDesigner + design + python_gen + sql_gen + fallbacks |
+| `src/core/chain_valid_parts/` | 5 | ChainValidator + executor + convenience |
+| `src/core/dna_loader_parts/` | 7 | DNALoader + loader + logic_modules + domain_validation + glossary |
+| `src/core/context_ptr_parts/` | 4 | ContextPointerEngine + index + pointer |
+| `src/core/low_power_parts/` | 5 | LowPowerSequentialMode + decision + evaluate + mode |
+| `src/core/partial_reason_parts/` | 5 | PartialReasoningManager + partial + resume |
+| `src/core/abortive_parts/` | 7 | AbortiveProtocol + protocol + merge + subtasks + execution |
+| `src/core/shared/z3_parts/` | 10 | Z3 Solver core + encoding + null/type safety + invariants + AC-3 fallback |
+| `src/core/shared/symbolic_parts/` | 9 | SymbolicExecutor + paths + constraints |
+| `src/core/shared/governor_parts/` | 8 | ResourceGovernor + monitor + api + model_swap + singleton |
 | `src/core/shared/sandbox_parts/` | 5 | SandboxIsolation |
-| `src/server/http_parts/` | 5 | Servidor HTTP + endpoints |
-| + 11 directorios de agentes | — | `agents/*_parts/` |
+| `src/core/distributed/` | 11 | SAGA coordinator + circuit breaker + task queue + worker + topology + backends |
+| `src/core/patterns/` | 20+ | 26+ patrones de diseño en 6 categorías |
+| `src/core/tenant/` | 3 | TenantContext + FeatureGate + TenantIsolation |
+| `src/core/observability/` | 4 | Tracing + Metrics + Audit + Health |
+| `src/core/open_design/` | 5 | Detector + ArtifactBuilder + SSEStreamer + Config |
+| `src/core/logic_blocks/` | 12 | 30+ bloques lógicos de negocio |
+| `src/core/executors/` | 9 | ActionExecutor: HTTP, webhook, DB, file, email, notification, etc. |
+| `src/server/http_parts/` | 5 | HTTP server (imports, GET, POST, helpers mixins) |
 
 </details>
 
 <details>
-<summary><strong>Tests (40 sub-directorios)</strong> — click para expandir</summary>
+<summary><strong>Tests (40+ sub-directorios)</strong> — click para expandir</summary>
 
 | Directorio | Archivos | Contenido |
 |-----------|:--------:|-----------|
 | `tests/unit/test_f4_f5_parts/` | 5 | Tests de CriticalityAgent + ValidationAgent |
 | `tests/unit/test_auth_svc_parts/` | 6 | Tests de autenticación JWT/RBAC |
 | `tests/unit/test_scrap_parts/` | 6 | Tests de GitHub Scrap Agent |
-| `tests/unit/test_code_gen_extra_parts/` | 5 | Tests de CodeGenerator extendidos |
 | `tests/unit/test_agent_fw_parts/` | 5 | Tests del framework de agentes |
 | `tests/unit/test_action_exec_parts/` | 5 | Tests de ActionExecutor |
 | `tests/unit/test_biz_logic_parts/` | 5 | Tests de BusinessLogicAgent |
 | `tests/unit/test_dna_parts/` | 4 | Tests del sistema DNA |
 | `tests/unit/test_semantic_parts/` | 5 | Tests del SemanticEngine |
-| `tests/unit/test_reasoning_parts/` | 3 | Tests de ReasoningEngine |
 | `tests/unit/test_fractal_parts/` | 5 | Tests del FractalGenerator |
 | `tests/unit/test_niche_parts/` | 5 | Tests del NicheLoader |
 | `tests/unit/test_z3_parts/` | 5 | Tests del Z3 Solver |
@@ -687,7 +804,17 @@ Los sub-directorios siguen una convención consistente que facilita la navegaci�
 | `tests/unit/test_context_parts/` | 5 | Tests de ContextAgent |
 | `tests/unit/test_low_power_parts/` | 5 | Tests de LowPowerSequentialMode |
 | `tests/unit/test_orch_base_parts/` | 5 | Tests del orquestador base |
-| + 22 directorios más | — | Tests para todos los módulos |
+| `tests/unit/test_surgical_parts/` | 4 | Tests de SurgicalAgent fusion + calibration |
+| `tests/unit/test_schema_parts/` | 4 | Tests de SchemaDesigner |
+| `tests/unit/test_template_parts/` | 3 | Tests de TemplateEngine |
+| `tests/unit/test_phase8_parts/` | 5 | Tests de Phase 8 (chain, reasoning, memory) |
+| `tests/unit/test_resp_build_parts/` | 3 | Tests de ResponseBuilder |
+| `tests/unit/test_partial_parts/` | 4 | Tests de PartialReasoning |
+| `tests/unit/test_ctx_ptr_parts/` | 4 | Tests de ContextPointerEngine |
+| `tests/unit/test_criticality_parts/` | 3 | Tests de CriticalityAgent keyword + history |
+| `tests/integration/` | 1 | Test end-to-end del pipeline |
+
+Total: 272 archivos de test, ~31,900 líneas
 
 </details>
 
@@ -695,154 +822,147 @@ Los sub-directorios siguen una convención consistente que facilita la navegaci�
 
 ## 3 Mejoras de Nivel Dios (v17)
 
-La versión 17 introduce tres mejoras arquitectónicas que transforman ZENIC LOGIC de un sistema estático a una plataforma **auto-mutable**, **consciente del hardware** y **eficiente en contexto**.
-
 ### A. Knowledge Inversion of Control (Auto-Scraping YAML)
 
-**Problema**: Los niche templates YAML son estáticos. Un niche de `react_ecommerce` referencia `react@18.2` y `next@13.4`, pero cuando React 19 sale, el template queda obsoleto. El sistema no aprende por sí solo.
+El sistema se **auto-muta y aprende** conectando el GitHub Scrap Agent (Level 5) con un Cron Scheduler que periódicamente:
 
-**Solución**: El sistema ahora se **auto-muta y aprende** conectando el GitHub Scrap Agent (Level 5) con un Cron Scheduler que periódicamente:
-
-1. **Scrapea repos trending** de GitHub por lenguaje (Python, JavaScript, Go, etc.)
-2. **Analiza dependencias** (`package.json`, `go.mod`, `requirements.txt`) vía regex/AST
-3. **Mapea librerías a bloques** usando `LIBRARY_TO_BLOCK` (30+ mapeos: `fastapi` → `web_api`, `stripe` → `payment`, etc.)
-4. **Actualiza niches** en disco: agrega entidades, bloques, y patrones emergentes
-5. **Registra evolución** en SQLite (`niche_evolution.sqlite`) con timestamps y diffs
-
-**Arquitectura**:
+1. **Scrapea repos trending** de GitHub por lenguaje
+2. **Analiza dependencias** (`package.json`, `go.mod`, `requirements.txt`)
+3. **Mapea librerías a bloques** usando `LIBRARY_TO_BLOCK` (17+ mapeos)
+4. **Actualiza niches** en disco: agrega entidades, bloques, patrones emergentes
+5. **Registra evolución** en SQLite (`niche_evolution.sqlite`)
 
 ```
-┌───────────────────────────────────────────────────────┐
-│  NicheCronScheduler (background thread)               │
-│    Intervalo: 24h (mínimo 1h)                         │
-│    Cooldown: 30s entre cambios de modo                │
-│    Trigger manual: POST /v1/system/auto-evolve/trigger│
-│                                                        │
-│  NicheAutoUpdater                                      │
-│    ┌─── TrendingAnalyzer                               │
-│    │     GitHubScrapAgent → trending repos             │
-│    │     _extract_patterns() → deps + libs             │
-│    │     LIBRARY_TO_BLOCK (30+ mapeos)                 │
-│    │     LIBRARY_TO_ENTITIES (4 mapeos)                │
-│    │                                                   │
-│    └─── _save_niche_yaml() → escribe YAML actualizado │
-│                                                        │
-│  EvolutionEntry (dataclass)                            │
-│    mutation_type: entity_added / field_added /         │
-│                   block_added / pattern_updated        │
-│    source_repo, timestamp, old_value, new_value        │
-│    approved: bool (para auditoría)                     │
-└───────────────────────────────────────────────────────┘
+NicheCronScheduler (background thread, 24h interval, min 1h)
+  -> NicheAutoUpdater
+       -> TrendingAnalyzer (GitHubScrapAgent + LIBRARY_TO_BLOCK)
+       -> _save_niche_yaml() (escribe YAML actualizado)
+  -> EvolutionEntry (mutation_type, source_repo, old/new_value, approved)
 ```
 
-**Cableado**: El `NicheCronScheduler` vive dentro del `DAGOrchestrator` y se inicia automáticamente con el servidor. El `NicheAutoUpdater` consume `NicheLoader` para encontrar niches matching y `GitHubScrapAgent` para obtener código trending.
+Trigger manual: `POST /v1/system/auto-evolve/trigger`
 
 ### B. Context Pointers for Code Path
 
-**Problema**: Para codebases de 20K+ tokens, comprimir código en summaries semánticos pierde la estructura exacta. El modelo necesita las coordenadas del código, no el código comprimido.
-
-**Solución**: En lugar de pasar código al LLM, se pasa un **Vector Signature Index** — punteros compactos que representan funciones como coordenadas. El modelo ve ~100 tokens de punteros en vez de 20K tokens de código:
+En lugar de pasar código al LLM, se pasa un **Vector Signature Index** — punteros compactos que representan funciones como coordenadas (~100 tokens en vez de 20K):
 
 ```
-📍 authenticate(user, pwd) -> bool @ L10-25 [auth.py]
-📍 generate_token(user_id) -> str @ L27-35 [auth.py]
-📍 verify_permissions(token, resource) -> bool @ L37-52 [auth.py]
+authenticate(user, pwd) -> bool @ L10-25 [auth.py]
+generate_token(user_id) -> str @ L27-35 [auth.py]
+verify_permissions(token, resource) -> bool @ L37-52 [auth.py]
 ```
 
-**Arquitectura**:
+**Componentes**:
+- `FunctionSignature` — name, file_path, line_start/end, params, return_type, docstring, complexity, calls, hash
+- `ContextPointer` — signature + relevance_score + load_code_from_disk() + apply_modification()
+- `SignatureIndex` — index_project(), index_code(), search(query, top_k), get_by_name(), build_compact_context()
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  ContextPointerEngine                                     │
-│                                                           │
-│  FunctionSignature (dataclass)                            │
-│    name, file_path, line_start, line_end                  │
-│    params, return_type, docstring, complexity             │
-│    calls: List[str], hash: str                            │
-│    to_pointer() → "📍 name(params) -> ret @ L10-25 [f]"  │
-│                                                           │
-│  ContextPointer (wrapper)                                 │
-│    signature + relevance_score + reason                    │
-│    load_code_from_disk() → lee líneas reales del archivo  │
-│    apply_modification(new_code) → escribe en disco        │
-│                                                           │
-│  SignatureIndex (core index)                              │
-│    index_project(root) → escanea recursivamente           │
-│    index_code(code, file_path) → indexa código inline     │
-│    search(query, top_k) → búsqueda keyword con scoring    │
-│    get_by_name(name) → lookup exacto                      │
-│    build_compact_context(query, max_tokens) → lista de    │
-│      punteros para consumo del LLM                        │
-│                                                           │
-│  Extractores multi-lenguaje:                              │
-│    Python: ast module (preciso)                           │
-│    JS/TS/Kotlin/Go/Java/Rust: regex (heurístico)         │
-│                                                           │
-│  Almacenamiento: ~/.titan_omniscale/context_store/        │
-└──────────────────────────────────────────────────────────┘
-```
-
-**Flujo de uso**: Cuando el DAGOrchestrator necesita operar sobre código, usa `ContextPointerEngine.build_compact_context()` para construir la lista de punteros. El LLM opera sobre coordenadas. Si necesita modificar una función, `ContextPointer.load_code_from_disk()` carga solo las líneas necesarias, y `apply_modification()` usa AST Surgeon para escribir cambios directamente en disco.
+**Extractores multi-lenguaje**: Python (ast module, preciso), JS/TS/Kotlin/Go/Java/Rust (regex, heurístico)
 
 ### C. Dynamic Low-Power Sequential Mode
 
-**Problema**: En Android/Termux, la ejecución paralela de agentes (Layer 4: Architect, Planner, Risk) puede causar picos de CPU que disparan thermal throttling, agotan la batería, o activan los mecanismos de seguridad del kernel Android que matan procesos.
+El DAG evalúa en tiempo real temperatura CPU, batería y RAM para desactivar ejecución paralela cuando el hardware está estresado:
 
-**Solución**: El DAG evalúa en tiempo real la temperatura del CPU, nivel de batería y uso de RAM. Si el hardware está estresado, desactiva la ejecución paralela y fuerza modo secuencial estricto:
+| Power Mode | Condiciones | Efecto |
+|-----------|------------|--------|
+| **NORMAL** | temp<55°C AND battery>30% AND RAM<85% | Ejecución paralela completa |
+| **CONSERVATIVE** | temp>55°C OR battery<30% OR RAM>85% | Layer 4 secuencial, MCTS al 50% |
+| **EMERGENCY** | temp>65°C OR battery<15% OR RAM>95% | Todo secuencial, MCTS al 25%, solo agentes críticos |
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  LowPowerSequentialMode                                   │
-│                                                           │
-│  PowerMode (Enum):                                        │
-│    NORMAL       → ejecución paralela completa             │
-│    CONSERVATIVE → Layer 4 secuencial, MCTS al 50%        │
-│    EMERGENCY    → todo secuencial, MCTS al 25%,          │
-│                   solo agentes críticos                   │
-│                                                           │
-│  HardwareState (dataclass):                               │
-│    cpu_usage: float        (de ResourceGovernor)          │
-│    ram_usage_mb: float     (de /proc/self/status)         │
-│    temperature_c: float    (de /sys/class/thermal/)       │
-│    battery_level: int      (de /sys/class/power_supply/)  │
-│    battery_charging: bool  (de /sys/class/power_supply/)  │
-│    thermal_throttle: bool  (de ResourceGovernor)          │
-│                                                           │
-│  evaluate() → lee hardware, calcula score, aplica modo   │
-│    Stickiness: 30s cooldown entre cambios de modo         │
-│    Thresholds:                                            │
-│      CONSERVATIVE: temp>55°C OR battery<30% OR RAM>85%   │
-│      EMERGENCY:    temp>65°C OR battery<15% OR RAM>95%   │
-│                                                           │
-│  API para DAGOrchestrator:                                │
-│    should_run_parallel_layer4() → bool                    │
-│    should_run_parallel_agents() → bool                    │
-│    get_mcts_scale() → 1.0 / 0.5 / 0.25                  │
-│    get_solver_timeout_scale() → 1.0 / 0.7 / 0.5         │
-│    should_postpone_non_critical() → bool                  │
-│    get_active_agents() → lista de agentes permitidos      │
-│    get_execution_order(layer) → orden de ejecución        │
-└──────────────────────────────────────────────────────────┘
-```
+**Stickiness**: 30s cooldown entre cambios de modo (evita flapping)
 
-**Cableado**: El `DAGOrchestrator` consulta `LowPowerSequentialMode.evaluate()` antes de cada paso de ejecución. En modo CONSERVATIVE, Layer 4 (Architect, Planner, Risk) se ejecuta secuencialmente en vez de en paralelo. En modo EMERGENCY, solo se ejecutan agentes críticos y el MCTS reduce simulaciones al 25%. El `NicheCronScheduler` también lo consulta para posponer auto-scraping no crítico.
+---
+
+## Patrones de Diseño
+
+ZENIC LOGIC implementa **26+ patrones de diseño** formalmente en `src/core/patterns/` y `src/core/distributed/`:
+
+### Patrones Creacionales
+
+| Patrón | Archivo | Uso en el Proyecto |
+|--------|---------|-------------------|
+| **Factory** | `patterns/creational/factory.py` | Creación de objetos por tipo |
+| **Builder** | `patterns/creational/builder.py` | Construcción paso a paso |
+| **Prototype** | `patterns/creational/prototype.py` | Clonación de objetos |
+| **Singleton** | `niche_loader_parts/singleton.py`, `model_mgr_parts/singleton.py`, `governor_parts/singleton.py` | Instancia única thread-safe (double-checked locking) |
+
+### Patrones Estructurales
+
+| Patrón | Archivo | Uso en el Proyecto |
+|--------|---------|-------------------|
+| **Adapter** | `patterns/structural/adapter.py` | Adaptación de interfaces |
+| **Bridge** | `patterns/structural/bridge.py` | Desacoplamiento abstracción/implementación |
+| **Decorator** | `patterns/structural/decorator.py` | Extensión dinámica de comportamiento |
+| **Proxy** | `patterns/structural/proxy.py` | Control de acceso sustituto |
+| **Facade** | Usado extensivamente | Archivos facade que re-exportan de `_parts/` sub-módulos |
+| **Mixin** | Usado extensivamente | Composición de clases: StructureMixin, SkeletonsMixin, FillMixin, etc. |
+
+### Patrones de Comportamiento
+
+| Patrón | Archivo | Uso en el Proyecto |
+|--------|---------|-------------------|
+| **Strategy** | `patterns/behavioral/strategy.py` | Selección de algoritmo |
+| **Visitor** | `patterns/behavioral/visitor.py` | Separación operación/estructura |
+| **State** | `patterns/behavioral/state.py` | Comportamiento basado en estado |
+| **Observer (EventBus)** | `patterns/orchestration/event_bus.py` | Pub/sub con wildcard, sync+async |
+| **Command (CommandBus)** | `patterns/orchestration/command_bus.py` | Dispatch por tipo + middleware + validators |
+| **Mediator** | `patterns/orchestration/mediator.py` | Dispatch centralizado request/response |
+| **Template Method** | `agents/base.py` | BaseAgent ABC con build_prompt/parse_response/fallback |
+| **Chain of Responsibility** | `patterns/orchestration/command_bus.py` | Middleware chain en CommandBus |
+
+### Patrones Arquitectónicos
+
+| Patrón | Archivo | Uso en el Proyecto |
+|--------|---------||---|
+| **SAGA** | `patterns/orchestration/saga.py`, `distributed/saga_coordinator.py` | Multi-step rollback con compensación en orden inverso |
+| **Circuit Breaker** | `patterns/resilience/circuit_breaker.py`, `distributed/circuit_breaker_distributed.py` | CLOSED→OPEN→HALF_OPEN state machine |
+| **CQRS** | `patterns/architectural/cqrs.py` | Separación Command/Query |
+| **DAG** | `dag_parts/definition.py` | Pipeline basado en grafo acíclico de 18 nodos |
+| **MoE (Mixture of Experts)** | `level2_macro_router/router.py` | Clasificación de criticalidad con múltiples reglas expertas |
+| **MCTS** | `shared/mcts.py` | Monte Carlo Tree Search con UCB1 para planning |
+| **Abortive Protocol** | `abortive_protocol.py` | Auto-subdivisión en timeout del solver |
+
+### Patrones de Resiliencia
+
+| Patrón | Archivo | Características |
+|--------|---------|----------------|
+| **Retry** | `patterns/resilience/retry.py` | Exponential backoff |
+| **Bulkhead** | `patterns/resilience/bulkhead.py` | Aislamiento de llamadas concurrentes |
+| **Sidecar** | `patterns/resilience/sidecar.py` | Patrón sidecar |
+
+### Patrones de Concurrencia
+
+| Patrón | Archivo | Características |
+|--------|---------|----------------|
+| **Worker Pool** | `patterns/concurrency/worker_pool.py` | Pool de threads |
+| **Producer-Consumer** | `patterns/concurrency/producer_consumer.py` | Productor/consumidor async |
+| **Read-Write Lock** | `patterns/concurrency/read_write_lock.py` | Acceso concurrente de lectura |
+
+### Patrones Distribuidos
+
+| Patrón | Archivo | Características |
+|--------|---------|----------------|
+| **Leader Election** | `distributed/leader_election.py` | Elección de líder con PostgreSQL advisory locks |
+| **Distributed Lock** | `distributed/lock_manager.py` | Locking cross-node |
+| **Cluster Topology** | `distributed/topology.py` | Registro de nodos, heartbeats, work-stealing |
+| **Distributed Task Queue** | `distributed/task_queue.py` | Cola persistente con prioridad + leasing |
 
 ---
 
 ## Sistema de Niches Declarativos
 
-El sistema de niches permite generar aplicaciones completas desde plantillas YAML declarativas, sin tocar código Python. El sistema cargó **107 templates** a través de **20 dominios** con **793 entidades** y **8,453 campos**.
+El sistema de niches permite generar aplicaciones completas desde plantillas YAML declarativas. **107 templates** a través de **20 dominios** con **793 entidades** y **8,453 campos**.
 
 ### Dominios y Templates
 
 | Dominio | Templates | Entidades | Ejemplos |
 |---------|----------:|----------:|----------|
-| **health** | 12 | 96 | pharmacy, dental, telemedicine, clinical_lab |
-| **education** | 10 | 78 | lms, student_portal, course_platform |
-| **business** | 7 | 56 | erp, project_mgmt, hr_system |
-| **finance** | 6 | 48 | banking, crypto_exchange, accounting |
-| **ecommerce** | 5 | 40 | marketplace, checkout, dropshipping |
-| **technology** | 5 | 42 | saas_platform, devops_dashboard, api_gateway |
+| **health** | 12 | 96 | pharmacy, dental, telemedicine, clinical_lab, hospital_erp |
+| **education** | 10 | 78 | lms, student_portal, course_platform, exam_system, university_erp |
+| **business** | 7 | 56 | erp, project_mgmt, hr_system, accounting, payroll |
+| **finance** | 6 | 48 | banking, crypto_exchange, accounting, investment, lending |
+| **ecommerce** | 5 | 40 | marketplace, checkout, dropshipping, subscription, food_delivery |
+| **technology** | 5 | 42 | saas_platform, devops_dashboard, api_gateway, cicd, monitoring |
 | **logistics** | 5 | 38 | fleet_tracking, warehouse, supply_chain |
 | **media** | 5 | 35 | streaming, cms, podcast |
 | **agriculture** | 4 | 30 | crop_monitoring, livestock, irrigation |
@@ -866,6 +986,8 @@ domain: health
 subdomain: pharmaceutical
 description: "Sistema de gestión integral para farmacias"
 scale: small_to_medium
+compliance: [hipaa, fda]
+sensitivity: phi
 
 blocks:
   - inventory_tracking
@@ -883,162 +1005,240 @@ entities:
       - manufacturer: str
       - price: float
       - stock_quantity: int
-      - expiry_date: date
-      - requires_prescription: bool
-
-typical_paths:
-  - "/medications" -> inventory_tracking
-  - "/prescriptions" -> prescription_management
-
-triggers:
-  - low_stock_alert: inventory.stock_quantity < threshold
-  - expiry_warning: medication.expiry_date - today < 30_days
-
-compliance: [HIPAA, FDA]
-data_sensitivity: high
-backup_frequency: daily
-access_control: role_based
-audit_trail: true
-```
-
-### Cableado
-
-```
-NicheLoader (456 líneas)
-  → scan src/templates/niches/**/*.yaml
-  → NicheTemplate dataclass (name, domain, entities, blocks, compliance, etc.)
-  → search() / filter_by_compliance() / suggest_for_description()
-  → to_composition_plan() → CompositionPlan para TemplateEngine
-
-TemplateEngine (955 líneas)
-  → get_niche_plan() → resolve NicheTemplate → CompositionPlan
-  → render_niche() → render all blocks with Jinja2 + DNA validation
-  → 6 métodos niche: list_niches, list_domains, search_niches, get_niche_plan, render_niche, validate_niche_code
-
-HTTP Handler (853 líneas)
-  → GET /v1/niches
-  → GET /v1/niches/domains
-  → GET /v1/niches/search?q=
-  → POST /v1/generate/niche
 ```
 
 ---
 
 ## Sistema DNA (Master Templates)
 
-El **DNA Loader** carga 4 "Master DNA Templates" que eliminan la improvisación en la generación de código. Cada template aporta una dimensión diferente de calidad:
+El sistema DNA proporciona validación de dominio y conocimiento experto:
 
-| DNA Template | Archivo | Rol |
-|-------------|---------|-----|
-| **Logic Modules** | `logic_modules.yaml` | Repositorio de funciones atómicas con verificación |
-| **Domain Expert Rules** | `domain_expert_rules.yaml` | Reglas de negocio obligatorias por industria |
-| **Validation Gates** | `validation_gates.yaml` | Juez de calidad con auto-fix strategies |
-| **Professional Glossary** | `professional_glossary.yaml` | Pulidor de lenguaje técnico a corporativo |
+| Template | Contenido | Archivo |
+|----------|-----------|---------|
+| **Logic Modules** | 68 módulos atómicos de lógica de negocio | `logic_modules.yaml` |
+| **Domain Expert Rules** | 20 reglas de negocio por industria | `domain_expert_rules.yaml` |
+| **Validation Gates** | 121 gates de calidad para código generado | `validation_gates.yaml` |
+| **Professional Glossary** | 133 transformaciones terminológicas | `professional_glossary.yaml` |
 
-### API del DNALoader (674 líneas)
-
-```python
-from src.core.dna_loader import get_dna_loader
-
-dna = get_dna_loader()
-
-# Logic Modules
-dna.get_module("invoice_calculate_tax")
-dna.get_modules_by_domain("finance")
-dna.search_modules("payment processing")
-dna.resolve_modules_for_niche("pharmacy_management", niche_blocks)
-
-# Domain Rules
-dna.get_domain_rules("healthcare")
-dna.get_mandatory_logic("healthcare")  # reglas no negociables
-dna.find_industry_for_niche("health")  # → "healthcare"
-
-# Validation Gates
-dna.get_global_gates("security")       # gates de seguridad globales
-dna.get_domain_gates("finance")        # gates específicos de dominio
-dna.validate_code(code, "finance")     # → pass/fail/warnings/score
-
-# Professional Glossary
-dna.polish_text("error: can't find user")  # → "User record not found"
-dna.polish_error("NullPointer exception")  # → "Required data reference is missing"
-dna.describe_feature("CRUD")               # → "Create, Read, Update, Delete operations"
-```
+**Uso**: `DNALoader.resolve_modules_for_niche()` mapea template blocks a logic modules. `DNALoader.validate_code()` valida código generado contra validation gates. `DNALoader.polish_text()` transforma jerga técnica a lenguaje corporativo.
 
 ---
 
 ## Model Manager (Lazy Loading)
 
-El **ModelManager** (464 líneas) implementa carga híbrida de modelos para maximizar rendimiento en hardware móvil:
+El `ModelManager` gestiona el ciclo de vida de los modelos IA con RAM budget estricto:
 
-| Modo | RAM Idle | Boot Time | Comportamiento |
-|------|---------:|----------:|----------------|
-| **Eager** (legacy) | ~730 MB | ~60s | Carga ambos modelos al inicio |
-| **Lazy** (v17) | ~50 MB | <5s | Carga solo cuando se necesita |
-
-### Características
-
-- **Lazy Loading**: Los modelos se cargan en la primera petición que los requiere
-- **Auto-Unload**: Tras 5 minutos de inactividad, los modelos se descargan automáticamente
-- **RAM Budget**: Si la RAM supera el 90% del presupuesto, fuerza unload del modelo menos reciente
-- **Context Managers**: `ai_engine_ctx()` y `semantic_engine_ctx()` para uso seguro con auto-cleanup
-
-### Variables de Entorno
-
-```bash
-TITAN_LAZY_LOAD=true        # Habilitar lazy loading (default: true)
-TITAN_AUTO_UNLOAD=true      # Auto-unload tras idle timeout
-TITAN_MODEL_IDLE_TIMEOUT=300  # Segundos de idle antes de unload (default: 300)
-TITAN_RAM_BUDGET_MB=800     # Presupuesto RAM en MB (default: 800)
-```
+| Característica | Detalle |
+|---------------|---------|
+| **RAM Budget** | 768 MB para modelos |
+| **Auto-unload** | 5 minutos de inactividad |
+| **LRU eviction** | Descarga modelo least-recently-used cuando RAM pressure alta |
+| **Modelos** | SemanticEngine (~150MB), MiniAIEngine (~378MB) |
+| **Tracking** | Lectura de `/proc/self/status` VmRSS para RAM real |
+| **Acceso** | `semantic_engine_ctx()` context manager para uso seguro |
 
 ---
 
 ## Fractal Generator (Multi-File)
 
-El **FractalGenerator** (1,038 líneas) resuelve el problema de generar proyectos multi-archivo dentro del límite de 600 tokens de salida de Qwen3-0.6B. Divide la generación en 3 fases:
+El `FractalGenerator` resuelve el límite de 600 tokens de Qwen3-0.6B mediante generación en 3 fases:
 
-### Fase 1: Structural
-Genera el árbol de directorios y la lista de archivos con sus descripciones. Si el LLM falla, usa templates predefinidos (`auth_system`, `crud_dashboard`, `inventory`) o un template genérico.
+| Fase | Nombre | Qué hace | Output |
+|------|--------|----------|--------|
+| 1 | **Structure** | LLM genera solo el árbol de directorios y nombres de archivos | `FractalSpec` con directorios + `FileBlueprint` |
+| 2 | **Skeletons** | AST Surgeon (L5) inyecta clases y funciones vacías con docstrings | Archivos skeleton compilables |
+| 3 | **Fill** | LLM lee cada docstring y genera la lógica item-by-item | Archivos completos |
 
-### Fase 2: Skeletons
-Genera esqueletos de código: clases vacías con docstrings, funciones con `pass`, imports organizados. Incluye reparación de sintaxis para Python (`_fix_python_skeleton`).
+**Patrones de fallback**: `create` → try/except CRUD, `get` → query pattern, `validate` → guard clauses.
 
-### Fase 3: Fill
-Rellena la lógica item-by-item (cada función/método individualmente), compatible con el límite de 600 tokens. Si el LLM falla, usa generación determinista basada en patrones:
+**Templates de proyecto**: `fastapi`, `django`, `flask`, `react`, `vue`, `nextjs`, etc.
 
-- `create/add` → try/save pattern
-- `get/list` → try/query pattern
-- `update` → try/update pattern
-- `delete` → try/delete pattern
-- `validate` → try/validate pattern
-
-### Invocación
-
-```python
-from src.core.fractal_generator import FractalGenerator
-
-gen = FractalGenerator(code_agent=code_agent, ai_engine=mini_ai)
-
-# Fase 1: Estructura
-spec = gen.generate_structure("sistema de inventario", "crud_dashboard", "inventory_app")
-
-# Fase 2: Esqueletos
-spec = gen.generate_skeletons(spec)
-
-# Fase 3: Rellenar lógica
-result = gen.fill_logic(spec, output_dir="./output")
-```
+**Integración Open Design**: Soporta SSE streaming del output por fases.
 
 ---
 
-## Conectar con Cline/Aide/OpenCode
+## Motor SMT (Z3 / AC-3)
 
-1. Inicia el motor ZENIC LOGIC
-2. En VS Code, configura tu herramienta:
-   - **API Provider**: OpenAI Compatible
-   - **Base URL**: `http://TU_IP:5000/v1`
-   - **Model**: `titan-omniscale-x`
-3. La herramienta enviará peticiones al motor local
+### Z3 SMT Solver (cuando está disponible)
+
+El motor Z3 proporciona verificación formal real:
+
+| Capacidad | Implementación |
+|-----------|---------------|
+| **Null-safety** | EnumSort {NONE, SOME_VALUE} para nullable vars |
+| **Type-safety** | DataType para jerarquía de tipos |
+| **Invariants** | Encoding de invariantes como constraints Z3 |
+| **Timeout** | 15s surgical, 5s moderate (watchdog) |
+| **Memory limit** | Max 512MB, o (available - 256MB), min 128MB |
+
+Archivos: `shared/z3_parts/` (10 módulos: solver_core, solver_encoding, null_safety, type_safety, type_lattice, invariants, invariants_patterns, ac3_fallback, etc.)
+
+### AC-3 Constraint Solver (fallback Android/Termux)
+
+Cuando Z3 no está disponible (Android/Termux), el sistema usa AC-3:
+
+| Capacidad | Implementación |
+|-----------|---------------|
+| **Arc Consistency** | Algoritmo AC-3 para reducir dominios |
+| **Backtracking** | Búsqueda con heurística MRV (Minimum Remaining Values) |
+| **Invariant check** | Enumeración exhaustiva (<=10K combos) o muestreo (<=1K) |
+| **Resultados** | SATISFIED, UNSATISFIABLE, TIMEOUT, PROVEN, VIOLATED, LIKELY_PROVEN, LIKELY_VIOLATED |
+
+**Interfaz unificada**: Ambos Z3 y AC-3 exponen la misma API. `HAS_Z3` flag determina el path. El solver activo se muestra en UI y respuestas API.
+
+---
+
+## Sistema de Memoria Inteligente
+
+**SmartMemory** es un sistema de 6 almacenes con SQLite (WAL mode) y soporte multi-tenant:
+
+| Almacén | Método | Max Entries | Persistencia |
+|---------|--------|:-----------:|:------------:|
+| **Semantic Cache** | `check_cache()` / `save_to_cache()` | 500 | SQLite |
+| **Working Memory** | `add_working()` / `get_working_context()` | 20 | In-memory |
+| **Long-term Memory** | `save_to_long_term()` / `find_similar_solutions()` | 500 | SQLite |
+| **Episodic Memory** | `save_episode()` / `find_episodes()` | 200 | SQLite |
+| **Procedural Memory** | `learn_pattern()` / `find_patterns()` | 100 | SQLite |
+| **Project Memory** | `save_project()` / `get_project()` | 50 | SQLite |
+
+**Embeddings**: Almacenados como BLOB (float32 bytes) en SQLite, cosine similarity para búsqueda, threshold 0.85 para cache, 0.5 para long-term.
+
+**Consolidación**: Auto-promoción working → long-term cuando `importance >= 0.6`. Consolidación de entries similares.
+
+**GDPR**: `purge_tenant_data()` elimina todos los datos de un tenant de todos los almacenes.
+
+---
+
+## Motor Semántico
+
+**SemanticEngine** proporciona comprensión de lenguaje con dos modos:
+
+| Modo | Requisito | Capacidades |
+|------|-----------|-------------|
+| **TF-IDF** | Ninguno (stdlib) | Clasificación de intenciones, similitud coseno, búsqueda |
+| **FastEmbed** | `fastembed` package | Embeddings densos 384-dim, zero-shot classification, clustering |
+
+**Modelo de embeddings**: `paraphrase-multilingual-MiniLM-L12-v2` (multilingual inglés + español, normalizado para cosine = dot product)
+
+**Caché de embeddings**: In-memory dict con SHA-256 keys, max 500 entries, evicts 100 oldest.
+
+---
+
+## Resource Governor (ARM/RAM)
+
+El `ResourceGovernor` protege el sistema en hardware restringido con 10+ estrategias:
+
+| Estrategia | Implementación |
+|-----------|---------------|
+| **GC Tuning ARM** | `gc.set_threshold(1000, 15, 15)` — menos frecuentes pero más efectivos |
+| **Process Priority** | `os.nice(10)` — prioridad baja para que Android responda |
+| **File Descriptor Limit** | Capped at 256 para Android |
+| **RAM Budget** | 768MB para modelos, LRU eviction, auto-unload after 5min |
+| **Thermal Throttling** | CPU >70% por >30s → reduce _thermal_throttle 20% (min 40%) |
+| **Adaptive MCTS** | CPU <40%: 100 sims, 40-60%: 70, 60-80%: 50, >80%: 30 (min 10) |
+| **Adaptive Solver Timeout** | RAM >80%: 60% reduction, RAM >50%: 20% reduction |
+| **Z3 Memory Limit** | Max 512MB, o (available - 256MB), min 128MB |
+| **Auto GC** | `gc.collect(2)` cuando RAM > 1.5GB |
+| **Request Lifecycle GC** | Pre: gen0, Post: gen1, High RAM: gen2 |
+
+---
+
+## Despliegue Docker + VPS
+
+### Docker Compose (6 servicios)
+
+| Servicio | Imagen | Propósito |
+|----------|--------|-----------|
+| **app** | Built from Dockerfile | FastAPI en puerto 5000 (interno) |
+| **worker** | Built from Dockerfile | Worker distribuido (2+ réplicas) |
+| **db** | postgres:16-alpine | PostgreSQL con init.sql |
+| **redis** | redis:7-alpine | Pub/sub + caching (256MB LRU, AOF) |
+| **nginx** | nginx:1.25-alpine | Reverse proxy + SSL termination |
+| **certbot** | certbot/certbot | Let's Encrypt SSL (profile: ssl) |
+
+**Redes**: `titan-internal` (bridge, internal), `titan-public` (bridge)
+**Volúmenes**: postgres_data, redis_data, app_data, certbot_data, nginx_logs, backup_data
+
+### Dockerfile Multi-Stage
+
+| Stage | Propósito | Configuración |
+|-------|-----------|---------------|
+| **base** | Python 3.12-slim, installs deps, creates `titan` user | — |
+| **development** | Hot-reload uvicorn, debug tools | — |
+| **production** | Gunicorn + 4 Uvicorn workers | 1000 max-requests with jitter, 120s timeout |
+
+### Nginx
+
+- Worker processes auto, 1024 connections
+- Rate limiting: 30r/s per IP, 100r/s per tenant
+- HTTP → HTTPS redirect
+- WebSocket upgrade support
+- `proxy_buffering off` para SSE streaming
+- 120s read timeout para operaciones IA
+
+### VPS Deployment
+
+Script automatizado `deploy/scripts/deploy-vps.sh` (8 pasos): system deps → titan user → PostgreSQL → copy app → venv → systemd → nginx → SSL
+
+**Systemd service**: Gunicorn + 4 Uvicorn workers, security hardened (NoNewPrivileges, ProtectSystem=strict, PrivateTmp), 2GB memory limit, auto-restart.
+
+### Backup/Restore
+
+- `deploy/scripts/backup.sh`: pg_dump + gzip, retención 30 días
+- `deploy/scripts/restore.sh`: Drop/recreate DB + gunzip restore
+
+---
+
+## Seguridad
+
+### Middleware Stack (FastAPI)
+
+1. **CORSMiddleware** — Orígenes configurables, Open Design auto-allow
+2. **Security Middleware** — HTTPS enforcement, request size limit, security headers (CSP, HSTS, X-Frame-Options, etc.), input sanitization
+3. **Metrics Middleware** — Prometheus-compatible request tracking
+4. **Rate Limit + Governor Middleware** — Tenant context injection, plan-based rate limiting, quota checks, resource governor check (RAM critical → 503)
+
+### Rate Limiting (4 capas)
+
+| Capa | Scope | Default |
+|------|-------|---------|
+| Per-IP Token Bucket | Por IP | 30 RPM, burst 10 |
+| Per-Tenant RPM | Por tenant | Plan-based (10/60/200) |
+| Per-User Token Bucket | Por usuario autenticado | Plan-based |
+| Auth Rate Limiter | Login/Register endpoints | 20 RPM, progressive lockout after 10 failures |
+
+### Input Sanitization
+
+- HTML escaping
+- SQL injection detection
+- XSS detection
+- Path traversal detection
+- Null byte removal
+- Length limiting
+
+### Token Blacklist
+
+SQLite-backed JWT revocation: single token, bulk user revocation, auto-pruning de entries expiradas.
+
+---
+
+## Conectar con Cline/Aide/OpenCode/Open Design
+
+### Cline / Aide / OpenCode
+
+Configurar el cliente con:
+- **Base URL**: `http://<IP>:5000`
+- **Model**: `titan-omniscale-x`
+- **API Type**: OpenAI Compatible
+
+### Open Design
+
+1. Iniciar ZENIC LOGIC: `python main_headless.py --server stdlib --port 5000`
+2. Iniciar Open Design en otro terminal: `npm run dev` (localhost:3000)
+3. Configurar Open Design para apuntar a `http://localhost:5000/v1/chat/completions`
+4. El detector Open Design se activa automáticamente vía headers/origin
+
+El sistema detecta peticiones de Open Design y activa la ruta Visual Bypass que salta el solver SMT y envuelve el output en `<artifact>` tags con SSE streaming.
 
 ---
 
@@ -1046,566 +1246,92 @@ result = gen.fill_logic(spec, output_dir="./output")
 
 ```
 Zenic-Logic-/
-├── main.py                          # Punto de entrada Kivy (GUI)
-├── main_headless.py                 # Punto de entrada headless (CLI)
-├── models/
-│   └── qwen3-0.6b-q4_k_m.gguf      # Modelo IA Qwen3 (378MB)
-├── src/
-│   ├── core/
-│   │   ├── dag_orchestrator.py      # Facade → dag_parts/
-│   │   ├── orchestrator.py          # Facade → orch_base_parts/
-│   │   ├── semantic_engine.py       # Facade → semantic_parts/
-│   │   ├── mini_ai_engine.py        # Facade → mini_ai_parts/
-│   │   ├── smart_memory.py          # Facade → memory_parts/
-│   │   ├── reasoning_engine.py      # Facade → reasoning_parts/
-│   │   ├── thinking_engine.py       # Facade → thinking_parts/
-│   │   ├── logic_builder.py         # Facade → logic_blocks/
-│   │   ├── code_generator.py        # Facade → code_gen_parts/
-│   │   ├── code_transformer.py      # Facade → code_trans_parts/
-│   │   ├── app_generator.py         # Facade → app_gen_parts/
-│   │   ├── automation_engine.py     # Facade → automation_parts/
-│   │   ├── template_engine.py       # Facade → template_parts/
-│   │   ├── auth_service.py          # Facade → auth_parts/
-│   │   ├── action_executor.py       # Facade → action_parts/
-│   │   ├── chain_validator.py       # Facade → chain_valid_parts/
-│   │   ├── schema_designer.py       # Facade → schema_parts/
-│   │   ├── niche_loader.py          # Facade → niche_loader_parts/
-│   │   ├── niche_auto_scraper.py    # Facade → niche_scraper_parts/
-│   │   ├── dna_loader.py            # Facade → dna_loader_parts/
-│   │   ├── context_pointer_engine.py # Facade → context_ptr_parts/
-│   │   ├── low_power_sequential.py  # Facade → low_power_parts/
-│   │   ├── model_manager.py         # Facade → model_mgr_parts/
-│   │   ├── fractal_generator.py     # Facade → fractal_parts/
-│   │   ├── abortive_protocol.py     # Facade → abortive_parts/
-│   │   ├── partial_reasoning.py     # Facade → partial_reason_parts/
-│   │   │
-│   │   │  # Sub-módulos (cada uno ≤400 líneas)
-│   │   ├── dag_parts/               # DAGOrchestrator + transiciones (5 files)
-│   │   ├── orch_base_parts/         # Orquestador base (7 files)
-│   │   ├── logic_blocks/            # 30+ bloques lógicos (12 files)
-│   │   ├── semantic_parts/          # SemanticEngine (7 files)
-│   │   ├── memory_parts/            # SmartMemory (7 files)
-│   │   ├── reasoning_parts/         # ReasoningEngine (7 files)
-│   │   ├── thinking_parts/          # ThinkingEngine (5 files)
-│   │   ├── mini_ai_parts/           # MiniAIEngine (6 files)
-│   │   ├── model_mgr_parts/         # ModelManager (10 files)
-│   │   ├── auth_parts/              # JWT + RBAC (8 files)
-│   │   ├── template_parts/          # TemplateEngine (7 files)
-│   │   ├── code_gen_parts/          # CodeGenerator (4 files)
-│   │   ├── code_trans_parts/        # CodeTransformer (6 files)
-│   │   ├── app_gen_parts/           # AppGenerator (7 files)
-│   │   ├── fractal_parts/           # FractalGenerator (6 files)
-│   │   ├── automation_parts/        # AutomationEngine (6 files)
-│   │   ├── niche_loader_parts/      # NicheLoader (7 files)
-│   │   ├── niche_scraper_parts/     # NicheAutoScraper (5 files)
-│   │   ├── dna_loader_parts/        # DNALoader (7 files)
-│   │   ├── context_ptr_parts/       # ContextPointerEngine (4 files)
-│   │   ├── low_power_parts/         # LowPowerSequentialMode (5 files)
-│   │   ├── chain_valid_parts/       # ChainValidator (5 files)
-│   │   ├── schema_parts/            # SchemaDesigner (7 files)
-│   │   ├── action_parts/            # ActionExecutor (7 files)
-│   │   ├── abortive_parts/          # AbortiveProtocol (7 files)
-│   │   ├── partial_reason_parts/    # PartialReasoning (5 files)
-│   │   │
-│   │   ├── agents/                  # Framework de Agentes IA
-│   │   │   ├── __init__.py          # Exports (9 agentes + schemas)
-│   │   │   ├── base.py              # BaseAgent + AgentResult
-│   │   │   ├── runner.py            # AgentRunner (LLM bridge)
-│   │   │   ├── schemas.py           # Pydantic input/output schemas
-│   │   │   ├── prompts.py           # System prompts + PromptBuilder
-│   │   │   ├── cache.py             # AgentCache
-│   │   │   ├── intent_shared.py     # Shared intent utilities
-│   │   │   ├── surgical_agent.py    # Facade → surgical_parts/
-│   │   │   ├── context_agent.py     # Facade → context_parts/
-│   │   │   ├── criticality_agent.py # Facade → criticality_parts/
-│   │   │   ├── intent_agent.py      # Facade → intent_parts/
-│   │   │   ├── reasoning_agent.py   # Facade → reasoning_parts/
-│   │   │   ├── business_logic_agent.py # Facade → biz_logic_parts/
-│   │   │   ├── code_agent.py        # Facade → code_agent_parts/
-│   │   │   ├── automation_agent.py  # Facade → automation_agent_parts/
-│   │   │   ├── validation_agent.py  # Facade → validation_parts/
-│   │   │   ├── surgical_parts/      # F2: multi-signal fusion (6 files)
-│   │   │   ├── context_parts/       # F3: compression + budget (7 files)
-│   │   │   ├── criticality_parts/   # F4: 5-signal router (5 files)
-│   │   │   ├── intent_parts/        # Intent classification (5 files)
-│   │   │   ├── biz_logic_parts/     # Business logic (5 files)
-│   │   │   ├── code_agent_parts/    # Code generation (6 files)
-│   │   │   ├── automation_agent_parts/ # Automation (7 files)
-│   │   │   ├── validation_parts/    # Validation (7 files)
-│   │   │   └── reasoning_parts/     # Reasoning (7 files)
-│   │   │
-│   │   ├── shared/                  # Infraestructura compartida
-│   │   │   ├── z3_solver.py         # Facade → z3_parts/ (10 files)
-│   │   │   ├── symbolic_executor.py # Facade → symbolic_parts/ (9 files)
-│   │   │   ├── sandbox_isolation.py # Facade → sandbox_parts/ (5 files)
-│   │   │   ├── resource_governor.py # Facade → governor_parts/ (8 files)
-│   │   │   ├── mcts.py              # Monte Carlo Tree Search
-│   │   │   ├── kpath_analyzer.py    # K-Path dependency analysis
-│   │   │   ├── constraint_solver.py # CSP solver (AC-3 + backtracking)
-│   │   │   └── ...
-│   │   │
-│   │   ├── level1_semantic_engine/  # L1: TF-IDF + semantic parsing
-│   │   ├── level2_macro_router/     # L2: Criticality + AST signatures
-│   │   ├── level3_graph_ast/        # L3: AST analysis + SQLite
-│   │   ├── level4_apa_planner/      # L4: Z3 + MCTS (facade → planner_parts/)
-│   │   ├── level5_structural_swarm/ # L5: AST Surgeon + Scrap (facade → scrap_parts/)
-│   │   ├── level6_reflexion_sandbox/ # L6: Symbolic exec (facade → executor_parts/)
-│   │   ├── level7_merkle_ledger/    # L7: Merkle tree + rollback
-│   │   └── level8_theorem_cache/    # L8: Skeleton hash cache
-│   ├── api/
-│   │   └── server.py                # FastAPI alternative server
-│   ├── config/
-│   │   ├── settings.yaml            # Configuración general
-│   │   ├── timeouts.yaml            # Presupuestos computacionales
-│   │   ├── critical_nodes.yaml      # Patrones de nodos críticos
-│   │   └── loader.py                # YAML config loader
-│   ├── server/                      # HTTP server
-│   │   ├── server.py                # Facade → http_parts/ (5 files)
-│   │   ├── http_handler.py          # Facade → http_parts/
-│   │   ├── response_builder.py      # OpenAI-compatible responses
-│   │   └── rate_limiter.py          # Rate limiting
-│   └── templates/                   # Templates
-│       ├── dna/                     # 4 DNA Master Templates
-│       ├── apps/                    # 8 app templates (9 Jinja2 files)
-│       ├── automations/             # 6 automation templates (5 Jinja2 files)
-│       ├── blocks/                  # Code block templates
-│       │   ├── auth/                # 3 auth block templates
-│       │   ├── business_logic/      # 7 business logic templates
-│       │   ├── data/                # 4 data block templates
-│       │   └── integrations/        # 7 integration templates
-│       └── niches/                  # 107 YAML templates en 20 dominios
-├── tests/                           # 273 test files, 2,247 tests
-│   ├── conftest.py                  # Session-scoped temp dir fixture
-│   ├── integration/
-│   │   └── test_pipeline.py
-│   └── unit/                        # Unit tests (facade → *_parts/ sub-dirs)
-│       ├── test_agent_fw_parts/     # Agent Framework tests
-│       ├── test_surgical_parts/     # SurgicalAgent tests
-│       ├── test_context_parts/      # ContextAgent tests
-│       ├── test_f4_f5_parts/        # F4+F5 agents tests
-│       ├── test_auth_svc_parts/     # Auth service tests
-│       ├── test_scrap_parts/        # GitHub Scrap tests
-│       ├── test_semantic_parts/     # Semantic Engine tests
-│       ├── test_z3_parts/           # Z3 Solver tests
-│       ├── test_fractal_parts/      # Fractal Generator tests
-│       └── ... (40 sub-directorios)
-├── pyproject.toml                   # Project config + pytest
-├── requirements.txt                 # Core dependencies
-├── pytest.ini                       # Pytest configuration
-├── buildozer.spec                   # Android build spec
-├── titanomniscale.kv                # Kivy UI definition
-└── install_termux.sh                # Termux installer
++-- main.py                          # Kivy GUI app (277 lines)
++-- main_headless.py                 # Termux headless server (322 lines)
++-- pyproject.toml                   # Project metadata (v16.0.0)
++-- requirements.txt                 # Python dependencies
++-- Dockerfile                       # Multi-stage build (dev + production)
++-- docker-compose.yml               # 6 services: app, worker, db, redis, nginx, certbot
++-- buildozer.spec                   # Android APK build config
++-- README.md                        # This file
++-- .env.example                     # Environment variable template
++-- .github/workflows/               # CI (ci.yml) + APK build (build.yml)
+|
++-- deploy/
+|   +-- nginx/                       # nginx.conf + conf.d/titan.conf
+|   +-- scripts/                     # deploy-vps.sh, backup.sh, restore.sh
+|   +-- sql/                         # init.sql (PostgreSQL)
+|   +-- systemd/                     # titan-omniscale.service
+|
++-- scripts/
+|   +-- install_termux.sh            # Android/Termux auto-installer (326 lines)
+|   +-- git_push.py                  # Git push automation
+|   +-- ssh_wrapper.py               # SSH wrapper
+|
++-- src/
+|   +-- config/                      # settings.yaml + loader.py
+|   |
+|   +-- core/                        # ** Core Engine (82 sub-directories) **
+|   |   +-- orchestrator.py          # TitanOrchestrator (sequential fallback)
+|   |   +-- dag_orchestrator.py      # DAGOrchestrator (primary, facade)
+|   |   +-- orchestrator_base.py     # BaseOrchestrator (shared base)
+|   |   +-- reasoning_engine.py      # ReasoningEngine facade
+|   |   +-- fractal_generator.py     # FractalGenerator facade
+|   |   +-- semantic_engine.py       # SemanticEngine facade
+|   |   +-- mini_ai_engine.py        # MiniAIEngine (Qwen3) facade
+|   |   +-- smart_memory.py          # SmartMemory facade
+|   |   +-- code_generator.py        # CodeGenerator facade
+|   |   +-- code_transformer.py      # CodeTransformer facade
+|   |   +-- auth_service.py          # AuthService facade
+|   |   +-- model_manager.py         # ModelManager facade
+|   |   +-- ... (30+ more facades)
+|   |   |
+|   |   +-- dag_parts/               # DAGOrchestrator implementation
+|   |   +-- orch_base_parts/         # BaseOrchestrator implementation
+|   |   +-- agents/ + 11 *_parts/    # 9 agents + BaseAgent + Runner + Cache
+|   |   +-- level1_semantic_engine/  # L1: Semantic Parser
+|   |   +-- level2_macro_router/     # L2: Macro Router MoE
+|   |   +-- level3_graph_ast/        # L3: Graph AST Engine
+|   |   +-- level4_apa_planner/      # L4: APA Planner (Z3+MCTS)
+|   |   +-- level5_structural_swarm/ # L5: AST Surgeon + ScrapAgent
+|   |   +-- level6_reflexion_sandbox/# L6: Reflexion Sandbox
+|   |   +-- level7_merkle_ledger/    # L7: Merkle Ledger
+|   |   +-- level8_theorem_cache/    # L8: Theorem Cache
+|   |   +-- shared/ + z3_parts/ + symbolic_parts/ + governor_parts/ + sandbox_parts/
+|   |   +-- patterns/ (6 categorías, 20+ archivos)
+|   |   +-- distributed/ (11 archivos)
+|   |   +-- tenant/ (3 archivos)
+|   |   +-- observability/ (4 archivos)
+|   |   +-- open_design/ (5 archivos)
+|   |   +-- fractal_parts/ reasoning_parts/ memory_parts/ semantic_parts/
+|   |   +-- auth_parts/ template_parts/ code_gen_parts/ code_trans_parts/
+|   |   +-- app_gen_parts/ automation_parts/ niche_loader_parts/ niche_scraper_parts/
+|   |   +-- mini_ai_parts/ model_mgr_parts/ thinking_parts/ schema_parts/
+|   |   +-- chain_valid_parts/ dna_loader_parts/ context_ptr_parts/
+|   |   +-- low_power_parts/ partial_reason_parts/ abortive_parts/
+|   |   +-- logic_blocks/ executors/ ...
+|   |
+|   +-- server/                      # HTTP Server
+|       +-- server.py                # ThreadedHTTPServer
+|       +-- fastapi_app.py           # FastAPI SaaS app (~1654 lines)
+|       +-- auth_middleware.py        # JWT + API key auth
+|       +-- security_middleware.py    # Security headers + input sanitization
+|       +-- rate_limiter.py           # Per-IP token bucket
+|       +-- tenant_rate_limiter.py    # Per-user + per-tenant rate limiting
+|       +-- response_builder.py       # OpenAI-compatible response builders
+|       +-- http_parts/               # stdlib server mixins (GET, POST, helpers)
+|
++-- tests/                           # ** Test Suite (272 files, 31,900 lines) **
+|   +-- unit/                        # 265+ unit tests
+|   +-- integration/                 # 1 end-to-end pipeline test
+|
++-- src/templates/                   # ** Templates **
+    +-- apps/base/                   # 8 app templates (.j2)
+    +-- automations/base/            # 6 automation templates (.j2)
+    +-- blocks/                      # 20+ block templates
+    +-- niches/                      # 107 niche YAML definitions (20 domains)
+    +-- dna/                         # 4 DNA master templates (.yaml)
 ```
-
----
-
-## DAG Dinámico (F1) — Detalle
-
-### Arquitectura del DAG
-
-El DAGOrchestrator reemplaza el dispatch estático if/elif de 185+ líneas con un grafo dirigido acíclico donde cada nodo es un paso del pipeline y las transiciones son condicionales según el resultado del paso anterior. El grafo se define en ~30 líneas de `DAGNode` dataclasses:
-
-```
-CACHE_CHECK ──[hit]──→ DONE
-     │
-   [miss]
-     ↓
-   INTENT ──(dynamic)──→ CONTEXT_PREPARE
-     ↓
-CONTEXT_PREPARE ──→ AST_ANALYZE ──→ THEOREM_CACHE
-                                           │
-                                        [hit]──→ DONE
-                                        [miss]
-                                           ↓
-                                        ROUTE ──→ CRITICALITY_ROUTE ──→ PLAN
-                                                                       │
-                                                        ┌──────────────┼──────────────┐
-                                                        ↓              ↓              ↓
-                                                   [abortive]    [low_crit]    [high_crit]
-                                                        ↓              ↓              ↓
-                                                    ABORTIVE    EXECUTE_STEPS  SOLVER_VERIFY
-                                                        ↓              ↓              ↓
-                                                     DONE         ┌─────┘      [pass]──→ EXECUTE_STEPS
-                                                                  ↓
-                                                              SANDBOX
-                                                             ╱       ╲
-                                                        [PASS]     [FAIL]
-                                                           ↓         ↓
-                                                   LEDGER_COMMIT  LEDGER_ROLLBACK
-                                                           ↓         ↓
-                                                   THEOREM_SAVE    DONE
-                                                           ↓
-                                                   MEMORY_SAVE
-                                                           ↓
-                                                         DONE
-```
-
-### TitanAgent: Meta-Router del DAG
-
-TitanAgent es el agente F1 que decide las transiciones del DAG cuando son no triviales (nodos INTENT y PLAN). Funciona en dos modos:
-
-1. **LLM mode**: Envía contexto (nodo actual, resultado, operation, goal, criticality) al LLM y recibe el nombre del siguiente nodo
-2. **Fallback determinista**: Usa tablas estáticas de mapeo (operation → nodo, criticality → path) que reproducen exactamente el comportamiento del pipeline secuencial original
-
-### Ventajas sobre el Orquestador Original
-
-| Característica | Orquestador Original | DAGOrchestrator (F1) |
-|---------------|---------------------|---------------------|
-| Dispatch | if/elif 185+ líneas | DAG de 16 nodos |
-| Transiciones | Hardcodeadas | Condicionales + dinámicas |
-| Feedback loops | No soportados | Máx. 3 iteraciones por nodo |
-| Criticality routing | Estático | F4 CriticalityAgent dinámico |
-| Context prep | Sin compresión | F3 ContextAgent adaptativo |
-| Skip de nodos | No | criticality_skip por nodo |
-| Safety | Sin límite de pasos | Máx. 20 pasos totales |
-| Hardware aware | No | v17: LowPowerSequentialMode |
-
----
-
-## Sistema de Agentes IA — Detalle
-
-### TitanAgent (F1)
-
-**Rol**: Meta-router que decide transiciones del DAG dinámicamente.
-
-**Reemplaza**: El dispatch estático if/elif de 185+ líneas del orquestador original.
-
-**Flujo**:
-1. Si el nodo tiene transición directa en tabla → usar esa
-2. Si el nodo es INTENT o PLAN → TitanAgent decide usando LLM o fallback
-3. Fallback determinista: Tablas estáticas INTENT_TRANSITIONS y CRITICALITY_PATHS
-
-**Output**: Nombre del siguiente nodo del DAG (string válido de PIPELINE_DAG).
-
-### SurgicalAgent (F2)
-
-**Rol**: Comprensión semántica quirúrgica — clasifica la intención con fusión multi-señal.
-
-**Reemplaza**: `SemanticParser` (TF-IDF + keyword maps) + `SemanticEngine._fallback_classify` (keyword matching) + `MiniAIEngine.classify_intent` — 3 puntos dispersos de clasificación unificados en 1 agente.
-
-**Arquitectura 4-Cable** (orden de costo ascendente):
-
-```
-┌─────────────────────────────────────────────────┐
-│  CABLE 1: SmartMemory cache ──► hit? → return   │
-│  CABLE 2: SemanticEngine embed ──► high conf? →  │
-│  CABLE 3: LLM (AgentRunner) ──► valid JSON? →   │
-│  CABLE 4: TF-IDF determinista ──► always works   │
-└─────────────────────────────────────────────────┘
-```
-
-**Fusión multi-señal**:
-- Si LLM + SemanticEngine coinciden → confianza ALTA (0.7-1.0)
-- Si solo LLM o solo Semantic → confianza MEDIA (0.4-0.7)
-- Si solo TF-IDF → confianza BAJA (0.0-0.4)
-- Calibración adaptativa: Ajusta confianza según historial de aciertos por operación
-
-**Salida**: `IntentOutput` → `to_intent_payload()` → compatible con el pipeline existente (MacroRouter, APAPlanner, etc.)
-
-**Operaciones**: `CREATE`, `REFACTOR`, `DELETE`, `SEARCH`, `ANALYZE`, `EXPLAIN`, `DEBUG`, `OPTIMIZE`
-
-**Objetivos**: `COMPLEXITY_REDUCTION`, `MODERN_PATTERN`, `BUG_FIX`, `FEATURE_ADD`, `SECURITY_HARDEN`, `PERFORMANCE`, `READABILITY`
-
-**Cableado**: El DAGOrchestrator invoca `classify_with_runner()` en el nodo INTENT, y el resultado fluye a ContextAgent (F3) y CriticalityAgent (F4).
-
-### ContextAgent (F3)
-
-**Rol**: Gestión de ventana de contexto con compresión adaptativa y presupuesto de tokens.
-
-**Reemplaza**: `SmartMemory.get_working_context()` (truncación sin inteligencia) + `ReasoningAgent._get_memory_context()` (duplica lógica) + contexto disperso en cada agente.
-
-**Arquitectura 4-Cable**:
-
-```
-┌──────────────────────────────────────────────────────┐
-│  CABLE 1: Compresión Adaptativa                      │
-│    LLM → resumen semántico (si Qwen disponible)     │
-│    TF-IDF → extracción de keywords (sin LLM)        │
-│    Raw → truncación inteligente (siempre funciona)   │
-│                                                       │
-│  CABLE 2: Scoring de Relevancia                      │
-│    Relevancia a intent (op/goal/criticality)         │
-│    Recencia temporal (decaimiento exponencial)       │
-│    Peso de importancia (SmartMemory.importance)      │
-│                                                       │
-│  CABLE 3: Presupuesto de Tokens                      │
-│    INTENT:50t | REASON:150t | CODE:200t              │
-│    VALIDATE:100t | RESERVE:100t                      │
-│                                                       │
-│  CABLE 4: Contexto Cross-Agent                       │
-│    Deduplicación entre llamadas de agentes           │
-│    Pre-fetch de memorias relevantes por intent       │
-│    Cache compartido de contexto comprimido           │
-└──────────────────────────────────────────────────────┘
-```
-
-**Presupuesto de tokens** (se ajusta por operation/goal):
-
-| Agente | Presupuesto Base | CREATE | DEBUG | EXPLAIN |
-|--------|----------------:|-------:|------:|--------:|
-| intent | 50t | 30t | 30t | 50t |
-| reasoning | 150t | 150t | 200t | 200t |
-| code | 200t | 250t | 150t | 100t |
-| validation | 100t | 70t | 100t | 100t |
-| reserve | 100t | 100t | 100t | 100t |
-
-**Cableado**: El DAGOrchestrator invoca `prepare_context()` en el nodo CONTEXT_PREPARE. El contexto comprimido y presupuesto se inyectan en todos los agentes downstream. F4 (CriticalityAgent) puede modificar el presupuesto con `context_budget_modifier`.
-
-### CriticalityAgent (F4)
-
-**Rol**: Ruteo Dinámico de Criticalidad — unifica la inferencia de criticalidad desde múltiples señales.
-
-**Reemplaza**: `MacroRouter.route()` (keywords + AST) + `TitanAgent.CRITICALITY_PATHS` (mapping estático) + `SurgicalAgent._infer_criticality()` (keywords) + `ContextAgent._allocate_budget()` (ajustes por goal) + `SmartMemory.compute_importance()` (peso por operación) — 5 sitios aislados unificados en 1 agente.
-
-**Resuelve**:
-- **Type mismatch**: IntentOutput.criticality=str vs RoutingPayload.criticality=int → siempre produce int (1/2/3)
-- **Criticalidad estática**: Se adapta al contexto semántico vía LLM
-- **Lógica duplicada**: 3 sitios infieren criticalidad independientemente → 1 fusión centralizada
-- **Sin retroalimentación**: Historial de evaluaciones para patrones recurrentes
-
-**Arquitectura 3-Cable**:
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  CABLE 1: LLM Inference (si Qwen disponible)            │
-│    Prompt → "Rate criticality of {op}/{goal} on {target}"│
-│    Parse → level:int + reason:str + adjustments:dict     │
-│                                                          │
-│  CABLE 2: Semantic Engine (si embeddings disponibles)    │
-│    Comparar operación vs patrones críticos conocidos     │
-│    Similarity score → nivel de criticalidad              │
-│                                                          │
-│  CABLE 3: Deterministic Multi-Signal (siempre funciona) │
-│    5 señales con fusión ponderada:                       │
-│    ┌─────────────────────────────────────────────┐       │
-│    │ Signal 1: Keywords críticos    (peso: 0.30) │       │
-│    │ Signal 2: Operation/Goal map   (peso: 0.25) │       │
-│    │ Signal 3: MacroRouter topology (peso: 0.20) │       │
-│    │ Signal 4: SmartMemory importance (peso: 0.15)│      │
-│    │ Signal 5: Historical pattern   (peso: 0.10) │       │
-│    └─────────────────────────────────────────────┘       │
-└──────────────────────────────────────────────────────────┘
-```
-
-**Output**: `CriticalityOutput` canónico que alimenta:
-
-| Consumidor | Qué usa | Cómo se cablea |
-|-----------|---------|---------------|
-| F1 (DAG) | `path` → "low_crit"/"standard"/"high_crit" | `_exec_plan()` usa `crit_output.path` |
-| F3 (Context) | `adjustments.context_budget_modifier` | `_exec_criticality_route()` modifica `context_output.token_budget` |
-| CodeAgent | `adjustments.code_agent` | `set_criticality_adjustments()` en CodeAgent |
-| BusinessLogicAgent | `adjustments.business_agent` | `set_criticality_adjustments()` en BusinessLogicAgent |
-| MacroRouter | No puede bajar criticalidad | `if crit_output.level > router_crit: routing.criticality = crit_output.level` |
-
-**Ajustes comportamentales por nivel**:
-
-| Nivel | CodeAgent | BusinessLogicAgent | Context Budget |
-|-------|-----------|-------------------|----------------|
-| 1 (FAST) | Sin validación extra, error handling básico, complejidad máx 15 | Sin auditoría, 1 capa validación, sin rollback | 0.8x (menos contexto) |
-| 2 (MODERATE) | Validación extra, error handling completo, complejidad máx 10 | Con auditoría, 2 capas, con rollback | 1.0x (estándar) |
-| 3 (SURGICAL) | Security checks + validación + error handling defensivo, complejidad máx 5 | Auditoría + 3 capas + rollback + idempotency | 1.3x (más contexto) |
-
-### IntentAgent (Legacy)
-
-**Rol**: Comprensión semántica original — clasifica la intención del usuario.
-
-**Estado**: Mantenido por compatibilidad. `SurgicalAgent` (F2) lo reemplaza como clasificador primario en el DAGOrchestrator.
-
-### ReasoningAgent (F3)
-
-**Rol**: Razonamiento avanzado unificado — piensa paso a paso.
-
-**Reemplaza**: `ReasoningEngine` (720 líneas, 3 modos step_by_step/self_reflect/with_context) + `ThinkingEngine.reason()` + `chain_of_thought()` (858 líneas).
-
-**Modos**:
-- **step_by_step**: Descompone el problema en pasos numerados con conclusiones
-- **self_reflect**: Genera → evalúa → refina (más confiable, más costoso)
-- **with_context**: Razonamiento con inyección de memoria + semántica
-
-**Fallback**: Razonamiento determinista por tipo de problema (api, auth, database, invoice, inventory, crm, automation) con templates predefinidos.
-
-### BusinessLogicAgent (F3)
-
-**Rol**: Ejecución de lógica de negocio impulsada por IA.
-
-**Reemplaza**: `LogicBuilder` (2,764 líneas con 30+ LogicBlocks en 6 categorías) + `ThinkingEngine._identify_entities()` + `_generate_endpoints()`.
-
-**Tipos de operación**: `invoice`, `inventory`, `crm`, `task`, `report`, `notification`, `analytics`, `custom`
-
-**Cada operación tiene**:
-- Lógica IA (LLM → JSON con datos, side effects, insights)
-- Fallback determinista completo (cálculos de impuestos, seguimiento de inventario, pipeline de ventas, priorización de tareas, etc.)
-
-**Cableado F4**: Recibe `adjustments.business_agent` de CriticalityAgent para ajustar auditoría, capas de validación y rollback según criticalidad.
-
-### CodeAgent (F4)
-
-**Rol**: Generación y transformación de código unificada.
-
-**Reemplaza**: `CodeGenerator` (820 líneas) + `CodeTransformer` (443 líneas) + `AppGenerator` legacy f-string generation.
-
-**Tareas**:
-- **generate**: Código nuevo desde requisitos (Python, Kotlin, Go, JavaScript)
-- **transform**: Refactorización de código existente (AST-based para Python)
-- **optimize**: Optimización con detección de anti-patrones
-- **fix**: Corrección de bugs (missing colons, bare except, etc.)
-- **scaffold**: Estructura de proyecto completa con tests
-
-**Características del fallback**:
-- Python: AST-based refactoring, type annotation addition, complexity analysis
-- Multi-lenguaje: Templates deterministas con patrón Manager
-- Scaffolding: Genera main.py, requirements.txt, config.py, tests/
-
-**Cableado F4**: Recibe `adjustments.code_agent` de CriticalityAgent para ajustar validación extra, security checks, error handling y docstring level según criticalidad.
-
-### AutomationAgent (F4)
-
-**Rol**: Diseño inteligente de automatizaciones desde lenguaje natural.
-
-**Reemplaza**: `AutomationEngine._infer_trigger()` + `_infer_actions()` + `_parse_schedule()` + `_extract_name()` — keyword matching reemplazado por IA.
-
-**Tipos de trigger**: `schedule` (cron/interval), `event`, `webhook`, `manual`
-
-**Tipos de acción**: `email`, `http`, `db`, `file`, `webhook`, `notification`, `transform`, `schedule`, `log`
-
-**Bilingüe**: Keywords de inferencia en inglés y español (ej: "cada hora" → hourly, "cuando" → event trigger).
-
-### ValidationAgent (F5)
-
-**Rol**: Validación inteligente de código y cadenas lógicas.
-
-**Reemplaza**: `ChainValidator` (250 líneas) + `CodeTransformer` bug detection.
-
-**Tipos de validación**:
-- **code**: Seguridad (eval, exec, injection), calidad (bare except, print), AST analysis (missing returns, resource leaks)
-- **chain**: Compatibilidad entre bloques, completitud, longitud
-- **config**: JSON/YAML válido, secret keys, debug mode
-
-**Patrones de seguridad**: 11 patrones de vulnerabilidad (eval, exec, command injection, pickle, yaml.load, weak hashes, SELECT *, format injection, etc.)
-
-**Risk score**: 0.0 (seguro) → 1.0 (peligroso) basado en severity y cantidad de issues.
-
-### AgentRunner y Flujo de Ejecución
-
-El `AgentRunner` es el puente entre los agentes y el LLM. Su flujo de ejecución:
-
-```
-1. Check cache → si hit, devolver resultado cacheado (O(1))
-2. Build prompt → llamar al LLM vía MiniAIEngine
-   - max_tokens: 600 por llamada
-   - temperature: 0.15 (más determinista)
-   - timeout: 10 segundos
-3. Parse response → validar contra esquema Pydantic
-4. Si falla → retry (1 vez)
-5. Si falla de nuevo → fallback determinista
-6. Cache resultado exitoso
-```
-
-### Fallback Determinista
-
-Cada agente implementa un fallback 100% determinista que funciona sin LLM, sin embeddings, sin dependencias externas. Esto garantiza que el sistema **siempre** produce una respuesta útil, incluso en hardware sin modelo IA cargado.
-
-| Agente | Fallback Strategy |
-|--------|------------------|
-| TitanAgent | Tablas estáticas INTENT_TRANSITIONS + CRITICALITY_PATHS |
-| SurgicalAgent | SmartMemory cache → SemanticEngine → TF-IDF + regex bilingüe (EN/ES) |
-| ContextAgent | Scoring de relevancia + TF-IDF compression + raw truncation |
-| CriticalityAgent | Fusión ponderada 5-señal (keywords + op/goal + router + memory + history) |
-| ReasoningAgent | Templates por tipo de problema |
-| BusinessLogicAgent | Cálculos directos por operación |
-| CodeAgent | Templates deterministas por lenguaje |
-| AutomationAgent | Keyword inference (EN/ES) |
-| ValidationAgent | Reglas estáticas + AST analysis |
-
----
-
-## Pipeline de 8 Niveles — Detalle
-
-### Nivel 1: Semantic Parser
-
-El primer nivel del pipeline analiza la petición del usuario utilizando TF-IDF y cosine similarity para identificar la operación solicitada, el objetivo y el contexto. Integra el `SurgicalAgent` (F2) como clasificador primario con fusión multi-señal, con fallback al parser TF-IDF original cuando el agente IA no está disponible. El parser soporta extracción de bloques de código markdown, detección de lenguaje por extensión de archivo, y mapeo de entidades nombradas (funciones, clases, archivos).
-
-### Nivel 2: Macro Router MoE
-
-El Macro Router aplica un modelo de expertos (MoE) para clasificar la criticidad de la petición y determinar qué niveles del pipeline deben activarse. El `CriticalityAgent` (F4) unifica la inferencia de criticalidad desde 5 señales: keywords críticos, operation/goal baseline, MacroRouter AST topology, SmartMemory importance, y patrones históricos. La regla del 80/20 aplica: el 80% de las peticiones se resuelven en ~50ms (criticidad baja, ruta directa), mientras que el 100% de la capacidad libre se dedica al 20% crítico. F4 puede elevar la criticalidad del MacroRouter pero nunca la baja.
-
-### Nivel 3: Graph AST Engine
-
-El motor de AST construye un grafo de dependencias del código fuente utilizando el AST nativo de Python (para código Python) y regex multi-lenguaje (para Kotlin, Go, JavaScript, etc.). El grafo se almacena en SQLite y permite consultas de dependencia, análisis de complejidad ciclomática, y detección de patrones arquitectónicos. La información del AST alimenta los niveles superiores del pipeline para razonamiento informado.
-
-### Nivel 4: APA Planner
-
-El planificador APA (Automated Planning and Acting) utiliza dos motores complementarios: **Z3 SMT Solver** para verificación formal (cuando está instalado) y **AC-3 + backtracking** como fallback determinista (siempre disponible). El componente **MCTS** (Monte Carlo Tree Search) explora el espacio de mutaciones posibles con UCB1, 4 fases (Selección, Expansión, Simulación, Backpropagation), depth limit 5, y 100 simulaciones. El presupuesto computacional está controlado por watchdog: 15 segundos para Z3 quirúrgico, 5 segundos para moderado. En v17, el **LowPowerSequentialMode** puede escalar las simulaciones MCTS (50% o 25%) según temperatura y batería.
-
-### Nivel 5: Structural Swarm
-
-El enjambre estructural opera con dos agentes: el **AST Surgeon** que realiza cirugía precisa en nodos del AST (reemplazar, eliminar, insertar funciones/clases) preservando la estructura del código, y el **GitHub Scrap Agent** que busca patrones modernos en repositorios públicos para inspirar soluciones. En v17, el GitHub Scrap Agent también alimenta el sistema de **Auto-Evolución** a través del `TrendingAnalyzer`, que extrae dependencias y patrones emergentes para actualizar los niche templates automáticamente.
-
-### Nivel 6: Reflexion Sandbox
-
-El sandbox de reflexión ejecuta validación simbólica acotada del código generado. El motor de ejecución simbólica crea estados simbólicos con path conditions, detecta violaciones de invariantes, y calcula la cobertura de caminos. Los límites cinemáticos incluyen: K-Paths de radio 10 (la onda de validación no explora más de 10 enlaces jerárquicos desde el nodo de mutación), y Path Pruning de side effects (corta ramas con I/O externo, inyectando mocks deterministas). Si la validación falla por K-Path excesivo, se activa el Protocolo Abortivo.
-
-### Nivel 7: Merkle Ledger
-
-El ledger Merkle mantiene un registro criptográfico de todos los cambios aplicados al código. Cada mutación genera un snapshot con hash SHA-256, y el sistema puede hacer rollback atómico a cualquier estado previo. Los workspaces están aislados (sandbox isolation) con TTL configurable, garantizando que las pruebas nunca afectan el código en producción. El rollback es instantáneo: simplemente se restaura el snapshot anterior.
-
-### Nivel 8: Theorem Cache
-
-La innovación más potente del sistema. El caché de teoremas convierte la verificación O(n) en lookup O(1) mediante destilación topológica: extrae el "esqueleto" del AST (eliminando nombres de variables, valores literales, y detalles de implementación), genera un hash criptográfico de la topología sintáctica pura, y lo asocia al resultado de la verificación. Cuando un patrón lógico equivalente aparece nuevamente (incluso con nombres diferentes), el sistema lo reconoce y bypasa completamente la verificación, reduciendo de 15 segundos a ~2 milisegundos.
-
----
-
-## Motor SMT (Z3 / AC-3)
-
-| Característica | Con Z3 instalado | Sin Z3 (Android/Termux) |
-|----------------|-----------------|------------------------|
-| **Verificación** | Completa (enteros, arrays, cuantificadores) | AC-3 + backtracking CSP |
-| **Timeout** | 15s quirúrgico, 5s moderado | 5s determinista |
-| **Proof** | Satisfiability proof + counterexamples | Constraint satisfaction |
-| **Instalación** | `pip install z3-solver` | Incluido (sin acción requerida) |
-
-El sistema detecta automáticamente si Z3 está disponible y selecciona el solver apropiado. En Android/Termux donde Z3 no compila, el fallback AC-3 proporciona verificación suficiente para la mayoría de escenarios.
-
----
-
-## Principio de Aislamiento Quirúrgico
-
-El **Principio de Aislamiento Quirúrgico (PAQ)** es la filosofía central de ZENIC LOGIC. En lugar de aplicar verificación formal a todo el código (lo cual causa explosión de estado), el sistema aplica "triaje médico":
-
-| Escenario | Estrategia | Costo CPU | Tiempo |
-|-----------|-----------|-----------|--------|
-| Componente visual (botón, UI) | Nivel 2 detecta baja criticidad → compilación AST directa | ~5% | <50ms |
-| Pasarela de pagos / Auth | Nivel 2 detecta alta criticidad → Z3 + ejecución simbólica | ~80% | 12-15s |
-| Mutaciones repetitivas (ORM) | Primera: verificación completa → Nivel 8 hashea | ~60% → ~2% | 10s → 3ms |
-
-El `CriticalityAgent` (F4) automatiza este triaje con fusión multi-señal, determinando dinámicamente qué nivel de verificación se necesita para cada operación. Las operaciones de baja criticalidad (FAST_STANDARD) saltan SOLVER_VERIFY, las moderadas (DEEP_MODERATE) ejecutan el pipeline estándar, y las críticas (SURGICAL_CRITICAL) activan Z3 + security checks + error handling defensivo.
-
-**Protocolo Abortivo**: Si Z3 excede el timeout de 15 segundos, el sistema hace rollback atómico y subdivide automáticamente la tarea en unidades independientes manejables.
-
-**Razonamiento Parcial**: Si K-Paths excede el límite (10), el sistema devuelve una respuesta OpenAI-compatible con `tool_calls` describiendo la subdivisión, permitiendo al cliente reanudar la ejecución parcial.
-
----
-
-## Configuración YAML
-
-Los archivos de configuración están en `src/config/`:
-
-### `settings.yaml`
-Configuración general: directorio del proyecto, timeouts globales, parámetros del modelo.
-
-### `timeouts.yaml`
-Presupuestos computacionales por componente:
-- Z3: 15000ms quirúrgico, 5000ms moderado
-- MCTS: 100 simulaciones, depth limit 5
-- K-Paths: radio máximo 10
-- Agentes: 10000ms por llamada, max_tokens 600
-
-### `critical_nodes.yaml`
-Patrones para identificar nodos críticos en el AST:
-- Auth: `/auth`, `/login`, `password`, `token`, `jwt`
-- Crypto: `encrypt`, `decrypt`, `hash`, `ssl`
-- Database: `/db`, `migration`, `schema`
-- Payments: `/payment`, `/stripe`, `/billing`
 
 ---
 
@@ -1613,134 +1339,63 @@ Patrones para identificar nodos críticos en el AST:
 
 ```bash
 # Ejecutar todos los tests
-pytest
+pytest tests/ -v
 
-# Con verbose y coverage
-pytest -v --cov=src --cov-report=term-missing
+# Con coverage
+pytest tests/ --cov=src --cov-report=html
 
-# Solo tests unitarios
-pytest tests/unit/
+# Solo unit tests
+pytest tests/unit/ -v
 
-# Solo tests de integración
-pytest tests/integration/
+# Test específico
+pytest tests/unit/test_dag_parts/ -v
 
-# Solo tests de agentes F1-F4
-pytest tests/unit/test_agent_framework.py tests/unit/test_surgical_agent.py \
-       tests/unit/test_context_agent.py tests/unit/test_intent_agent.py \
-       tests/unit/test_reasoning_and_business_agents.py tests/unit/test_f4_f5_agents.py
+# Con timeout (CI)
+pytest tests/ --timeout=60
 ```
 
-**Cobertura de tests**: 273 archivos de test, **2,247 tests pasados**, 16 skipped, 0 archivos >400 líneas.
+**Stats**: 272 archivos de test, ~31,900 líneas, 2,247 tests pasando, 50% coverage mínimo (CI).
 
-| Suite de Tests | Directorio | Enfoque |
-|---------------|-----------|----------|
-| Agent Framework | `test_agent_fw_parts/` | BaseAgent, AgentRunner, AgentCache |
-| SurgicalAgent (F2) | `test_surgical_parts/` | Multi-signal fusion, calibración |
-| ContextAgent (F3) | `test_context_parts/` | Compresión, scoring, presupuesto |
-| IntentAgent | `test_intent_parts/` | Clasificación de intención (EN/ES) |
-| Business Logic | `test_biz_logic_parts/` | BusinessLogicAgent + LogicBlocks |
-| F4 + F5 Agents | `test_f4_f5_parts/` | CodeAgent + AutomationAgent + ValidationAgent + CriticalityAgent |
-| Phase 8 Intelligence | `test_phase8_parts/` | ReasoningEngine + ChainValidator |
-| Scrap Agent | `test_scrap_parts/` | GitHub Scrap Agent |
-| Symbolic Executor | `test_symbolic_parts/` | Ejecución simbólica |
-| Auth Service | `test_auth_svc_parts/` | JWT + RBAC |
-| Z3 Solver | `test_z3_parts/` | SMT Solver + constraints |
-| Semantic Engine | `test_semantic_parts/` | Embeddings + similitud |
-| Fractal Generator | `test_fractal_parts/` | Generación 3-phase |
-| Niche System | `test_niche_parts/` | NicheLoader + YAML |
-| Low Power Mode | `test_low_power_parts/` | Modo secuencial adaptativo |
-| Model Manager | `test_mini_ai_parts/` | Lazy loading + auto-unload |
-| Governor | `test_governor_parts/` | ResourceGovernor + límites |
-
----
-
-## Plantillas de Generación
-
-### Aplicaciones (8 templates)
-
-| Template | Descripción | Archivos |
-|----------|-------------|----------|
-| `auth_system` | Sistema de autenticación completo | models, routes, middleware, tests |
-| `base` | Aplicación base con CRUD | models, routes, config, tests |
-| `crm` | CRM con pipeline de ventas | lead models, stages, reports |
-| `crud_dashboard` | Dashboard con operaciones CRUD | models, api, frontend templates |
-| `inventory` | Sistema de inventario | product models, stock tracking, alerts |
-| `invoice_billing` | Facturación con impuestos | invoice models, tax calc, PDF gen |
-| `task_manager` | Gestor de tareas | task models, priorities, assignments |
-| `web_api` | API REST con FastAPI | models, routes, auth, docs |
-
-### Automatizaciones (6 templates)
-
-| Template | Descripción |
-|----------|-------------|
-| `base` | Workflow base con trigger + action |
-| `data_sync` | Sincronización de datos entre sistemas |
-| `email_sender` | Envío programado de correos |
-| `notification_dispatcher` | Despacho de notificaciones multi-canal |
-| `scheduled_report` | Generación y envío de reportes |
-| `webhook_handler` | Procesamiento de webhooks entrantes |
-
-### Niches Declarativos (103 templates en 20 dominios)
-
-Ver [Sistema de Niches Declarativos](#sistema-de-niches-declarativos) para el detalle completo.
-
-### DNA Master Templates (4 templates)
-
-Ver [Sistema DNA (Master Templates)](#sistema-dna-master-templates) para el detalle completo.
+**CI/CD**: GitHub Actions con matrix Python 3.10/3.11/3.12, pytest + coverage, Bandit security scan, flake8 lint, mypy type check.
 
 ---
 
 ## Dependencias
 
-### Core (requeridas)
+### Core
 
-| Paquete | Versión | Rol |
-|---------|---------|-----|
-| `fastapi` | >=0.100.0 | Framework web |
-| `uvicorn` | >=0.23.0 | Servidor ASGI |
-| `pydantic` | >=2.0.0 | Validación de schemas |
-| `jinja2` | >=3.1.0 | Motor de templates |
-| `aiosqlite` | >=0.19.0 | Base de datos async |
-| `numpy` | >=1.24.0 | Cálculos numéricos |
-| `python-jose` | >=3.3.0 | JWT tokens |
-| `passlib` | >=1.7.4 | Hashing de contraseñas |
-| `aiohttp` | >=3.8.0 | HTTP client async |
-| `apscheduler` | >=3.10.0 | Programación de tareas |
-| `aiofiles` | >=23.0.0 | File I/O async |
+| Categoría | Paquetes |
+|-----------|----------|
+| **Web Framework** | `fastapi>=0.100.0`, `uvicorn>=0.23.0`, `jinja2>=3.1.0`, `pydantic>=2.0.0` |
+| **Database** | `aiosqlite>=0.19.0`; PostgreSQL: `psycopg2-binary`, `asyncpg` (optional) |
+| **AI/ML** | `llama-cpp-python>=0.3.0` (Qwen3-0.6B), `numpy>=1.24.0` |
+| **Auth** | `python-jose[cryptography]>=3.3.0`, `passlib[bcrypt]>=1.7.4` |
+| **Config** | `pyyaml>=6.0` |
+| **Production** | `gunicorn>=21.2.0` |
+| **Testing** | `pytest>=7.4.0`, `pytest-asyncio`, `pytest-cov`, `pytest-timeout` |
 
 ### Opcionales
 
-| Paquete | Rol | Instalación |
-|---------|-----|-------------|
-| `z3-solver` | Verificación formal SMT | `pip install z3-solver` |
-| `kivy` | Interfaz gráfica | `pip install kivy` |
-| `fastembed` | Embeddings semánticos densos | `pip install fastembed` |
-| `llama-cpp-python` | Motor de inferencia LLM | `pip install llama-cpp-python` |
-| `stripe` | Integración de pagos | `pip install stripe` |
-| `gspread` | Google Sheets integration | `pip install gspread` |
-
-### Testing
-
-| Paquete | Versión | Rol |
-|---------|---------|-----|
-| `pytest` | >=7.4.0 | Framework de tests |
-| `pytest-asyncio` | >=0.21.0 | Tests async |
-| `pytest-cov` | >=4.1.0 | Coverage reporting |
+| Grupo | Paquetes |
+|-------|----------|
+| Z3 Solver | `z3-solver>=4.12.0` |
+| Kivy GUI | `kivy>=2.3.0` |
+| Embeddings | `fastembed>=0.2.0` |
+| Observability | `opentelemetry-api`, `opentelemetry-sdk`, `prometheus-client` |
+| Integrations | `stripe`, `gspread`, `oauth2client` |
 
 ---
 
 ## Licencia
 
-MIT License — Ver archivo [LICENSE](LICENSE) para detalles.
+MIT License — Ver [LICENSE](LICENSE) para detalles.
 
 ---
 
 <div align="center">
 
-**ZENIC LOGIC — TITAN OMNISCALE X v17**
+**ZENIC LOGIC — TITAN OMNISCALE X v18**
 
-*Ingeniería de software algorítmica 100% local, libre de alucinaciones sintácticas, inmaculada a nivel de compilación y totalmente funcional incluso bajo hardware Edge de mínimos recursos.*
-
-*Ahora con Auto-Evolución, Context Pointers y Low-Power Mode — el sistema muta, aprende y se adapta al hardware en tiempo real.*
+Motor de IA Quirúrgico Local | 710 archivos | 101K líneas | 26+ patrones | 9 agentes | 8 niveles
 
 </div>

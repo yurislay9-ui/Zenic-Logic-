@@ -68,10 +68,10 @@ def _make_mock_orchestrator():
     orch._analysis = MagicMock()
     orch._analysis.log_request = MagicMock()
     orch._agent_runner = MagicMock()
-    orch._intent_agent = MagicMock()
-    orch._intent_agent.classify_with_runner = MagicMock(return_value=MagicMock(
+    orch._surgical_agent = MagicMock()
+    orch._surgical_agent.classify_with_runner = MagicMock(return_value=MagicMock(
         operation="CREATE", goal="FEATURE_ADD", source="fallback", confidence=0.5))
-    orch._intent_agent.to_intent_payload = MagicMock(return_value=MagicMock(
+    orch._surgical_agent.to_intent_payload = MagicMock(return_value=MagicMock(
         op="CREATE", target="test", goal="FEATURE_ADD",
         confidence=0.5, language="python", raw_code="", context="test"))
     orch.ast_engine = MagicMock()

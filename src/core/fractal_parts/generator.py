@@ -6,8 +6,9 @@ Main FractalGenerator class combining all mixins + pattern implementation
 """
 
 import time
+import asyncio
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, AsyncIterator, Iterator
 
 from .types import FileBlueprint, FractalSpec, FractalResult
 from .structure import StructureMixin, PROJECT_TEMPLATES
@@ -168,6 +169,123 @@ class FractalGenerator(StructureMixin, SkeletonsMixin, FillMixin):
             f"phase={result.current_phase}"
         )
         return result
+
+    async def generate_project_streaming(self, description: str,
+                                          project_type: str = "",
+                                          project_name: str = "",
+                                          language: str = "python",
+                                          output_dir: str = "") -> AsyncIterator[Dict[str, Any]]:
+        """
+        Ejecuta las 3 fases de generación fractal con streaming SSE para Open Design.
+
+        Cada fase emite un evento SSE con los datos parciales, permitiendo
+        que Open Design renderice progresivamente el resultado en su iframe.
+
+        Yields:
+            Dict with 'event' (str) and 'data' (dict) for each phase.
+        """
+        start_time = time.time()
+
+        # Fase 1: Estructural
+        spec = self.generate_structure(description, project_type, project_name, language)
+        yield {
+            "event": "fractal_structure",
+            "data": {
+                "phase": "structure",
+                "project_name": spec.project_name,
+                "directories": len(spec.directories),
+                "files": len(spec.files),
+                "summary": self.get_spec_summary(spec),
+            },
+        }
+
+        # Fase 2: Esqueletos
+        spec = self.generate_skeletons(spec)
+        yield {
+            "event": "fractal_skeleton",
+            "data": {
+                "phase": "skeletons",
+                "project_name": spec.project_name,
+                "files": len(spec.files),
+                "classes": sum(len(f.classes) for f in spec.files),
+                "functions": sum(len(f.functions) for f in spec.files),
+            },
+        }
+
+        # Fase 3: Relleno
+        result = self.fill_logic(spec, output_dir)
+        elapsed = time.time() - start_time
+
+        # Build artifact data for Open Design
+        artifacts = {}
+        for fp, content in result.files_generated.items():
+            artifacts[fp] = content
+
+        yield {
+            "event": "fractal_fill",
+            "data": {
+                "phase": "fill",
+                "project_name": spec.project_name,
+                "files_generated": len(result.files_generated),
+                "artifacts": artifacts,
+                "elapsed_s": round(elapsed, 2),
+            },
+        }
+
+    def generate_project_streaming_sync(self, description: str,
+                                         project_type: str = "",
+                                         project_name: str = "",
+                                         language: str = "python",
+                                         output_dir: str = "") -> Iterator[Dict[str, Any]]:
+        """
+        Synchronous version of generate_project_streaming for stdlib server.
+        """
+        start_time = time.time()
+
+        # Fase 1: Estructural
+        spec = self.generate_structure(description, project_type, project_name, language)
+        yield {
+            "event": "fractal_structure",
+            "data": {
+                "phase": "structure",
+                "project_name": spec.project_name,
+                "directories": len(spec.directories),
+                "files": len(spec.files),
+                "summary": self.get_spec_summary(spec),
+            },
+        }
+
+        # Fase 2: Esqueletos
+        spec = self.generate_skeletons(spec)
+        yield {
+            "event": "fractal_skeleton",
+            "data": {
+                "phase": "skeletons",
+                "project_name": spec.project_name,
+                "files": len(spec.files),
+                "classes": sum(len(f.classes) for f in spec.files),
+                "functions": sum(len(f.functions) for f in spec.files),
+            },
+        }
+
+        # Fase 3: Relleno
+        result = self.fill_logic(spec, output_dir)
+        elapsed = time.time() - start_time
+
+        artifacts = {}
+        for fp, content in result.files_generated.items():
+            artifacts[fp] = content
+
+        yield {
+            "event": "fractal_fill",
+            "data": {
+                "phase": "fill",
+                "project_name": spec.project_name,
+                "files_generated": len(result.files_generated),
+                "artifacts": artifacts,
+                "elapsed_s": round(elapsed, 2),
+            },
+        }
 
     # ============================================================
     #  UTILIDADES

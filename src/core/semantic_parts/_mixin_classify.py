@@ -2,7 +2,7 @@
 Mixin: Intent classification (zero-shot via prototype similarity).
 """
 
-from ._imports import SemanticResult, logger
+from ._imports import SemanticResult, np, logger
 
 
 class ClassifyMixin:
@@ -53,7 +53,9 @@ class ClassifyMixin:
 
     def _build_prototypes(self):
         """Pre-computa embeddings promedio para cada intención."""
-        import numpy as np
+        if np is None:
+            logger.warning("SemanticEngine: numpy not available, skipping prototype building")
+            return
 
         # Build operation prototypes
         for intent, examples in self._intent_prototypes.items():

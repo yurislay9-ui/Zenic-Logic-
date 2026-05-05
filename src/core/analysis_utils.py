@@ -130,6 +130,8 @@ class AnalysisUtils:
     @staticmethod
     def log_request(intent, status, elapsed_ms, cache_hit=False,
                     solver_status="", mcts_sims=0):
+        if intent is None:
+            return
         try:
             conn = get_connection("request_log.sqlite")
             conn.execute(

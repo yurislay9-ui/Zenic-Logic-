@@ -15,6 +15,8 @@ class EmbedMixin:
         """Genera embedding para un texto. Cached."""
         if not self.is_loaded:
             return None
+        if np is None:
+            return None
 
         # Check cache — use full hash to avoid collisions from truncated keys
         cache_key = hashlib.sha256(text.encode()).hexdigest()
@@ -45,6 +47,8 @@ class EmbedMixin:
         """Genera embeddings para múltiples textos. Más eficiente."""
         if not self.is_loaded:
             return []
+        if np is None:
+            return []
 
         self._call_count += 1
         try:
@@ -64,6 +68,8 @@ class EmbedMixin:
     @staticmethod
     def similarity(a, b) -> float:
         """Similitud coseno entre dos embeddings normalizados (= dot product)."""
+        if np is None:
+            return 0.0
         return float(np.dot(a, b))
 
     def similarity_text(self, text_a: str, text_b: str) -> float:

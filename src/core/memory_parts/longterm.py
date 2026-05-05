@@ -3,6 +3,7 @@ TITAN OMNISCALE X - SmartMemory Long-term Memory Mixin
 
 Long-term memory, similarity search, importance scoring,
 embedding serialization, and stats methods for SmartMemory.
+Phase 2: Fully tenant-aware — all queries scoped by tenant_id.
 """
 
 import time
@@ -24,16 +25,17 @@ class LongTermMixin:
     """
     Mixin providing long-term memory, similarity search, importance scoring,
     embedding serialization, and stats methods for SmartMemory.
+    All queries are scoped by tenant_id.
     """
 
     # ================================================================
-    #  3. LONG-TERM MEMORY (learning)
+    #  3. LONG-TERM MEMORY (learning, tenant-aware)
     # ================================================================
 
     def save_to_long_term(self, query: str, solution: str, operation: str = "",
                            goal: str = "", importance: float = 0.5, 
                            success: bool = True, tags: Optional[List[str]] = None):
-        """Guarda una solución exitosa en la memoria a largo plazo."""
+        """Guarda una solución exitosa en la memoria a largo plazo (tenant-aware)."""
         tags = tags or []
         emb_blob = None
         if self._semantic and self._semantic.is_loaded:
@@ -46,10 +48,12 @@ class LongTermMixin:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 """INSERT INTO long_term_memory 
-                   (query_text, solution_summary, operation, goal, importance, success, embedding, created_at, tags, client_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (query_text, solution_summary, operation, goal, importance,
+                    success, embedding, created_at, tags, client_id, tenant_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (query[:500], solution[:2000], operation, goal, importance,
-                 success, emb_blob, time.time(), tags_json, self._client_id)
+                 success, emb_blob, time.time(), tags_json,
+                 self._client_id, self._tenant_id)
             )
 
         # Evict if over limit
@@ -57,7 +61,7 @@ class LongTermMixin:
 
     def find_similar_solutions(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Busca soluciones previas semánticamente similares.
+        Busca soluciones previas semánticamente similares (tenant-scoped).
         "La última vez que hicimos algo parecido, funcionó esto."
         """
         if not self._semantic or not self._semantic.is_loaded:
@@ -69,8 +73,12 @@ class LongTermMixin:
 
         with sqlite3.connect(DB_PATH) as conn:
             rows = conn.execute(
-                "SELECT id, query_text, solution_summary, operation, goal, importance, success, embedding, tags FROM long_term_memory WHERE success=1 AND client_id=? ORDER BY importance DESC LIMIT 100",
-                (self._client_id,)
+                """SELECT id, query_text, solution_summary, operation, goal,
+                          importance, success, embedding, tags
+                   FROM long_term_memory
+                   WHERE success=1 AND tenant_id=?
+                   ORDER BY importance DESC LIMIT 100""",
+                (self._tenant_id,)
             ).fetchall()
 
         results = []
@@ -93,14 +101,23 @@ class LongTermMixin:
         return results[:top_k]
 
     def _evict_long_term(self):
-        """Evict least important entries if over limit."""
+        """Evict least important entries if over limit (tenant-scoped)."""
         with sqlite3.connect(DB_PATH) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM long_term_memory WHERE client_id=?", (self._client_id,)).fetchone()[0]
+            count = conn.execute(
+                "SELECT COUNT(*) FROM long_term_memory WHERE tenant_id=?",
+                (self._tenant_id,)
+            ).fetchone()[0]
             if count > MAX_LONG_TERM_ENTRIES:
-                # Delete lowest importance entries
+                # Delete lowest importance entries for this tenant
                 conn.execute(
-                    "DELETE FROM long_term_memory WHERE id IN (SELECT id FROM long_term_memory WHERE client_id=? ORDER BY importance ASC, access_count ASC LIMIT ?)",
-                    (self._client_id, count - MAX_LONG_TERM_ENTRIES + 50,)  # Delete extra 50 to avoid frequent eviction
+                    """DELETE FROM long_term_memory
+                       WHERE id IN (
+                           SELECT id FROM long_term_memory
+                           WHERE tenant_id=?
+                           ORDER BY importance ASC, access_count ASC
+                           LIMIT ?
+                       )""",
+                    (self._tenant_id, count - MAX_LONG_TERM_ENTRIES + 50,)  # Delete extra 50 to avoid frequent eviction
                 )
 
     # ================================================================
@@ -182,14 +199,21 @@ class LongTermMixin:
 
     @property
     def stats(self) -> Dict[str, Any]:
-        """Estadísticas de uso de la memoria."""
+        """Estadísticas de uso de la memoria (tenant-scoped)."""
         with sqlite3.connect(DB_PATH) as conn:
-            cache_count = conn.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()[0]
-            ltm_count = conn.execute("SELECT COUNT(*) FROM long_term_memory").fetchone()[0]
+            cache_count = conn.execute(
+                "SELECT COUNT(*) FROM semantic_cache WHERE tenant_id=?",
+                (self._tenant_id,)
+            ).fetchone()[0]
+            ltm_count = conn.execute(
+                "SELECT COUNT(*) FROM long_term_memory WHERE tenant_id=?",
+                (self._tenant_id,)
+            ).fetchone()[0]
 
         return {
             "session_id": self._session_id,
             "client_id": self._client_id,
+            "tenant_id": self._tenant_id,
             "working_memory_size": len(self._working_memory) if self._working_lock else 0,
             "semantic_cache_size": cache_count,
             "long_term_memory_size": ltm_count,

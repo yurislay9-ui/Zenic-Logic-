@@ -22,6 +22,9 @@ class DatabaseMixin:
     # VACUUM interval: every 24 hours to prevent DB bloat on phone storage
     VACUUM_INTERVAL_S = 86400  # 24 hours
 
+    # Default tenant_id for anonymous/unauthenticated access
+    DEFAULT_TENANT_ID = "__anonymous__"
+
     # Whitelist of allowed table names to prevent SQL injection
     _VALID_TABLES = frozenset({
         "semantic_cache", "long_term_memory", "working_memory",
@@ -85,7 +88,7 @@ class DatabaseMixin:
         return conn
 
     def _init_db(self):
-        """Crea tablas SQLite si no existen."""
+        """Crea tablas SQLite si no existen (con tenant_id para multitenancy)."""
         conn = self._get_connection()
         try:
             conn.execute("""CREATE TABLE IF NOT EXISTS semantic_cache (
@@ -101,7 +104,8 @@ class DatabaseMixin:
                 access_count INTEGER DEFAULT 0,
                 session_id TEXT DEFAULT '',
                 client_id TEXT DEFAULT 'default',
-                UNIQUE(query_hash)
+                tenant_id TEXT DEFAULT '__anonymous__',
+                UNIQUE(query_hash, tenant_id)
             )""")
             conn.execute("""CREATE TABLE IF NOT EXISTS long_term_memory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +119,8 @@ class DatabaseMixin:
                 created_at REAL DEFAULT 0,
                 access_count INTEGER DEFAULT 0,
                 tags TEXT DEFAULT '[]',
-                client_id TEXT DEFAULT 'default'
+                client_id TEXT DEFAULT 'default',
+                tenant_id TEXT DEFAULT '__anonymous__'
             )""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_cache_hash 
                 ON semantic_cache(query_hash)""")
@@ -138,7 +143,8 @@ class DatabaseMixin:
                 embedding BLOB,
                 created_at REAL DEFAULT 0,
                 tags TEXT DEFAULT '[]',
-                client_id TEXT DEFAULT 'default'
+                client_id TEXT DEFAULT 'default',
+                tenant_id TEXT DEFAULT '__anonymous__'
             )""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_episodic_type 
                 ON episodic_memory(event_type)""")
@@ -158,7 +164,8 @@ class DatabaseMixin:
                 embedding BLOB,
                 created_at REAL DEFAULT 0,
                 last_used REAL DEFAULT 0,
-                client_id TEXT DEFAULT 'default'
+                client_id TEXT DEFAULT 'default',
+                tenant_id TEXT DEFAULT '__anonymous__'
             )""")
 
             # === Project Memory ===
@@ -175,7 +182,8 @@ class DatabaseMixin:
                 created_at REAL DEFAULT 0,
                 updated_at REAL DEFAULT 0,
                 notes TEXT DEFAULT '',
-                client_id TEXT DEFAULT 'default'
+                client_id TEXT DEFAULT 'default',
+                tenant_id TEXT DEFAULT '__anonymous__'
             )""")
 
             # === Conversation Sessions ===
@@ -186,7 +194,8 @@ class DatabaseMixin:
                 summary TEXT DEFAULT '',
                 importance REAL DEFAULT 0.5,
                 exchange_count INTEGER DEFAULT 0,
-                client_id TEXT DEFAULT 'default'
+                client_id TEXT DEFAULT 'default',
+                tenant_id TEXT DEFAULT '__anonymous__'
             )""")
 
             conn.commit()
@@ -198,6 +207,12 @@ class DatabaseMixin:
 
         # Brecha B: Create client_id indexes for all tables
         self._create_client_id_indexes()
+
+        # Phase 2: Migrate existing tables that may not have tenant_id column
+        self._migrate_add_tenant_id()
+
+        # Phase 2: Create tenant_id indexes for all tables
+        self._create_tenant_id_indexes()
 
     def _migrate_add_client_id(self):
         """Brecha B: Add client_id column to existing tables if missing."""
@@ -232,6 +247,59 @@ class DatabaseMixin:
                 assert table in self._VALID_TABLES, f"Invalid table: {table}"
                 conn.execute(
                     f'CREATE INDEX IF NOT EXISTS "idx_{table}_client" ON "{table}"(client_id)'
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _migrate_add_tenant_id(self):
+        """Phase 2: Add tenant_id column to existing tables if missing.
+
+        Uses ALTER TABLE to safely add the column. Default value is
+        '__anonymous__' so that existing rows are grouped under the
+        anonymous tenant, maintaining backward compatibility.
+        """
+        tables = [
+            "semantic_cache", "long_term_memory", "episodic_memory",
+            "procedural_memory", "project_memory", "conversation_sessions",
+        ]
+        conn = self._get_connection()
+        try:
+            for table in tables:
+                assert table in self._VALID_TABLES, f"Invalid table: {table}"
+                try:
+                    conn.execute(
+                        f"ALTER TABLE \"{table}\" ADD COLUMN tenant_id TEXT DEFAULT '{self.DEFAULT_TENANT_ID}'"
+                    )
+                    logger.info(f"SmartMemory: Added tenant_id column to '{table}'")
+                except sqlite3.OperationalError:
+                    # Column already exists, ignore
+                    pass
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _create_tenant_id_indexes(self):
+        """Phase 2: Create indexes on tenant_id for all tables.
+
+        Composite indexes on (tenant_id, client_id) support the common
+        query pattern of filtering by tenant first, then by client.
+        """
+        tables = [
+            "semantic_cache", "long_term_memory", "episodic_memory",
+            "procedural_memory", "project_memory", "conversation_sessions",
+        ]
+        conn = self._get_connection()
+        try:
+            for table in tables:
+                assert table in self._VALID_TABLES, f"Invalid table: {table}"
+                # Single-column index on tenant_id
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "idx_{table}_tenant" ON "{table}"(tenant_id)'
+                )
+                # Composite index for tenant + client queries
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "idx_{table}_tenant_client" ON "{table}"(tenant_id, client_id)'
                 )
             conn.commit()
         finally:

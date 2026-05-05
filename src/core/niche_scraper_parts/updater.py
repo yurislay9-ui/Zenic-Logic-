@@ -6,7 +6,7 @@ import time
 import logging
 from typing import Dict, Any, List, Optional
 
-from ._imports import EvolutionEntry, yaml, logger
+from ._imports import EvolutionEntry, logger
 from . import _imports as _niche_imports
 from .trending import TrendingAnalyzer
 
@@ -71,9 +71,9 @@ class NicheAutoUpdater:
             for niche in matching_niches:
                 # Step 3: Merge new blocks
                 # Use a copy of the blocks list to avoid mutating shared objects
-                if id(niche) not in self._copied_niches:
+                if niche.name not in self._copied_niches:
                     niche.blocks = niche.blocks.copy()
-                    self._copied_niches.add(id(niche))
+                    self._copied_niches.add(niche.name)
                 for block in suggested_blocks:
                     if block not in niche.blocks:
                         niche.blocks.append(block)
@@ -90,9 +90,9 @@ class NicheAutoUpdater:
 
                 # Step 4: Merge new entities
                 # Use a copy of the entities list to avoid mutating shared objects
-                if id(niche) not in self._copied_entities:
+                if niche.name not in self._copied_entities:
                     niche.entities = niche.entities.copy()
-                    self._copied_entities.add(id(niche))
+                    self._copied_entities.add(niche.name)
                 for entity in suggested_entities:
                     entity_name = entity.get("name", "")
                     existing_names = [e.get("name", "") for e in niche.entities]
@@ -134,6 +134,12 @@ class NicheAutoUpdater:
     def _save_niche_yaml(self, niche) -> bool:
         """Guarda un nicho actualizado de vuelta a su archivo YAML."""
         if not _niche_imports.YAML_AVAILABLE or not niche.yaml_path:
+            return False
+
+        try:
+            import yaml
+        except ImportError:
+            logger.error("NicheAutoUpdater: PyYAML not available — cannot save niche YAML")
             return False
 
         try:

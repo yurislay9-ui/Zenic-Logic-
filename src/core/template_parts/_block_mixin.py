@@ -27,7 +27,7 @@ class BlockNicheMixin:
         """Obtiene el NicheLoader (lazy-loaded)."""
         if self._niche_loader is None:
             try:
-                from .niche_loader import NicheLoader
+                from ..niche_loader import NicheLoader
                 self._niche_loader = NicheLoader()
                 count = self._niche_loader.load_all()
                 logger.info(f"TemplateEngine: NicheLoader loaded {count} niche templates")
@@ -40,7 +40,7 @@ class BlockNicheMixin:
         """Obtiene el DNALoader (lazy-loaded)."""
         if self._dna_loader is None:
             try:
-                from .dna_loader import DNALoader
+                from ..dna_loader import DNALoader
                 self._dna_loader = DNALoader()
                 counts = self._dna_loader.load_all()
                 logger.info(f"TemplateEngine: DNALoader loaded {counts}")

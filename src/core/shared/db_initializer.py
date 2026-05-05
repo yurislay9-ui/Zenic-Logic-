@@ -17,6 +17,15 @@ import os
 import logging
 import atexit
 
+# Try to import ReadWriteLock for better concurrent access
+try:
+    from src.core.patterns.concurrency import ReadWriteLock
+    _rw_lock = ReadWriteLock()
+    _HAS_RW_LOCK = True
+except ImportError:
+    _rw_lock = None
+    _HAS_RW_LOCK = False
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -82,11 +91,19 @@ def get_connection(db_name: str) -> sqlite3.Connection:
     El pool mantiene una conexion por DB, thread-safe con lock.
     Si la conexion esta rota, crea una nueva.
 
+    Uses ReadWriteLock for better concurrent read access when available,
+    falling back to a simple threading.Lock otherwise.
+
     IMPORTANT: For write operations, use the connection's write lock
     via `with db_initializer.write_lock(db_name):` to ensure thread safety.
     """
     key = db_name
-    with _db_lock:
+    # Use ReadWriteLock read context for concurrent read access
+    if _HAS_RW_LOCK:
+        ctx = _rw_lock.acquire_read()
+    else:
+        ctx = _db_lock
+    with ctx:
         if key in _db_connections:
             conn = _db_connections[key]
             # Verificar que la conexion sigue viva
@@ -126,6 +143,9 @@ class write_lock:
     """
     Context manager to acquire the per-connection write lock.
 
+    Uses ReadWriteLock for write preference when available,
+    falling back to simple threading.Lock otherwise.
+
     Usage:
         conn = get_connection("graph_ast.sqlite")
         with write_lock("graph_ast.sqlite"):
@@ -138,24 +158,33 @@ class write_lock:
 
     def __init__(self, db_name: str):
         self._db_name = db_name
+        self._rw_ctx = None
 
     def __enter__(self):
-        lock = _db_write_locks.get(self._db_name)
-        if lock is not None:
-            lock.acquire()
+        if _HAS_RW_LOCK:
+            self._rw_ctx = _rw_lock.acquire_write()
+            self._rw_ctx.__enter__()
+        else:
+            lock = _db_write_locks.get(self._db_name)
+            if lock is not None:
+                lock.acquire()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        lock = _db_write_locks.get(self._db_name)
-        if lock is not None:
-            lock.release()
+        if self._rw_ctx is not None:
+            self._rw_ctx.__exit__(exc_type, exc_val, exc_tb)
+            self._rw_ctx = None
+        else:
+            lock = _db_write_locks.get(self._db_name)
+            if lock is not None:
+                lock.release()
         return False
 
 
 def initialize_databases():
     """Crea todas las tablas SQLite con esquemas completos v16 + indices + PRAGMA."""
 
-    # Graph AST
+    # Graph AST (Phase 2: tenant-aware)
     conn = get_connection("graph_ast.sqlite")
     conn.execute("""CREATE TABLE IF NOT EXISTS ast_nodes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,16 +197,25 @@ def initialize_databases():
         docstring TEXT,
         complexity INTEGER DEFAULT 1,
         connections TEXT DEFAULT '[]',
-        UNIQUE(file_path, name, node_type))""")
+        tenant_id TEXT NOT NULL DEFAULT '__anonymous__',
+        UNIQUE(file_path, name, node_type, tenant_id))""")
     # Indice para busquedas rapidas por nombre (usado por MacroRouter)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_name ON ast_nodes(name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_type ON ast_nodes(node_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_tenant ON ast_nodes(tenant_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_tenant_file ON ast_nodes(tenant_id, file_path)")
     conn.commit()
+    # Migrate: add tenant_id column if it doesn't exist (for existing databases)
+    try:
+        from src.core.tenant._isolation import TenantIsolation
+        TenantIsolation.migrate_add_tenant_id(conn, "ast_nodes", "__anonymous__")
+    except Exception as e:
+        logger.debug("ast_nodes tenant migration skipped: %s", e)
 
     # Theorem Cache
     conn = get_connection("theorem_cache.sqlite")
     conn.execute("""CREATE TABLE IF NOT EXISTS theorems (
-        structural_hash TEXT PRIMARY KEY,
+        structural_hash TEXT NOT NULL,
         operation TEXT NOT NULL,
         goal TEXT NOT NULL,
         proof_result TEXT NOT NULL,
@@ -185,10 +223,19 @@ def initialize_databases():
         skeleton_hash TEXT,
         hit_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        tenant_id TEXT NOT NULL DEFAULT '__anonymous__',
+        PRIMARY KEY (structural_hash, tenant_id))""")
     # Indice para skeleton hash lookups (O(1) bypass experiencial)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_skeleton ON theorems(skeleton_hash)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_theorems_tenant ON theorems(tenant_id)")
     conn.commit()
+    # Migrate: add tenant_id column if it doesn't exist (for existing databases)
+    try:
+        from src.core.tenant._isolation import TenantIsolation
+        TenantIsolation.migrate_add_tenant_id(conn, "theorems", "__anonymous__")
+    except Exception as e:
+        logger.debug("Theorems tenant migration skipped: %s", e)
 
     # Merkle Ledger
     conn = get_connection("merkle_ledger.sqlite")
@@ -198,11 +245,19 @@ def initialize_databases():
         hash_sha256 TEXT NOT NULL,
         parent_hash TEXT NOT NULL,
         operation TEXT NOT NULL,
-        timestamp REAL NOT NULL)""")
+        timestamp REAL NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT '__anonymous__')""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_file ON ledger(file_path)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_tenant ON ledger(tenant_id)")
     conn.commit()
+    # Migrate: add tenant_id column if it doesn't exist (for existing databases)
+    try:
+        from src.core.tenant._isolation import TenantIsolation
+        TenantIsolation.migrate_add_tenant_id(conn, "ledger", "__anonymous__")
+    except Exception as e:
+        logger.debug("Ledger tenant migration skipped: %s", e)
 
-    # Request Log
+    # Request Log (Phase 2: tenant-aware)
     conn = get_connection("request_log.sqlite")
     conn.execute("""CREATE TABLE IF NOT EXISTS requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -216,8 +271,17 @@ def initialize_databases():
         solver_status TEXT,
         mcts_simulations INTEGER DEFAULT 0,
         cache_hit INTEGER DEFAULT 0,
+        tenant_id TEXT NOT NULL DEFAULT '__anonymous__',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_requests_time ON requests(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_requests_tenant ON requests(tenant_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_requests_tenant_time ON requests(tenant_id, created_at)")
     conn.commit()
+    # Migrate: add tenant_id column if it doesn't exist (for existing databases)
+    try:
+        from src.core.tenant._isolation import TenantIsolation
+        TenantIsolation.migrate_add_tenant_id(conn, "requests", "__anonymous__")
+    except Exception as e:
+        logger.debug("Requests tenant migration skipped: %s", e)
 
     logger.info("Databases initialized with WAL mode + PRAGMA optimizations")

@@ -178,7 +178,7 @@ class Phase8Mixin:
             "agent_framework": {
                 "runner_stats": self._agent_runner.stats if self._agent_runner else {},
                 "cache_stats": self._agent_runner._cache.stats if self._agent_runner and self._agent_runner._cache else {},
-                "intent_agent": self._intent_agent.stats if self._intent_agent else {},
+                "intent_agent": getattr(getattr(self, '_surgical_agent', None), 'stats', {}),
                 "reasoning_agent": self._reasoning_agent.stats if self._reasoning_agent else {},
                 "business_logic_agent": self._business_logic_agent.stats if self._business_logic_agent else {},
                 "code_agent": self._code_agent.stats if self._code_agent else {},

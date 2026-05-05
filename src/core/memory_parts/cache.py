@@ -2,6 +2,7 @@
 TITAN OMNISCALE X - SmartMemory Cache Mixin
 
 Semantic cache and working memory methods for SmartMemory.
+Phase 2: Fully tenant-aware — all queries scoped by tenant_id.
 """
 
 import time
@@ -24,10 +25,11 @@ if HAS_NUMPY:
 class CacheMixin:
     """
     Mixin providing semantic cache and working memory methods for SmartMemory.
+    All queries are scoped by both tenant_id and client_id.
     """
 
     # ================================================================
-    #  1. SEMANTIC CACHE
+    #  1. SEMANTIC CACHE (tenant-aware)
     # ================================================================
 
     def check_cache(self, query: str) -> Optional[Dict[str, Any]]:
@@ -35,14 +37,17 @@ class CacheMixin:
         Busca en el cache semántico: "Ya respondí algo similar antes?"
         
         Usa embeddings si SemanticEngine está disponible, si no usa hash exacto.
+        Scoped by tenant_id and client_id.
         Returns cached response or None.
         """
-        # First: exact hash match (fastest)
+        # First: exact hash match (fastest) — scoped by tenant AND client
         query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
         with sqlite3.connect(DB_PATH) as conn:
             row = conn.execute(
-                "SELECT response_summary, operation, goal, importance, access_count, id FROM semantic_cache WHERE query_hash=? AND client_id=?",
-                (query_hash, self._client_id)
+                """SELECT response_summary, operation, goal, importance, access_count, id
+                   FROM semantic_cache
+                   WHERE query_hash=? AND tenant_id=? AND client_id=?""",
+                (query_hash, self._tenant_id, self._client_id)
             ).fetchone()
             if row:
                 # Update access count
@@ -59,11 +64,14 @@ class CacheMixin:
         if self._semantic and self._semantic.is_loaded:
             query_emb = self._semantic.embed(query)
             if query_emb is not None:
-                # Load recent cache entries and compare
+                # Load recent cache entries for this tenant+client and compare
                 with sqlite3.connect(DB_PATH) as conn:
                     rows = conn.execute(
-                        "SELECT id, query_text, response_summary, operation, goal, importance, embedding FROM semantic_cache WHERE client_id=? ORDER BY id DESC LIMIT 100",
-                        (self._client_id,)
+                        """SELECT id, query_text, response_summary, operation, goal, importance, embedding
+                           FROM semantic_cache
+                           WHERE tenant_id=? AND client_id=?
+                           ORDER BY id DESC LIMIT 100""",
+                        (self._tenant_id, self._client_id)
                     ).fetchall()
 
                 for row in rows:
@@ -87,7 +95,7 @@ class CacheMixin:
 
     def save_to_cache(self, query: str, response: str, operation: str = "",
                        goal: str = "", importance: float = 0.5):
-        """Guarda una entrada en el cache semántico."""
+        """Guarda una entrada en el cache semántico (tenant-aware)."""
         query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
         
         # Compute embedding if possible
@@ -103,10 +111,12 @@ class CacheMixin:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO semantic_cache 
-                   (query_hash, query_text, response_summary, operation, goal, importance, embedding, created_at, session_id, client_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (query_hash, query_text, response_summary, operation, goal,
+                    importance, embedding, created_at, session_id, client_id, tenant_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (query_hash, query[:500], response_summary, operation, goal,
-                 importance, emb_blob, time.time(), self._session_id, self._client_id)
+                 importance, emb_blob, time.time(), self._session_id,
+                 self._client_id, self._tenant_id)
             )
 
         # If high importance, also save to long-term
@@ -114,12 +124,12 @@ class CacheMixin:
             self.save_to_long_term(query, response_summary, operation, goal, importance)
 
     # ================================================================
-    #  2. WORKING MEMORY (context for Qwen)
+    #  2. WORKING MEMORY (context for Qwen, tenant-aware)
     # ================================================================
 
     def add_working(self, query: str, response: str, operation: str = "", 
                      goal: str = "", importance: float = 0.5):
-        """Añade entrada a la memoria de trabajo (contexto actual)."""
+        """Añade entrada a la memoria de trabajo (contexto actual, tenant-aware)."""
         entry = MemoryEntry(
             query=query[:500],
             response=response[:1000],
@@ -129,6 +139,7 @@ class CacheMixin:
             timestamp=time.time(),
             session_id=self._session_id,
             client_id=self._client_id,
+            tenant_id=self._tenant_id,
         )
         with self._working_lock:
             self._working_memory.append(entry)
@@ -143,16 +154,19 @@ class CacheMixin:
         Obtiene contexto comprimido de la memoria de trabajo para Qwen.
         
         Formato: "Previous context: [summarized interactions]"
-        Esto le da a Qwen el contexto que no tendría de otra forma.
+        Scoped by tenant_id and client_id.
         """
         with self._working_lock:
             if not self._working_memory:
                 return ""
 
             # Build context from working memory, prioritizing important entries
-            # Brecha B: Filter by client_id
-            client_entries = [e for e in self._working_memory if e.client_id == self._client_id]
-            sorted_entries = sorted(client_entries, key=lambda e: (-e.importance, -e.timestamp))
+            # Filter by tenant_id and client_id
+            scoped_entries = [
+                e for e in self._working_memory
+                if e.tenant_id == self._tenant_id and e.client_id == self._client_id
+            ]
+            sorted_entries = sorted(scoped_entries, key=lambda e: (-e.importance, -e.timestamp))
 
         context_parts = []
         token_estimate = 0
@@ -175,6 +189,9 @@ class CacheMixin:
         return "Previous context: " + " | ".join(context_parts)
 
     def get_recent_operations(self, n: int = 5) -> List[str]:
-        """Obtiene las últimas N operaciones realizadas."""
+        """Obtiene las últimas N operaciones realizadas (tenant-scoped)."""
         with self._working_lock:
-            return [e.operation for e in self._working_memory[-n:] if e.operation]
+            return [
+                e.operation for e in self._working_memory[-n:]
+                if e.operation and e.tenant_id == self._tenant_id
+            ]

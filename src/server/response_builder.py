@@ -4,6 +4,8 @@ TITAN OMNISCALE X v16 - Response Builder
 Construye respuestas OpenAI-compatible para el servidor HTTP.
 Centraliza el formateo de respuestas normales, partial reasoning y errores,
 eliminando la duplicacion entre main.py (Kivy) y main_headless.py (Termux).
+
+Open Design: Supports <artifact> wrapping when visual requests are detected.
 """
 
 import time
@@ -215,3 +217,48 @@ def build_overloaded_response() -> Dict[str, Any]:
             "type": "server_overloaded"
         }
     }
+
+
+def build_artifact_response(data: Dict[str, Any], result: Dict[str, Any],
+                             user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
+    """
+    Construye la respuesta OpenAI-compatible con código envuelto en <artifact> tags.
+
+    Usado cuando Open Design envía una petición visual/UI y espera el código
+    final envuelto en etiquetas <artifact> para renderizado en su iframe.
+
+    Args:
+        data: JSON original de la petición del cliente.
+        result: Dict resultado del orquestador.
+        user_msg: Mensaje del usuario.
+        governor: ResourceGovernor opcional.
+
+    Returns:
+        Dict con la respuesta OpenAI-compatible con artifact wrapping.
+    """
+    # First build the normal response content
+    base_response = build_normal_response(data, result, user_msg, governor)
+
+    # Wrap the content in <artifact> tags if code is present
+    content = base_response["choices"][0]["message"]["content"]
+    lang = result.get("ast_analysis", {}).get("language", "html")
+
+    try:
+        from src.core.open_design import ArtifactBuilder, get_open_design_config
+        config = get_open_design_config()
+        if config.artifact_wrapping_enabled:
+            # Extract code from markdown blocks and wrap in artifacts
+            wrapped = ArtifactBuilder.wrap_response_content(
+                content,
+                detection_result={"is_open_design": True, "is_visual_request": True},
+                language=lang,
+            )
+            base_response["choices"][0]["message"]["content"] = wrapped
+    except ImportError:
+        pass  # Open Design module not available — return unwrapped
+
+    # Add visual bypass metadata
+    if result.get("visual_bypass"):
+        base_response["titan_metadata"]["visual_bypass"] = result["visual_bypass"]
+
+    return base_response

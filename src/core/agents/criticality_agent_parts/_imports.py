@@ -57,6 +57,21 @@ MODERATE_KEYWORDS = frozenset({
     "orchestrator", "coordinator", "scheduler",
 })
 
+# UI/Visual keywords that indicate frontend/design generation (Open Design)
+UI_VISUAL_KEYWORDS = frozenset({
+    "ui", "design", "interface", "frontend", "component",
+    "layout", "css", "html", "react", "vue", "angular",
+    "tailwind", "bootstrap", "material", "figma",
+    "artifact", "render", "widget", "page", "form",
+    "button", "card", "modal", "sidebar", "navbar",
+    "dashboard", "panel", "dialog", "menu", "toolbar",
+    "visual", "style", "theme", "animation", "responsive",
+    "mobile", "tablet", "desktop", "screen", "viewport",
+})
+
+# Visual bypass criticality — forces level 1 (FAST) for UI/Design requests
+VISUAL_BYPASS_REASON = "Visual bypass: UI/Design request detected — skipping Z3/AC-3 solver"
+
 # Goals que elevan criticalidad automáticamente
 GOAL_CRITICALITY_MAP: Dict[str, int] = {
     "SECURITY_HARDEN": 3,

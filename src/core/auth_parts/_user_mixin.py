@@ -79,7 +79,7 @@ class UserMixin:
             c = self._conn()
             try:
                 row = c.execute("SELECT id, username, email, role, active, created_at, "
-                                "updated_at, last_login, login_count FROM users WHERE id = ?",
+                                "updated_at, last_login, login_count, tenant_id FROM users WHERE id = ?",
                                 (user_id,)).fetchone()
                 return dict(row) if row else None
             finally:

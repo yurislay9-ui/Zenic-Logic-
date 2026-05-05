@@ -153,6 +153,25 @@ class CriticalityAgent(SignalsMixin, BaseAgent[CriticalityOutput]):
             code_snippet = ""
             existing_level = None
 
+        # ── Open Design Visual Bypass ──
+        # If the request contains UI/visual keywords, force FAST (level 1)
+        # to skip Z3/AC-3 solver verification for frontend generation
+        from ._imports import UI_VISUAL_KEYWORDS, VISUAL_BYPASS_REASON
+        combined_lower = f"{target} {context} {code_snippet}".lower()
+        visual_matches = [kw for kw in UI_VISUAL_KEYWORDS if kw in combined_lower]
+        if len(visual_matches) >= 2:  # At least 2 UI keywords → visual bypass
+            level = 1  # FAST_STANDARD
+            adjustments = CRITICALITY_ADJUSTMENTS.get(1, CRITICALITY_ADJUSTMENTS[2])
+            self._record_history(op, goal, target, level)
+            return CriticalityOutput(
+                level=level,
+                path=LEVEL_TO_PATH.get(level, "low_crit"),
+                reason=f"{VISUAL_BYPASS_REASON} (keywords: {', '.join(visual_matches[:3])})",
+                confidence=0.95,
+                source="visual_bypass",
+                adjustments=adjustments,
+            )
+
         # ── Signal 1: Keyword analysis ──
         combined_text = f"{target} {context} {code_snippet}".lower()
         keyword_level = self._keyword_signal(combined_text)
@@ -246,6 +265,23 @@ class CriticalityAgent(SignalsMixin, BaseAgent[CriticalityOutput]):
             op = "SEARCH"
             goal = "FEATURE_ADD"
             target = ""
+
+        # ── Open Design Visual Bypass (pre-LLM check) ──
+        from ._imports import UI_VISUAL_KEYWORDS, VISUAL_BYPASS_REASON
+        check_text = f"{target} {message[:200]}".lower()
+        visual_matches = [kw for kw in UI_VISUAL_KEYWORDS if kw in check_text]
+        if len(visual_matches) >= 2:
+            level = 1
+            adjustments = CRITICALITY_ADJUSTMENTS.get(1, CRITICALITY_ADJUSTMENTS[2])
+            self._record_history(op, goal, target, level)
+            return CriticalityOutput(
+                level=level,
+                path=LEVEL_TO_PATH.get(level, "low_crit"),
+                reason=f"{VISUAL_BYPASS_REASON} (keywords: {', '.join(visual_matches[:3])})",
+                confidence=0.95,
+                source="visual_bypass",
+                adjustments=adjustments,
+            )
 
         input_data = CriticalityInput(
             operation=op,

@@ -54,6 +54,9 @@ class StructuredFormatter(logging.Formatter):
                 "route", "criticality", "solver_status", "mcts_sims",
                 "processing_time_ms", "cache_hit", "status",
                 "language", "ast_functions", "ast_classes",
+                # Phase 5: trace correlation fields
+                "trace_id", "span_id", "tenant_id", "user_id",
+                "audit_event_id", "audit_event_type", "audit_severity",
             ]
             for field in extra_fields:
                 value = getattr(record, field, None)
@@ -114,7 +117,9 @@ class PlainFormatter(logging.Formatter):
         # Agregar extra fields compactos
         extras = []
         for field in ["request_id", "pipeline_level", "processing_time_ms",
-                      "route", "status", "solver_status"]:
+                      "route", "status", "solver_status",
+                      # Phase 5: trace correlation
+                      "trace_id", "span_id", "tenant_id"]:
             value = getattr(record, field, None)
             if value is not None:
                 extras.append(f"{field}={value}")

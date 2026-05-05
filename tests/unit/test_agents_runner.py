@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 from src.core.agents.base import BaseAgent, AgentResult
 from src.core.agents.runner import AgentRunner, MAX_RETRIES
+from src.core.patterns.resilience import CircuitBreaker, RetryConfig, Bulkhead
 
 
 # Concrete agent for testing (not named Test* to avoid pytest collection)
@@ -67,6 +68,15 @@ class TestAgentRunnerCacheFlow:
 class TestAgentRunnerLLMFlow:
     """Tests for LLM execution flow."""
 
+    def _fresh_runner(self, mini_ai=None, enable_cache=False, **kwargs):
+        """Create a runner with fresh circuit breaker/bulkhead for test isolation."""
+        return AgentRunner(
+            mini_ai=mini_ai, enable_cache=enable_cache,
+            circuit_breaker=CircuitBreaker(name='test_cb', failure_threshold=5, recovery_timeout=1.0),
+            bulkhead=Bulkhead(name='test_bh', max_concurrent=10),
+            **kwargs,
+        )
+
     def test_llm_success_returns_parsed_result(self):
         """Should return parsed result when LLM succeeds."""
         agent = StubAgent(name="test")
@@ -74,7 +84,7 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.return_value = '{"answer": 42}'
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.success is True
         assert result.source == "llm"
@@ -87,7 +97,7 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.return_value = None
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.success is True
         assert result.source == "fallback"
@@ -101,7 +111,7 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.return_value = "some text"
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.source == "fallback"
 
@@ -113,12 +123,14 @@ class TestAgentRunnerLLMFlow:
         mini_ai = MagicMock()
         mini_ai.is_loaded = True
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.source == "fallback"
 
     def test_validate_output_failure_retries_then_falls_back(self):
         """Should retry when validate_output fails, then fallback."""
+        from src.core.patterns.resilience import RetryConfig
+
         agent = StubAgent(name="test")
         agent.validate_output = MagicMock(return_value=False)
 
@@ -126,11 +138,28 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.return_value = "response"
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        # Use a custom RetryConfig with 1 attempt (no retries) for deterministic testing
+        test_retry = RetryConfig(max_attempts=1, base_delay=0.01, jitter=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False, retry_config=test_retry)
         result = runner.run(agent, "input")
         assert result.source == "fallback"
-        # Should have called LLM MAX_RETRIES + 1 times
-        assert mini_ai._call_llm.call_count == MAX_RETRIES + 1
+        # With max_attempts=1, should call LLM exactly once
+        assert mini_ai._call_llm.call_count == 1
+
+    def test_validate_output_retries_with_default_config(self):
+        """Should retry 3 times with default RetryConfig when validate_output fails."""
+        agent = StubAgent(name="test")
+        agent.validate_output = MagicMock(return_value=False)
+
+        mini_ai = MagicMock()
+        mini_ai.is_loaded = True
+        mini_ai._call_llm.return_value = "response"
+
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
+        result = runner.run(agent, "input")
+        assert result.source == "fallback"
+        # Default RetryConfig has max_attempts=3
+        assert mini_ai._call_llm.call_count == 3
 
     def test_llm_exception_retries_then_falls_back(self):
         """Should retry on LLM exception, then fallback."""
@@ -140,7 +169,7 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.side_effect = RuntimeError("LLM crashed")
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.source == "fallback"
 
@@ -157,7 +186,7 @@ class TestAgentRunnerLLMFlow:
         mini_ai.is_loaded = True
         mini_ai._call_llm.return_value = "response"
 
-        runner = AgentRunner(mini_ai=mini_ai, enable_cache=True)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=True)
         result = runner.run(agent, "input")
         assert result.source == "llm"
         assert result.success is True

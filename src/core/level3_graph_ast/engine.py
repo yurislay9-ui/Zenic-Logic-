@@ -24,10 +24,23 @@ SKIP_DIRS = {'.git', 'node_modules', 'venv', '__pycache__', '.venv', 'dist', 'bu
 
 
 class GraphASTEngine:
-    """Motor de AST usando ast nativo para Python, regex para otros."""
+    """Motor de AST usando ast nativo para Python, regex para otros. Tenant-aware (Phase 2)."""
 
     def __init__(self):
+        # Resolve tenant_id from thread-local TenantContext
+        try:
+            from src.core.tenant._context import get_current_tenant
+            self._tenant_id: str = get_current_tenant().effective_tenant_id
+        except Exception:
+            self._tenant_id = "__anonymous__"
+        logger.debug("GraphASTEngine initialized with tenant_id='%s'", self._tenant_id)
         self._init_db()
+
+    def set_tenant_id(self, tenant_id: str) -> None:
+        """Update the current tenant_id for this AST engine instance."""
+        old = self._tenant_id
+        self._tenant_id = tenant_id
+        logger.info("GraphASTEngine tenant_id changed: '%s' -> '%s'", old, tenant_id)
 
     def _init_db(self):
         conn = get_connection("graph_ast.sqlite")
@@ -38,10 +51,19 @@ class GraphASTEngine:
             end_byte INTEGER NOT NULL, content_hash TEXT NOT NULL,
             docstring TEXT, complexity INTEGER DEFAULT 1,
             connections TEXT DEFAULT '[]',
-            UNIQUE(file_path, name, node_type))""")
+            tenant_id TEXT NOT NULL DEFAULT '__anonymous__',
+            UNIQUE(file_path, name, node_type, tenant_id))""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_name ON ast_nodes(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_type ON ast_nodes(node_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_tenant ON ast_nodes(tenant_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_tenant_file ON ast_nodes(tenant_id, file_path)")
         conn.commit()
+        # Migrate: add tenant_id column if it doesn't exist
+        try:
+            from src.core.tenant._isolation import TenantIsolation
+            TenantIsolation.migrate_add_tenant_id(conn, "ast_nodes", "__anonymous__")
+        except Exception as e:
+            logger.debug("ast_nodes tenant migration skipped: %s", e)
 
     def scan_code(self, code, file_path="input.py", language="python"):
         if language == "python":
@@ -151,36 +173,37 @@ class GraphASTEngine:
         return nodes
 
     def _store_node(self, node_data):
-        """Insertar un solo nodo usando connection pool.  Kept for single-node use cases."""
+        """Insertar un solo nodo usando connection pool. Tenant-aware."""
         try:
             conn = get_connection("graph_ast.sqlite")
             conn.execute(
                 """INSERT OR REPLACE INTO ast_nodes
                 (file_path, node_type, name, start_byte, end_byte,
-                 content_hash, docstring, complexity, connections)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
+                 content_hash, docstring, complexity, connections, tenant_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (node_data["file_path"], node_data["node_type"],
                  node_data["name"], node_data["start_byte"],
                  node_data["end_byte"], node_data["content_hash"],
                  node_data["docstring"], node_data["complexity"],
-                 node_data["connections"])
+                 node_data["connections"], self._tenant_id)
             )
             conn.commit()
         except Exception as e:
             logging.getLogger(__name__).debug("Error storing node: %s", e)
 
     def _store_nodes_batch(self, nodes):
-        """Batch insert de multiples nodos en una sola transaccion."""
+        """Batch insert de multiples nodos en una sola transaccion. Tenant-aware."""
         try:
+            tid = self._tenant_id
             conn = get_connection("graph_ast.sqlite")
             conn.executemany(
                 """INSERT OR REPLACE INTO ast_nodes
                 (file_path, node_type, name, start_byte, end_byte,
-                 content_hash, docstring, complexity, connections)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
+                 content_hash, docstring, complexity, connections, tenant_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 [(n["file_path"], n["node_type"], n["name"],
                   n["start_byte"], n["end_byte"], n["content_hash"],
-                  n["docstring"], n["complexity"], n["connections"])
+                  n["docstring"], n["complexity"], n["connections"], tid)
                  for n in nodes]
             )
             conn.commit()
@@ -221,10 +244,32 @@ class GraphASTEngine:
         return connections
 
     def get_node_info(self, target_name):
+        """Get node info filtered by current tenant_id."""
         conn = get_connection("graph_ast.sqlite")
         return [dict(r) for r in conn.execute(
-            "SELECT * FROM ast_nodes WHERE name LIKE ?",
-            (f"%{target_name}%",)).fetchall()]
+            "SELECT * FROM ast_nodes WHERE name LIKE ? AND tenant_id = ?",
+            (f"%{target_name}%", self._tenant_id)).fetchall()]
+
+    def purge_tenant_data(self, tenant_id: str) -> int:
+        """Delete all AST data for a specific tenant (GDPR / deprovisioning).
+
+        Args:
+            tenant_id: Tenant identifier to purge.
+
+        Returns:
+            Number of rows deleted.
+        """
+        try:
+            conn = get_connection("graph_ast.sqlite")
+            cursor = conn.execute("DELETE FROM ast_nodes WHERE tenant_id=?", (tenant_id,))
+            conn.commit()
+            count = cursor.rowcount
+            if count > 0:
+                logger.info("GraphASTEngine: purged %d entries for tenant '%s'", count, tenant_id)
+            return count
+        except Exception as e:
+            logger.error("GraphASTEngine: purge failed for tenant '%s': %s", tenant_id, e)
+            return 0
 
     def analyze_structure(self, code, language="python"):
         nodes = self.scan_code(code, "analysis_target", language)

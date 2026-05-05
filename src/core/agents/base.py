@@ -14,7 +14,7 @@ import re
 import threading
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TypeVar, Generic, Union
+from typing import Any, Dict, List, Optional, Tuple, TypeVar, Generic, Union
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class BaseAgent(ABC, Generic[T]):
         }
 
     @abstractmethod
-    def build_prompt(self, input_data: Any) -> tuple:
+    def build_prompt(self, input_data: Any) -> Tuple[str, str]:
         """
         Construye el prompt para el LLM.
 

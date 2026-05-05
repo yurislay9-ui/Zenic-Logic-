@@ -6,10 +6,11 @@ Contains: _exec_cache_check through _exec_steps.
 
 import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Union
 
 from src.core.agents.surgical_agent import SurgicalAgent
 from src.core.agents.schemas import CriticalityOutput
+from src.core.agents.criticality_agent_parts._imports import CRITICALITY_ADJUSTMENTS
 from src.core.dag_parts.definition import MAX_CODE_SNIPPET_LEN
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 class NodeExecutorsMixin:
     """Mixin providing the first 10 DAG node executor methods."""
 
-    async def _exec_cache_check(self, ctx: Dict) -> str:
+    async def _exec_cache_check(self, ctx: Dict) -> Union[str, Dict]:
         """Nodo CACHE_CHECK: Check SmartMemory cache."""
         cached = self._memory.check_cache(ctx["msg"])
         if cached:
@@ -38,10 +39,10 @@ class NodeExecutorsMixin:
 
     async def _exec_intent(self, ctx: Dict) -> str:
         """Nodo INTENT: Clasificación unificada via SurgicalAgent (F2)."""
-        intent_output = self._intent_agent.classify_with_runner(
+        intent_output = self._surgical_agent.classify_with_runner(
             self._agent_runner, ctx["msg"], context=""
         )
-        intent = self._intent_agent.to_intent_payload(
+        intent = self._surgical_agent.to_intent_payload(
             intent_output, context=ctx["msg"]
         )
 
@@ -96,7 +97,7 @@ class NodeExecutorsMixin:
             )
         return "*"
 
-    async def _exec_theorem_cache(self, ctx: Dict) -> str:
+    async def _exec_theorem_cache(self, ctx: Dict) -> Union[str, Dict]:
         """Nodo THEOREM_CACHE: Búsqueda en caché de teoremas."""
         intent = ctx.get("intent")
         if not intent:
@@ -253,3 +254,47 @@ class NodeExecutorsMixin:
         ctx["explanations"] = explanations
         ctx["final_code"] = result_code if result_code else code
         return "*"
+
+    async def _exec_visual_bypass(self, ctx: Dict) -> str:
+        """VISUAL_BYPASS node: Execute visual/UI code generation without Z3/AC-3 solver.
+
+        Open Design requests for UI/visual generation skip the expensive SMT
+        verification step. Code is generated via CodeAgent with FAST criticality
+        adjustments and sent directly to validation (no solver).
+        """
+        msg = ctx.get("msg", "")
+
+        # Force FAST criticality for visual bypass
+        ctx["criticality_output"] = CriticalityOutput(
+            level=1,  # FAST_STANDARD
+            path="low_crit",
+            reason="Visual bypass: UI/Design request from Open Design (skipping Z3/AC-3)",
+            confidence=0.95,
+            source="visual_bypass",
+            adjustments=CRITICALITY_ADJUSTMENTS.get(1, CRITICALITY_ADJUSTMENTS[2]),
+        )
+
+        # Apply FAST adjustments to CodeAgent
+        if self._code_agent:
+            self._code_agent.set_criticality_adjustments(
+                CRITICALITY_ADJUSTMENTS.get(1, CRITICALITY_ADJUSTMENTS[2])
+            )
+
+        # Generate code directly via CodeAgent
+        if self._code_agent and self._agent_runner:
+            try:
+                code_result = self._code_agent.generate_with_runner(
+                    self._agent_runner, msg, language="html",
+                )
+                if code_result and code_result.code:
+                    ctx["final_code"] = code_result.code
+                    ctx["code"] = code_result.code
+                    ctx["explanations"] = [
+                        "Visual bypass: Generated UI code (FAST path, no solver verification)",
+                    ]
+                    return "success"
+            except Exception as e:
+                logger.warning("Visual bypass CodeAgent failed, falling back to standard: %s", e)
+
+        # Fallback to standard execution path
+        return "fallback"

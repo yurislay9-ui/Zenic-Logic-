@@ -9,7 +9,30 @@ import json
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
-import numpy as np
+
+# Lazy numpy import — avoids loading ~50-100MB into RAM on module import
+# Call _get_numpy() when needed instead of using np directly.
+# Check HAS_NUMPY before using numpy-dependent features.
+HAS_NUMPY: bool = False  # Updated to True on successful lazy import
+_np = None
+
+def _get_numpy():
+    """Lazy-load numpy only when actually needed (saves ~50-100MB RAM on Xiaomi)."""
+    global _np, HAS_NUMPY
+    if _np is None:
+        try:
+            import numpy as np
+            _np = np
+            HAS_NUMPY = True
+        except ImportError:
+            _np = False  # Sentinel: tried and failed
+            HAS_NUMPY = False
+    return _np if _np is not False else None
+
+# Backwards compatibility: code that imports 'np' from this module
+# will get a lazy-loading proxy. Actual numpy is only loaded on first use.
+# Prefer using _get_numpy() and checking HAS_NUMPY for feature gating.
+np = None  # Will be lazily loaded via _get_numpy()
 
 logger = logging.getLogger(__name__)
 

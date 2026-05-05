@@ -36,9 +36,34 @@ class ContextAgent(CablesMixin, CoreMixin, BaseAgent[ContextOutput]):
         # Estadísticas de presupuesto de tokens
         self._budget_usage: Dict[str, Dict[str, int]] = {}
 
+        # Open Design: Design System preservation mode
+        self._design_system_mode: bool = False
+        self._design_system_budget_multiplier: float = 1.0
+
     def wire(self, semantic_engine=None, smart_memory=None) -> None:
         """Cablea dependencias (inyección post-creación)."""
         if semantic_engine is not None:
             self._semantic_engine = semantic_engine
         if smart_memory is not None:
             self._smart_memory = smart_memory
+
+        # Open Design: propagate design system mode
+        try:
+            from src.core.open_design.config import get_open_design_config
+            od_config = get_open_design_config()
+            if od_config.preserve_design_systems:
+                self._design_system_mode = True
+                self._design_system_budget_multiplier = od_config.design_system_budget_multiplier
+        except ImportError:
+            pass
+
+    def set_design_system_mode(self, enabled: bool = False,
+                                budget_multiplier: float = 1.0) -> None:
+        """Open Design: Enable/disable Design System preservation mode.
+
+        When enabled, the ContextAgent will NOT truncate Design System
+        prompts from Open Design, preserving the full design specification
+        for accurate UI generation.
+        """
+        self._design_system_mode = enabled
+        self._design_system_budget_multiplier = budget_multiplier

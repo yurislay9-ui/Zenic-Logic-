@@ -6,7 +6,17 @@ from ._imports import (
     logger, json, _run_async,
     build_normal_response, build_partial_reasoning_response,
     build_error_response, build_overloaded_response,
+    build_artifact_response,
 )
+
+# Open Design Integration
+try:
+    from src.core.open_design import (
+        OpenDesignDetector, get_open_design_config, SSEStreamer,
+    )
+    _OPEN_DESIGN_AVAILABLE = True
+except ImportError:
+    _OPEN_DESIGN_AVAILABLE = False
 
 
 class PostMixin:
@@ -43,7 +53,7 @@ class PostMixin:
             self._send_json({"error": "Not found"}, status=404)
 
     def _handle_chat_completions(self):
-        """Procesa peticion /v1/chat/completions con rate limiting y governor."""
+        """Procesa peticion /v1/chat/completions con rate limiting, governor, y SSE streaming."""
         client_ip = self.client_address[0]
         if self.rate_limiter and not self.rate_limiter.acquire(client_ip):
             self._send_json({
@@ -93,12 +103,41 @@ class PostMixin:
             }, status=400)
             return
 
+        # ── Open Design Detection ──
+        detection_result = None
+        if _OPEN_DESIGN_AVAILABLE:
+            headers_dict = {
+                k.lower(): v for k, v in self.headers.items()
+            }
+            detection_result = OpenDesignDetector.detect(
+                messages=messages, headers=headers_dict, body=data,
+            )
+
         try:
             result = _run_async(self.orchestrator.execute(user_msg))
+
+            # ── SSE Streaming for Open Design ──
+            if (data.get("stream", False) and _OPEN_DESIGN_AVAILABLE
+                    and detection_result
+                    and (detection_result.get("is_open_design")
+                         or detection_result.get("is_visual_request"))):
+                self._send_sse_stream(result, data, detection_result)
+                return
+
+            # Standard JSON response
             if result.get("partial_reasoning"):
                 response = build_partial_reasoning_response(data, result, user_msg)
                 self._send_json(response)
                 return
+
+            # Open Design: Use artifact-wrapped response for visual requests (non-streaming)
+            if (detection_result
+                    and (detection_result.get("is_open_design")
+                         or detection_result.get("is_visual_request"))):
+                response = build_artifact_response(data, result, user_msg, governor=gov)
+                self._send_json(response)
+                return
+
             response = build_normal_response(data, result, user_msg, governor=gov)
             self._send_json(response)
         except Exception as e:
@@ -109,6 +148,38 @@ class PostMixin:
                 gov.post_request()
             if self.rate_limiter:
                 self.rate_limiter.release()
+
+    def _send_sse_stream(self, result, data, detection_result):
+        """Send orchestrator result as SSE stream for Open Design."""
+        try:
+            streamer = SSEStreamer()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('X-Accel-Buffering', 'no')
+            # CORS headers for Open Design
+            self._set_cors_headers()
+            self.end_headers()
+
+            # Stream the result as SSE chunks
+            for chunk in streamer.stream_orchestrator_result_sync(
+                result, data, detection_result
+            ):
+                self.wfile.write(chunk.encode('utf-8'))
+                self.wfile.flush()
+        except Exception as e:
+            logger.error("SSE streaming error: %s", e, exc_info=True)
+            # Try to send error as SSE event
+            try:
+                error_chunk = streamer.format_chunk(
+                    f"\n[Stream Error: {str(e)}]", finish_reason="stop"
+                )
+                self.wfile.write(error_chunk.encode('utf-8'))
+                self.wfile.write(streamer.format_done().encode('utf-8'))
+                self.wfile.flush()
+            except Exception:
+                pass
 
     def _handle_generate_app(self):
         """POST /v1/generate/app - Generar app completa."""

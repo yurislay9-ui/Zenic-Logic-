@@ -20,7 +20,8 @@ class TestUnknownStepType:
         )
         assert r_code == ""
         assert code == "x=1"
-        assert explanations == []
+        assert len(explanations) == 1
+        assert "Unknown action" in explanations[0]
 
     @pytest.mark.asyncio
     async def test_unknown_action_preserves_result_code(self, dispatcher):

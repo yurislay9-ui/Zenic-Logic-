@@ -104,14 +104,25 @@ class APIMixin:
                     importance=0.7,
                 )
 
+        workflow = result.get("workflow")
+        workflow_info = None
+        if workflow is not None:
+            if isinstance(workflow, dict):
+                workflow_info = {
+                    "id": workflow.get("id", ""),
+                    "name": workflow.get("name", ""),
+                }
+            else:
+                workflow_info = {
+                    "id": getattr(workflow, "id", ""),
+                    "name": getattr(workflow, "name", ""),
+                }
+
         return {
             "status": result.get("status", "unknown"),
             "path": result.get("path", ""),
             "files": result.get("files", []),
-            "workflow": {
-                "id": result.get("workflow", None).id if result.get("workflow") else None,
-                "name": result.get("workflow", None).name if result.get("workflow") else None,
-            } if result.get("workflow") else None,
+            "workflow": workflow_info,
             "automation_agent": result.get("automation_agent"),
         }
 

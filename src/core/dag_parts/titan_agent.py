@@ -49,6 +49,7 @@ class TitanAgent(BaseAgent):
         "SURGICAL_CRITICAL": "high_crit",
         "DEEP_MODERATE": "standard",
         "FAST_STANDARD": "low_crit",
+        "VISUAL": "visual",         # Open Design visual bypass -> skips Z3/AC-3
     }
 
     def build_prompt(self, input_data: Any) -> tuple:
@@ -84,7 +85,6 @@ class TitanAgent(BaseAgent):
 
     def parse_response(self, raw_response: str, input_data: Any) -> Optional[str]:
         """Parsea la respuesta del LLM como nombre de nodo válido."""
-        from src.core.agents.base import BaseAgent
         text = BaseAgent.clean_llm_text(raw_response).strip().upper()
         valid_nodes = set(PIPELINE_DAG.keys())
         if text in valid_nodes:
@@ -106,6 +106,11 @@ class TitanAgent(BaseAgent):
         ctx = input_data.get("context", {})
         op = ctx.get("operation", "SEARCH")
         crit = ctx.get("criticality", "standard")
+
+        # Open Design visual bypass detection
+        is_visual = ctx.get("is_visual_request", False)
+        if is_visual:
+            return self.CRITICALITY_PATHS.get("VISUAL", "low_crit")
 
         # Nodo INTENT: decidir path según operation
         if node == "INTENT":

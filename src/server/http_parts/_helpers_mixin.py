@@ -2,7 +2,7 @@
 CORS and JSON helpers mixin for TitanHTTPHandler.
 """
 
-from ._imports import json, _cors_origin
+from ._imports import json, _cors_origin, _get_cors_origin
 
 
 class HelpersMixin:
@@ -18,9 +18,15 @@ class HelpersMixin:
         self.end_headers()
 
     def _set_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', _cors_origin)
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        # Dynamic CORS: return the request's Origin if it matches Open Design
+        request_origin = self.headers.get('Origin', '')
+        origin = _get_cors_origin(request_origin) if request_origin else _cors_origin
+        self.send_header('Access-Control-Allow-Origin', origin)
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Client')
+        # Allow credentials when specific origin is returned (not wildcard)
+        if origin != '*':
+            self.send_header('Access-Control-Allow-Credentials', 'true')
 
     def _send_json(self, data, status=200):
         self.send_response(status)
