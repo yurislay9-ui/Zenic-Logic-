@@ -1,9 +1,15 @@
 """
-TITAN OMNISCALE X - Orchestrator v16 (Real Pipeline + Abortive Protocol)
+ZENIC LOGIC v17 - Orchestrator (Verdict Architecture)
 
-Orquestador del pipeline completo de 8 niveles.
+CAMBIO FUNDAMENTAL (v16 → v17):
+  ANTES: La IA hacía 7 tareas bounded + 6 agentes la llamaban
+  AHORA: La IA SOLO emite veredictos binarios (SÍ/NO) como árbitro final
+
+Orquestador del pipeline completo de 8 niveles con Arquitectura de Veredicto.
 Incluye:
-- MiniAIEngine: Qwen3-0.6B como copiloto semantico (7 tareas bounded)
+- VerdictEngine: Qwen3-0.6B SOLO como árbitro binario (SÍ/NO)
+- DeterministicPipeline: Todas las tareas sin IA
+- EvidenceCollector + ConsensusResolver: Consenso multi-señal
 - Protocolo Abortivo: auto-subdivision cuando el solver hace timeout
 - Razonamiento Parcial: response contract OpenAI-compatible
 - Generacion contextual: usa datos del AST, solver y MCTS
@@ -14,7 +20,8 @@ Sin dependencias externas obligatorias. Compatible con Android.
 Decomposed into focused modules:
 - orchestrator_base: BaseOrchestrator (shared init, public API, backward-compat)
 - step_dispatcher: StepDispatcher (unified step dispatch logic)
-- mini_ai_engine: MiniAIEngine (Qwen3-0.6B semantic copilot)
+- mini_ai_engine: MiniAIEngine (Qwen3-0.6B verdict-only arbitrer)
+- verdict_engine_module: VerdictEngine (full verdict pipeline)
 - subtask_descriptor: SubtaskDescriptor class
 - abortive_protocol: AbortiveProtocol (auto-subdivision)
 - partial_reasoning: PartialReasoningManager (response contract)
@@ -38,10 +45,11 @@ from src.core.orchestrator_base import BaseOrchestrator
 # Step dispatcher for unified step execution
 from src.core.step_dispatcher import StepDispatcher
 
-# Decomposed modules - 3-Layer AI Architecture
+# Decomposed modules - 4-Layer Verdict Architecture (v17)
 from src.core.semantic_engine import SemanticEngine   # Capa 1: ENTIENDE
-from src.core.mini_ai_engine import MiniAIEngine      # Capa 2: PIENSA
+from src.core.mini_ai_engine import MiniAIEngine      # Capa 4: ARBITRA (solo SÍ/NO)
 from src.core.smart_memory import SmartMemory          # Capa 3: RECUERDA
+from src.core.verdict_engine_module import VerdictEngine  # Verdict pipeline completo
 from src.core.agents.surgical_agent import SurgicalAgent
 
 logger = logging.getLogger(__name__)
@@ -55,16 +63,25 @@ MAX_CODE_SNIPPET_LEN = 200        # Max chars for code context snippets
 
 class TitanOrchestrator(BaseOrchestrator):
     """
-    Orquestador del pipeline completo de 8 niveles con Protocolo Abortivo.
+    Orquestador v17 con Arquitectura de Veredicto.
+
+    CAMBIO PRINCIPAL: La IA ya NO hace tareas. Solo arbitra.
+
+    Flujo de decisión:
+      1. DeterministicPipeline ejecuta todas las tareas (sin IA)
+      2. EvidenceCollector recolecta evidencia (sin IA)
+      3. ConsensusResolver evalúa consenso (sin IA)
+      4. Si consenso claro → Decisión sin IA
+      5. Si empate → VerdictEngine pide a Qwen: "¿SÍ o NO?"
+
+    Esto garantiza que la IA NUNCA puede dar una mala respuesta
+    generativa porque solo puede decir SÍ o NO.
 
     Inherits from BaseOrchestrator which provides:
     - All shared initialization methods
     - Public API methods (generate_app, build_logic, reason, etc.)
     - Backward-compat delegation methods
     - Shared properties
-
-    This class only contains the sequential `execute()` method and
-    TitanOrchestrator-specific code.
     """
 
     def __init__(self) -> None:
@@ -75,16 +92,30 @@ class TitanOrchestrator(BaseOrchestrator):
         # 2. Pipeline components
         self._init_pipeline_components(settings)
 
-        # 3. 3-Layer AI Architecture (eager loading for TitanOrchestrator)
+        # 3. 4-Layer Verdict Architecture (v17)
         semantic = SemanticEngine(auto_load=True)
         ai = MiniAIEngine(auto_load=True)
         memory = SmartMemory(semantic_engine=semantic)
         self._init_ai_architecture(semantic, ai, memory)
 
+        # 3b. VerdictEngine - El pipeline completo de veredicto
+        self._verdict_engine = VerdictEngine(
+            mini_ai=ai,
+            semantic_engine=semantic,
+            smart_memory=memory,
+        )
+
         # Log AI status
         sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
         ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
-        logger.info(f"AI Architecture: SemanticEngine={sem_status} | MiniAI(Qwen)={ai_status} | SmartMemory=ready")
+        verdict_status = "READY" if ai.is_loaded else "fallback_only"
+        logger.info(
+            f"v17 Verdict Architecture: "
+            f"SemanticEngine={sem_status} | "
+            f"MiniAI(Qwen)={ai_status} (verdict-only) | "
+            f"SmartMemory=ready | "
+            f"VerdictEngine={verdict_status}"
+        )
 
         # 4. Extended architecture (with defaults)
         self._init_extended_with_defaults()
@@ -105,7 +136,12 @@ class TitanOrchestrator(BaseOrchestrator):
         self._scan_project()
 
     async def execute(self, msg: str) -> Dict[str, Any]:
-        """Ejecuta el pipeline completo de 8 niveles con Protocolo Abortivo."""
+        """
+        Ejecuta el pipeline completo de 8 niveles con Arquitectura de Veredicto.
+
+        La IA solo interviene si hay un empate en el consenso
+        determinístico, y solo puede decir SÍ o NO.
+        """
         start_time = time.time()
         self.request_count += 1
 
@@ -127,7 +163,7 @@ class TitanOrchestrator(BaseOrchestrator):
             }
 
         # ============================================================
-        #  INTENT AGENT (Phase F2) - Unified intent classification
+        #  INTENT CLASSIFICATION - Deterministic (sin IA)
         # ============================================================
         intent_output = self._surgical_agent.classify_with_runner(
             self._agent_runner, msg, context=""
@@ -191,8 +227,29 @@ class TitanOrchestrator(BaseOrchestrator):
 
         final_code = result_code if result_code else code
 
+        # ============================================================
+        #  VEREDICTO (v17) - La IA solo dice SÍ o NO
+        # ============================================================
+        # En vez de dejar que la IA decida sobre el código,
+        # usamos el VerdictEngine que sigue este flujo:
+        #   1. DeterministicPipeline evalúa sin IA
+        #   2. EvidenceCollector recolecta evidencia
+        #   3. ConsensusResolver decide por consenso
+        #   4. Si empate → Qwen arbitra: ¿SÍ o NO?
+        verdict_result = self._verdict_engine.verdict(
+            text=msg,
+            code=final_code,
+            language=lang,
+            question="Should this code transformation be approved?",
+            context={
+                "operation": intent.op,
+                "goal": intent.goal,
+                "route": routing.route,
+                "solver_status": plan.solver_status,
+            },
+        )
+
         # Nivel 7 (Snapshot) -> Nivel 6 (Sandbox Trial) -> Nivel 7 (Commit/Rollback)
-        # Crear workspace AISLADO para sandbox y ledger
         sandbox_workspace = self._isolation_manager.create_workspace(
             ttl_seconds=max(self.sandbox.timeout_seconds * SANDBOX_TTL_MULTIPLIER, SANDBOX_TTL_MIN)
         )
@@ -201,10 +258,17 @@ class TitanOrchestrator(BaseOrchestrator):
 
         trial = await self.sandbox.validate_code(final_code, lang, intent.target)
 
-        if trial.status == "PASS" and final_code:
+        # ============================================================
+        #  DECISIÓN FINAL: Veredicto + Sandbox
+        # ============================================================
+        # Si el veredicto es NO o el sandbox falla → ROLLBACK
+        # Si el veredicto es YES y sandbox pasa → COMMIT
+        # Principio de precaución: en caso de duda, NO
+
+        if verdict_result.verdict.value == "YES" and trial.status == "PASS" and final_code:
+            # APPROVED: Veredicto YES + Sandbox PASS
             node = self.ledger.commit(intent.target, final_code, p_dir,
                                        workspace=sandbox_workspace)
-            # Release sandbox workspace after successful commit
             try:
                 self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
             except Exception as e:
@@ -222,6 +286,7 @@ class TitanOrchestrator(BaseOrchestrator):
                 msg, intent.op, intent.goal, success=True, response_length=len(final_code))
             self._memory.add_working(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
             self._memory.save_to_cache(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
+
             return {
                 "status": "SUCCESS", "code": final_code,
                 "hash": node.hash_sha256[:12], "error": "",
@@ -236,14 +301,46 @@ class TitanOrchestrator(BaseOrchestrator):
                 "warnings": trial.warnings, "metrics": trial.metrics,
                 "paths_explored": trial.paths_explored,
                 "paths_pruned": trial.paths_pruned,
+                "verdict": verdict_result.verdict.value,
+                "verdict_source": verdict_result.source,
+                "verdict_llm_used": verdict_result.llm_used,
+                "verdict_evidence": verdict_result.evidence_summary,
                 "mini_ai_stats": self._ai.stats,
+                "verdict_engine_stats": self._verdict_engine.stats,
                 "semantic_stats": self._semantic.stats,
                 "memory_stats": self._memory.stats,
             }
-        elif trial.status.startswith("FAIL") and final_code:
+        elif verdict_result.verdict.value == "NO":
+            # REJECTED: Veredicto NO - No necesita sandbox
             self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
-            # Liberar workspace tras rollback
-            self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
+            try:
+                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
+            except Exception as e:
+                logger.debug("Orchestrator: Failed to release workspace on NO: %s", e)
+            elapsed = int((time.time() - start_time) * 1000)
+            self._analysis.log_request(intent, "VERDICT_NO", elapsed,
+                            solver_status=plan.solver_status)
+
+            return {
+                "status": "REJECTED", "code": final_code, "hash": "N/A",
+                "error": f"Verdict: NO (source={verdict_result.source})",
+                "processing_time_ms": elapsed, "route": routing.route,
+                "criticality": routing.criticality,
+                "solver_status": plan.solver_status,
+                "ast_analysis": ast_analysis,
+                "explanations": explanations,
+                "verdict": "NO",
+                "verdict_source": verdict_result.source,
+                "verdict_llm_used": verdict_result.llm_used,
+                "verdict_evidence": verdict_result.evidence_summary,
+            }
+        elif trial.status.startswith("FAIL") and final_code:
+            # Sandbox FAIL - Rollback
+            self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
+            try:
+                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
+            except Exception as e:
+                logger.debug("Orchestrator: Failed to release workspace: %s", e)
             elapsed = int((time.time() - start_time) * 1000)
             self._analysis.log_request(intent, "ROLLBACK", elapsed,
                             solver_status=plan.solver_status)
@@ -265,9 +362,12 @@ class TitanOrchestrator(BaseOrchestrator):
                 "warnings": trial.warnings,
                 "paths_explored": trial.paths_explored,
                 "paths_pruned": trial.paths_pruned,
+                "verdict": verdict_result.verdict.value,
+                "verdict_source": verdict_result.source,
+                "verdict_llm_used": verdict_result.llm_used,
             }
         else:
-            # Release sandbox workspace on NO_OP path (resource leak fix)
+            # NO_OP path
             try:
                 self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
             except Exception as e:
@@ -287,4 +387,6 @@ class TitanOrchestrator(BaseOrchestrator):
                 "solver_status": plan.solver_status,
                 "ast_analysis": ast_analysis,
                 "explanations": explanations,
+                "verdict": verdict_result.verdict.value,
+                "verdict_source": verdict_result.source,
             }

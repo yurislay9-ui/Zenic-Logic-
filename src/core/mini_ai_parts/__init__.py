@@ -1,7 +1,10 @@
 """
-MiniAIEngine sub-package — Qwen3-0.6B reasoning engine.
+MiniAIEngine sub-package — Qwen3-0.6B verdict-only engine (v17.1).
 
-Motor de RAZONAMIENTO - La base de pensamiento del sistema.
+Motor de VEREDICTO - La IA solo dice SÍ o NO.
+
+v17.1: Las 7 tareas bounded son 100% determinísticas.
+       Solo verdict() usa el LLM, con resiliencia completa.
 """
 
 from ._imports import (
