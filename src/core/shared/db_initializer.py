@@ -18,12 +18,12 @@ import logging
 import atexit
 
 # Try to import ReadWriteLock for better concurrent access
+# Per-database ReadWriteLock instances prevent cross-DB contention:
+# a write lock for one DB no longer blocks reads on all others.
 try:
     from src.core.patterns.concurrency import ReadWriteLock
-    _rw_lock = ReadWriteLock()
     _HAS_RW_LOCK = True
 except ImportError:
-    _rw_lock = None
     _HAS_RW_LOCK = False
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ __all__ = [
 
 _db_connections = {}       # {db_name: sqlite3.Connection}
 _db_write_locks = {}       # {db_name: threading.Lock} — one lock per connection for write ops
+_db_rw_locks = {}          # {db_name: ReadWriteLock} — per-DB rw lock when available
 _db_lock = threading.Lock()
 
 
@@ -47,18 +48,19 @@ def _optimize_pragma(conn):
     Aplica PRAGMA optimizados para rendimiento en ARM.
 
     WAL mode: Permite lecturas concurrentes sin bloquear escrituras.
-    cache_size: -4000 = 4MB cache (buen balance para telefono)
+    cache_size: -8192 = 8MB cache (doubled from 4MB)
     synchronous NORMAL: Mas rapido que FULL, seguro con WAL
     temp_store MEMORY: Tablas temporales en RAM
     mmap_size: Memory-mapped I/O para lecturas grandes
     """
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA cache_size=-4000")      # 4MB cache
+    conn.execute("PRAGMA cache_size=-8192")      # 8MB cache (doubled from 4MB)
     conn.execute("PRAGMA synchronous=NORMAL")     # Mas rapido con WAL
     conn.execute("PRAGMA temp_store=MEMORY")      # Temp en RAM
     conn.execute("PRAGMA mmap_size=67108864")     # 64MB mmap
     conn.execute("PRAGMA wal_autocheckpoint=1000") # Auto-checkpoint cada 1000 frames
     conn.execute("PRAGMA busy_timeout=5000")       # 5s timeout para locks
+    conn.execute("PRAGMA foreign_keys=ON")         # Enforce referential integrity
 
 
 def get_data_dir() -> Path:
@@ -98,9 +100,15 @@ def get_connection(db_name: str) -> sqlite3.Connection:
     via `with db_initializer.write_lock(db_name):` to ensure thread safety.
     """
     key = db_name
-    # Use ReadWriteLock read context for concurrent read access
-    if _HAS_RW_LOCK:
-        ctx = _rw_lock.acquire_read()
+    # Use per-DB ReadWriteLock read context for concurrent read access
+    if _HAS_RW_LOCK and key in _db_rw_locks:
+        ctx = _db_rw_locks[key].acquire_read()
+    elif _HAS_RW_LOCK:
+        # First access to this DB — create its per-DB lock
+        with _db_lock:
+            if key not in _db_rw_locks:
+                _db_rw_locks[key] = ReadWriteLock()
+            ctx = _db_rw_locks[key].acquire_read()
     else:
         ctx = _db_lock
     with ctx:
@@ -133,6 +141,7 @@ def close_all_connections():
                 logger.debug(f"close_all_connections: Failed to close connection: {e}")
         _db_connections.clear()
         _db_write_locks.clear()
+        _db_rw_locks.clear()
 
 
 # Register cleanup on process exit to prevent leaked DB connections
@@ -162,7 +171,12 @@ class write_lock:
 
     def __enter__(self):
         if _HAS_RW_LOCK:
-            self._rw_ctx = _rw_lock.acquire_write()
+            # Ensure per-DB ReadWriteLock exists
+            if self._db_name not in _db_rw_locks:
+                with _db_lock:
+                    if self._db_name not in _db_rw_locks:
+                        _db_rw_locks[self._db_name] = ReadWriteLock()
+            self._rw_ctx = _db_rw_locks[self._db_name].acquire_write()
             self._rw_ctx.__enter__()
         else:
             lock = _db_write_locks.get(self._db_name)

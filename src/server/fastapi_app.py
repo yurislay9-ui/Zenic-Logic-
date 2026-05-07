@@ -22,6 +22,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+from src.core.shared._version import TITAN_VERSION, TITAN_VERSION_STR, TITAN_FULL_NAME
 from src.core.patterns.resilience.retry import RetryConfig, with_retry
 from src.core.patterns.resilience.circuit_breaker import (
     CircuitBreaker,
@@ -149,9 +150,9 @@ def create_app(
     start_time = time.time()
 
     app = FastAPI(
-        title="TITAN OMNISCALE X v16",
+        title=f"{TITAN_FULL_NAME}",
         description="Local Surgical AI Engine — OpenAI-Compatible API",
-        version="16.0",
+        version=TITAN_VERSION,
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -514,7 +515,7 @@ def create_app(
         return {
             "status": "active",
             "model": "titan-omniscale-x",
-            "version": f"16.0{version_suffix}",
+            "version": f"{TITAN_VERSION}{version_suffix}",
             "server": "FastAPI",
             "auth_enabled": auth_service is not None,
             "endpoints": [
@@ -1581,16 +1582,16 @@ def create_app_from_env() -> Any:
         try:
             from src.server.tenant_rate_limiter import TenantRateLimiter
             rate_limiter: Any = TenantRateLimiter(
-                max_requests_per_minute=ram_limit // 64,
+                max_requests_per_minute=max(1, ram_limit // 64),
                 burst_size=10,
                 global_max_concurrent=20,
-                default_user_rpm=ram_limit // 64,
+                default_user_rpm=max(1, ram_limit // 64),
                 default_user_burst=10,
             )
-        except Exception:
+        except ImportError:
             from src.server.rate_limiter import RateLimiter
             rate_limiter = RateLimiter(
-                max_requests_per_minute=ram_limit // 64,
+                max_requests_per_minute=max(1, ram_limit // 64),
                 burst_size=10,
                 global_max_concurrent=20,
             )
@@ -1598,11 +1599,11 @@ def create_app_from_env() -> Any:
         try:
             from src.server.rate_limiter import RateLimiter
             rate_limiter = RateLimiter(
-                max_requests_per_minute=ram_limit // 64,
+                max_requests_per_minute=max(1, ram_limit // 64),
                 burst_size=10,
                 global_max_concurrent=20,
             )
-        except Exception:
+        except ImportError:
             rate_limiter = None
 
     # Determine platform tag

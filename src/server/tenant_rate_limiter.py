@@ -11,10 +11,14 @@ import threading
 import logging
 from typing import Any, Dict, Optional
 
-from src.server.rate_limiter import RateLimiter
+from src.server.rate_limiter import RateLimiter, STALE_THRESHOLD_S
 from src.core.auth_parts._tenant_mixin import PLAN_DEFINITIONS
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "TenantRateLimiter",
+]
 
 
 class TenantRateLimiter(RateLimiter):
@@ -123,6 +127,10 @@ class TenantRateLimiter(RateLimiter):
 
         return True
 
+    def release_user(self):
+        """Release a user-authenticated request slot. Alias for release()."""
+        self.release()
+
     def acquire(
         self,
         client_ip: str,
@@ -216,7 +224,7 @@ class TenantRateLimiter(RateLimiter):
         super()._cleanup(now)
         with self._lock:
             # Stale users (5 min inactive)
-            stale_threshold = now - 300.0
+            stale_threshold = now - STALE_THRESHOLD_S
             stale_users = [
                 uid for uid, u in self._users.items()
                 if u["last_refill"] < stale_threshold
@@ -227,7 +235,7 @@ class TenantRateLimiter(RateLimiter):
             # Stale tenant windows
             stale_tenants = [
                 tid for tid, t in self._tenants.items()
-                if t.get("window_start", 0) < now - 300.0
+                if t.get("window_start", 0) < now - STALE_THRESHOLD_S
             ]
             for tid in stale_tenants:
                 del self._tenants[tid]

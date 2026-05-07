@@ -13,6 +13,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from src.core.shared.contracts import HAS_Z3
+from src.core.shared._version import TITAN_VERSION_STR, TITAN_FULL_NAME
 
 
 def _solver_name():
@@ -33,7 +34,7 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
     Returns:
         Dict con la respuesta OpenAI-compatible
     """
-    content_parts = [f"TITAN OMNISCALE X v16 - {result['status']}"]
+    content_parts = [f"{TITAN_FULL_NAME} - {result['status']}"]
 
     if result.get("explanations"):
         for exp in result["explanations"]:
@@ -184,7 +185,7 @@ def build_error_response(error_msg: str) -> Dict[str, Any]:
         Dict con la respuesta OpenAI-compatible de error
     """
     error_content = (
-        f"TITAN OMNISCALE X v16 - Internal Error\n"
+        f"{TITAN_FULL_NAME} - Internal Error\n"
         f"{error_msg}\n\nTry reformulating your request."
     )
     return {

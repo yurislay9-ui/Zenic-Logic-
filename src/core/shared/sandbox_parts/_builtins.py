@@ -38,12 +38,39 @@ _DANGEROUS_DUNDER_NAMES = frozenset({
     '__setstate__',
     # Metaclass and class creation
     '__init_subclass__', '__class_getitem__',
-    # Iteration and async — can trigger code execution
-    '__iter__', '__next__', '__await__',
-    # String representation — can execute code via format()
-    '__format__', '__repr__', '__str__',
-    # Comparison and hashing — generally safe but included for completeness
-    '__eq__', '__hash__',
+    # Async — can trigger code execution
+    '__await__',
+    # Note: __iter__, __next__, __eq__, __hash__, __str__, __repr__, __format__
+    # are NOT dangerous — they are listed in _SAFE_DUNDER_NAMES below.
+})
+
+# Allowlist of safe dunders that don't enable sandbox escape.
+# Checked BEFORE the dangerous list in _is_dangerous_attr().
+# Module-level constant to avoid recreating the frozenset on every call.
+_SAFE_DUNDER_NAMES = frozenset({
+    '__name__', '__doc__', '__module__', '__annotations__',
+    '__len__', '__getitem__', '__setitem__', '__delitem__',
+    '__contains__', '__iter__', '__next__',  # iteration is safe in builtins
+    '__add__', '__radd__', '__sub__', '__rsub__',
+    '__mul__', '__rmul__', '__truediv__', '__floordiv__',
+    '__mod__', '__pow__', '__matmul__',
+    '__and__', '__or__', '__xor__',
+    '__eq__', '__ne__', '__lt__', '__le__', '__gt__', '__ge__',
+    '__hash__', '__bool__', '__int__', '__float__', '__str__',
+    '__repr__', '__format__',
+    '__abs__', '__neg__', '__pos__', '__invert__',
+    '__round__', '__trunc__', '__floor__', '__ceil__',
+})
+
+# Modules that are safe to import inside the sandbox.
+# Module-level constant to avoid recreating the set on every call.
+_SAFE_MODULES = frozenset({
+    'math', 'random', 'string', 'collections', 'itertools',
+    'functools', 'operator', 'typing', 'enum', 'dataclasses',
+    'abc', 'copy', 're', 'json', 'decimal', 'fractions',
+    'statistics', 'datetime', 'time', 'hashlib', 'base64',
+    'struct', 'pprint', 'textwrap',
+    'collections.abc',
 })
 
 
@@ -56,21 +83,6 @@ def _is_dangerous_attr(name: str) -> bool:
     __add__, __mul__, and other operator dunders that are safe.
     """
     if isinstance(name, str) and name.startswith('__') and name.endswith('__'):
-        # Allowlist of safe dunders that don't enable sandbox escape
-        _SAFE_DUNDER_NAMES = frozenset({
-            '__name__', '__doc__', '__module__', '__annotations__',
-            '__len__', '__getitem__', '__setitem__', '__delitem__',
-            '__contains__', '__iter__', '__next__',  # iteration is fine in builtins
-            '__add__', '__radd__', '__sub__', '__rsub__',
-            '__mul__', '__rmul__', '__truediv__', '__floordiv__',
-            '__mod__', '__pow__', '__matmul__',
-            '__and__', '__or__', '__xor__',
-            '__eq__', '__ne__', '__lt__', '__le__', '__gt__', '__ge__',
-            '__hash__', '__bool__', '__int__', '__float__', '__str__',
-            '__repr__', '__format__',
-            '__abs__', '__neg__', '__pos__', '__invert__',
-            '__round__', '__trunc__', '__floor__', '__ceil__',
-        })
         if name in _SAFE_DUNDER_NAMES:
             return False
         # Any dunder not in the allowlist is considered dangerous
@@ -156,15 +168,6 @@ def create_sandbox_builtins(workspace: SandboxWorkspace) -> dict:
         return f
 
     # __import__ restringido: solo permite modulos seguros
-    _SAFE_MODULES = {
-        'math', 'random', 'string', 'collections', 'itertools',
-        'functools', 'operator', 'typing', 'enum', 'dataclasses',
-        'abc', 'copy', 're', 'json', 'decimal', 'fractions',
-        'statistics', 'datetime', 'time', 'hashlib', 'base64',
-        'struct', 'pprint', 'textwrap',
-        'collections.abc',
-    }
-
     def _sandbox_import(name, *args, **kwargs):
         """__import__ restringido: solo modulos seguros permitidos."""
         base_name = name.split('.')[0]

@@ -67,14 +67,14 @@ class ModelLifecycleMixin:
             self._llm = None
             return False
 
-    def unload_model(self):
+    def unload_model(self) -> None:
         """Libera el modelo de memoria."""
         if self._llm is not None:
             del self._llm
             self._llm = None
             self._loaded = False
             self._executor.shutdown(wait=False)
-            self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            self._executor = None  # Lazy re-creation on next use
             logger.info("MiniAI: Model unloaded from memory")
 
     @property
@@ -122,6 +122,9 @@ class ModelLifecycleMixin:
             )
 
         try:
+            # Lazy executor creation (set to None after unload_model)
+            if self._executor is None:
+                self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = self._executor.submit(_actual_llm_call)
             try:
                 response = future.result(timeout=LLM_TIMEOUT_S)

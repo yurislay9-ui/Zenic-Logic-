@@ -24,11 +24,4 @@ from src.core.action_executor import (
 
 def run_async(coro):
     """Helper to run an async coroutine in sync test context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("closed")
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+    return asyncio.run(coro)

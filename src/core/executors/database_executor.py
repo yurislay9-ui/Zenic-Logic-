@@ -4,7 +4,11 @@ TITAN OMNISCALE X - DatabaseExecutor (Phase 7.1)
 Ejecutor de operaciones reales en SQLite.
 """
 
-import os, time, sqlite3, logging, asyncio
+import asyncio
+import logging
+import os
+import sqlite3
+import time
 from typing import Any, Dict
 
 from .base import ActionExecutor, ActionResult, _validate_sql

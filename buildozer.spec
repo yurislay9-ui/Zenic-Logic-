@@ -15,4 +15,4 @@ android.archs = arm64-v8a, armeabi-v7a
 android.accept_sdk_license = True
 p4a.branch = develop
 log_level = 2
-version = 16.0.0
+version = 18.0.0

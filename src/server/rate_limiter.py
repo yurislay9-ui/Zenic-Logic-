@@ -19,6 +19,14 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
+# Stale client threshold: entries with no activity for this many seconds are removed
+STALE_THRESHOLD_S: float = 300.0  # 5 minutes
+
+__all__ = [
+    "RateLimiter",
+    "STALE_THRESHOLD_S",
+]
+
 
 class RateLimiter:
     """
@@ -69,15 +77,13 @@ class RateLimiter:
         """
         now = time.time()
 
-        # Periodic cleanup of stale entries
-        if now - self._last_cleanup > self.cleanup_interval_s:
-            self._cleanup(now)
-            with self._lock:
-                self._last_cleanup = now
-
         # Atomically check global concurrent limit AND per-IP rate limit
         # under a single lock to prevent race conditions between check and increment.
         with self._lock:
+            # Periodic cleanup of stale entries (inside lock to prevent race)
+            if now - self._last_cleanup > self.cleanup_interval_s:
+                self._cleanup_locked(now)
+                self._last_cleanup = now
             # Check global concurrent limit
             if self._active_requests >= self.global_max_concurrent:
                 self._total_rejected += 1
@@ -143,16 +149,18 @@ class RateLimiter:
             "total_rejected": self._total_rejected,
         }
 
-    def _cleanup(self, now: float):
-        """Remove stale client entries (no activity for 5 minutes)."""
-        with self._lock:
-            stale_threshold = now - 300.0  # 5 minutes
-            stale_ips = [
-                ip for ip, client in self._clients.items()
-                if client["last_refill"] < stale_threshold
-            ]
-            for ip in stale_ips:
-                del self._clients[ip]
+    def _cleanup_locked(self, now: float):
+        """Remove stale client entries (no activity for 5 minutes).
 
-            if stale_ips:
-                logger.debug("Cleaned up %d stale rate limit entries", len(stale_ips))
+        Must be called while holding self._lock.
+        """
+        stale_threshold = now - STALE_THRESHOLD_S
+        stale_ips = [
+            ip for ip, client in self._clients.items()
+            if client["last_refill"] < stale_threshold
+        ]
+        for ip in stale_ips:
+            del self._clients[ip]
+
+        if stale_ips:
+            logger.debug("Cleaned up %d stale rate limit entries", len(stale_ips))

@@ -28,6 +28,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, TypeVar
 
+from src.core.shared._version import TITAN_VERSION
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -114,7 +116,7 @@ def init_tracing(config: Optional[TracingConfig] = None) -> bool:
 
         resource = Resource.create({
             "service.name": config.service_name,
-            "service.version": "16.0",
+            "service.version": TITAN_VERSION,
         })
 
         sampler = TraceIdRatioBased(rate=config.sample_rate)
@@ -127,7 +129,7 @@ def init_tracing(config: Optional[TracingConfig] = None) -> bool:
         _setup_exporter(provider, config)
 
         trace.set_tracer_provider(provider)
-        _tracer = trace.get_tracer(config.service_name, "16.0")
+        _tracer = trace.get_tracer(config.service_name, TITAN_VERSION)
         _provider = provider
         _tracing_enabled = True
 

@@ -115,8 +115,13 @@ class TenantIsolation:
         columns: List[str],
         values: Sequence[Any],
         tenant_id: Optional[str] = None,
-    ) -> Tuple[str, List[str], Sequence[Any]]:
-        """Add tenant_id to an INSERT statement.
+    ) -> Tuple[Optional[str], List[str], Sequence[Any]]:
+        """Add tenant_id to an INSERT statement's columns and values.
+
+        Note: The first element of the returned tuple is always None.
+        This function only modifies the columns and values lists to include
+        tenant_id — the caller is responsible for constructing the actual
+        INSERT SQL from the returned columns and values.
 
         Args:
             table: Target table name.
@@ -125,15 +130,16 @@ class TenantIsolation:
             tenant_id: Override tenant_id.
 
         Returns:
-            Tuple of (modified_insert_sql, modified_columns, modified_values).
+            Tuple of (None, modified_columns, modified_values).
+            For exempt tables, columns and values are returned unchanged.
         """
         if table in TenantIsolation.EXEMPT_TABLES:
-            return "", columns, values
+            return None, columns, values
 
         tid = tenant_id or TenantIsolation.current_tenant_id()
         new_columns = list(columns) + ["tenant_id"]
         new_values = list(values) + [tid]
-        return "", new_columns, new_values
+        return None, new_columns, new_values
 
     @staticmethod
     def validate_schema(conn: Any) -> List[str]:

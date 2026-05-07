@@ -9,7 +9,7 @@ from ._imports import logger
 class APIMixin:
     """Mixin providing public API for resource control."""
 
-    def cpu_throttle_sleep(self):
+    def cpu_throttle_sleep(self) -> None:
         """
         Duerme un poco entre operaciones pesadas para evitar
         que la CPU se pegue al 100%% y el telefono se caliente.
@@ -28,7 +28,7 @@ class APIMixin:
 
         time.sleep(sleep_ms / 1000.0)
 
-    def get_adaptive_mcts_simulations(self, base_simulations=100):
+    def get_adaptive_mcts_simulations(self, base_simulations: int = 100) -> int:
         """
         Ajusta las simulaciones MCTS segun la carga del sistema.
 
@@ -60,7 +60,7 @@ class APIMixin:
 
         return adaptive
 
-    def get_adaptive_solver_timeout(self, base_timeout_ms=15000):
+    def get_adaptive_solver_timeout(self, base_timeout_ms: int = 15000) -> int:
         """
         Ajusta el timeout del solver segun recursos disponibles.
 
@@ -78,7 +78,7 @@ class APIMixin:
         adaptive = max(3000, int(base_timeout_ms * scale))
         return adaptive
 
-    def pre_request(self):
+    def pre_request(self) -> None:
         """Llama antes de cada request para preparar el sistema."""
         with self._request_count_lock:
             self._request_count += 1
@@ -87,7 +87,7 @@ class APIMixin:
         # GC ligero antes de cada request (gen 0 solo)
         gc.collect(0)
 
-    def post_request(self):
+    def post_request(self) -> None:
         """Llama despues de cada request para limpiar."""
         # GC de generacion 1 despues de cada request
         gc.collect(1)

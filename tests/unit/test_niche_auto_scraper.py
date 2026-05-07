@@ -135,7 +135,7 @@ class TestTrendingAnalyzer:
     def test_no_scrap_agent_returns_empty(self):
         """Without a scrap agent, analyze_trending should return empty list."""
         analyzer = TrendingAnalyzer(scrap_agent=None)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             analyzer.analyze_trending()
         )
         assert result == []
@@ -188,7 +188,7 @@ class TestTrendingAnalyzer:
         mock_scrap_agent.fetch_github_code = AsyncMock(
             return_value="import stripe\nimport pandas"
         )
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             analyzer.analyze_trending(language="python")
         )
         assert isinstance(result, list)
@@ -199,7 +199,7 @@ class TestTrendingAnalyzer:
     def test_analyze_trending_exception_handling(self, analyzer, mock_scrap_agent):
         """analyze_trending should handle exceptions gracefully."""
         mock_scrap_agent.fetch_github_code = AsyncMock(side_effect=Exception("API error"))
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             analyzer.analyze_trending(language="python")
         )
         assert result == []
@@ -237,14 +237,14 @@ class TestNicheAutoUpdater:
     def test_auto_update_no_loader(self, mock_scrap_agent):
         """auto_update without NicheLoader should return error."""
         updater = NicheAutoUpdater(niche_loader=None, scrap_agent=mock_scrap_agent)
-        result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
+        result = asyncio.run(updater.auto_update())
         assert "error" in result
 
     def test_auto_update_no_yml(self, mock_niche_loader, mock_scrap_agent):
         """auto_update without YAML should return error."""
         with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", False):
             updater = NicheAutoUpdater(niche_loader=mock_niche_loader, scrap_agent=mock_scrap_agent)
-            result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
+            result = asyncio.run(updater.auto_update())
             assert "error" in result
 
     def test_auto_update_merges_blocks(self, updater, mock_niche_loader, mock_niche, mock_scrap_agent):
@@ -255,7 +255,7 @@ class TestNicheAutoUpdater:
         mock_niche_loader.search = MagicMock(return_value=[mock_niche])
 
         with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", True):
-            result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
+            result = asyncio.run(updater.auto_update())
 
         # notification_manager should have been suggested by firebase-admin
         if result.get("mutations_applied", 0) > 0:
@@ -269,7 +269,7 @@ class TestNicheAutoUpdater:
         mock_niche_loader.search = MagicMock(return_value=[mock_niche])
 
         with patch("src.core.niche_scraper_parts._imports.YAML_AVAILABLE", True):
-            result = asyncio.get_event_loop().run_until_complete(updater.auto_update())
+            result = asyncio.run(updater.auto_update())
 
         # stripe_payments block and Payment entity should be suggested
         if result.get("mutations_applied", 0) > 0:

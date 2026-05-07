@@ -7,6 +7,7 @@ import time
 from ._imports import (
     logger, HAS_Z3, urlparse, parse_qs, _run_async,
 )
+from src.core.shared._version import TITAN_VERSION, TITAN_FULL_NAME
 
 
 class GetMixin:
@@ -80,7 +81,7 @@ class GetMixin:
         response = {
             "status": "active",
             "model": "titan-omniscale-x",
-            "version": f"16.0{version_suffix}",
+            "version": f"{TITAN_VERSION}{version_suffix}",
             "endpoints": [
                 "/v1/chat/completions", "/v1/models", "/health",
                 "/v1/generate/app", "/v1/generate/automation", "/v1/generate/niche",
@@ -94,7 +95,7 @@ class GetMixin:
             "pipeline_levels": 8,
             "solver": solver_name,
             "features": features,
-            "description": f"TITAN OMNISCALE X v16 - Local Surgical AI Engine ({solver_name}) + App & Automation Generator",
+            "description": f"{TITAN_FULL_NAME} - Local Surgical AI Engine ({solver_name}) + App & Automation Generator",
         }
         if self.platform_tag:
             response["platform"] = self.platform_tag

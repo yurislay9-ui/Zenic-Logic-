@@ -351,23 +351,29 @@ class ActionSpec:
     source: str = "deterministic"
 
 
-@dataclass
 class ScheduleSpec:
     """A31 ScheduleParser output.
 
     Single source of truth — legacy agents/schemas.py re-exports this.
+
+    Note: This class uses a manual __init__ instead of @dataclass because
+    it supports a backward-compatible ``cron_expression`` alias parameter.
+    The class-level attributes serve as documentation only; they are NOT
+    dataclass fields and are overwritten by __init__.
     """
-    type: str = "manual"  # manual|interval|cron|once
-    cron: str = ""
-    interval_seconds: int = 0
-    description: str = ""
-    source: str = "deterministic"
+
+    # Instance attributes (set by __init__, documented here for IDE support)
+    type: str          # manual|interval|cron|once
+    cron: str
+    interval_seconds: int
+    description: str
+    source: str
 
     def __init__(self, type: str = "manual", cron: str = "",
                  interval_seconds: int = 0, description: str = "",
                  source: str = "deterministic",
                  cron_expression: str = "") -> None:
-        """Allow both `cron` and `cron_expression` for backward compatibility."""
+        """Allow both ``cron`` and ``cron_expression`` for backward compatibility."""
         self.type = type
         self.cron = cron or cron_expression  # cron_expression is an alias
         self.interval_seconds = interval_seconds
@@ -376,7 +382,7 @@ class ScheduleSpec:
 
     @property
     def cron_expression(self) -> str:
-        """Backward-compatible alias for `cron` (legacy used `cron_expression`)."""
+        """Backward-compatible alias for ``cron`` (legacy used ``cron_expression``)."""
         return self.cron
 
 

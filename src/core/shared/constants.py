@@ -23,6 +23,7 @@ VALID_INTENT_OPERATIONS: frozenset[str] = frozenset({
 VALID_INTENT_GOALS: frozenset[str] = frozenset({
     "COMPLEXITY_REDUCTION", "MODERN_PATTERN", "BUG_FIX",
     "FEATURE_ADD", "SECURITY_HARDEN", "PERFORMANCE", "READABILITY",
+    "AUTOMATION",
 })
 
 
@@ -37,7 +38,7 @@ VALID_INVENTORY_OPERATIONS: frozenset[str] = frozenset({
 
 VALID_LANGUAGES: frozenset[str] = frozenset({
     "python", "kotlin", "go", "javascript", "typescript",
-    "java", "rust", "c", "cpp", "ruby",
+    "java", "rust", "c", "cpp", "ruby", "swift", "scala",
 })
 
 EXT_LANG_MAP: dict[str, str] = {

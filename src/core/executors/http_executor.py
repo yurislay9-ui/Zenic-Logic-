@@ -4,8 +4,11 @@ TITAN OMNISCALE X - HttpExecutor (Phase 7.1)
 Ejecutor de peticiones HTTP reales. Usa aiohttp si disponible, sino urllib.
 """
 
-import json, logging, asyncio
-import urllib.parse, urllib.request
+import asyncio
+import json
+import logging
+import urllib.parse
+import urllib.request
 from typing import Any, Dict
 
 from .base import ActionExecutor, ActionResult, _validate_url, _HAS_AIOHTTP

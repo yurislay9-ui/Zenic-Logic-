@@ -4,7 +4,11 @@ TITAN OMNISCALE X - WebhookExecutor (Phase 7.1)
 Ejecutor de envío y verificación de webhooks con HMAC-SHA256.
 """
 
-import json, time, hashlib, hmac, logging
+import hashlib
+import hmac
+import json
+import logging
+import time
 from typing import Any, Dict
 
 from .base import ActionExecutor, ActionResult, _validate_url

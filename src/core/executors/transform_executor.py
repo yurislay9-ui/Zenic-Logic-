@@ -4,7 +4,8 @@ TITAN OMNISCALE X - TransformExecutor (Phase 7.1)
 Ejecutor de transformación y mapeo de datos.
 """
 
-import csv, logging
+import csv
+import logging
 from typing import Any, Dict
 
 from .base import ActionExecutor, ActionResult

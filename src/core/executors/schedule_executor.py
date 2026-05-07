@@ -4,7 +4,8 @@ TITAN OMNISCALE X - ScheduleExecutor (Phase 7.1)
 Ejecutor de programación de jobs. Usa APScheduler si disponible, sino dict simple.
 """
 
-import time, logging
+import logging
+import time
 from typing import Any, Dict, Optional
 
 from .base import ActionExecutor, ActionResult, _HAS_APSCHEDULER

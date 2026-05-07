@@ -10,7 +10,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["ANONYMOUS_TENANT", "resolve_tenant_id"]
+
 # Default tenant_id for backward compatibility
+# Import this constant instead of hardcoding "__anonymous__" elsewhere.
 ANONYMOUS_TENANT = "__anonymous__"
 
 

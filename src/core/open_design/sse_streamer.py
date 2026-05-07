@@ -14,6 +14,7 @@ import logging
 from typing import Dict, Any, Optional, AsyncIterator, Iterator, Callable, List
 
 from .config import get_open_design_config
+from src.core.shared._version import TITAN_FULL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ class SSEStreamer:
 
     def _build_content_parts(self, result: Dict[str, Any]) -> List[str]:
         """Build content parts from orchestrator result (mirrors response_builder)."""
-        parts = [f"TITAN OMNISCALE X v16 - {result.get('status', 'UNKNOWN')}"]
+        parts = [f"{TITAN_FULL_NAME} - {result.get('status', 'UNKNOWN')}"]
 
         if result.get("explanations"):
             for exp in result["explanations"]:

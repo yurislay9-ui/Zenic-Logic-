@@ -75,7 +75,7 @@ class TestAbortiveHandleProtocol:
         ap, orch = protocol
         intent = _make_mock_intent()
         routing = MagicMock()
-        routing.route = "DEEP_PATH"
+        routing.route = "DEEP_PATH_CONSTRAINT"
         routing.criticality = 3
         plan = _make_mock_plan()
         ast_analysis = {}
@@ -104,7 +104,7 @@ class TestAbortiveHandleProtocol:
         ap, orch = protocol
         intent = _make_mock_intent()
         routing = MagicMock()
-        routing.route = "DEEP_PATH"
+        routing.route = "DEEP_PATH_CONSTRAINT"
         routing.criticality = 3
         plan = _make_mock_plan()
         ast_analysis = {}
@@ -138,7 +138,7 @@ class TestAbortiveWorkspace:
         ap, orch = protocol
         intent = _make_mock_intent()
         routing = MagicMock()
-        routing.route = "DEEP_PATH"
+        routing.route = "DEEP_PATH_CONSTRAINT"
         routing.criticality = 3
         plan = _make_mock_plan()
         ast_analysis = {}

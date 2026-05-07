@@ -22,7 +22,7 @@ def surgical_routing():
     """Surgical routing for critical operations."""
     intent = IntentPayload(
         op=OperationType.CREATE, target="auth_service.py",
-        goal="security", confidence=0.9, context="",
+        goal="SECURITY_HARDEN", confidence=0.9, context="",
         raw_code="", language="python"
     )
     return RoutingPayload(
@@ -38,7 +38,7 @@ def deep_routing():
     """Deep routing for moderate operations."""
     intent = IntentPayload(
         op=OperationType.CREATE, target="feature_module.py",
-        goal="create", confidence=0.8, context="",
+        goal="FEATURE_ADD", confidence=0.8, context="",
         raw_code="", language="python"
     )
     return RoutingPayload(
@@ -54,7 +54,7 @@ def fast_routing():
     """Fast routing for simple operations."""
     intent = IntentPayload(
         op=OperationType.EXPLAIN, target="utils.py",
-        goal="readability", confidence=0.7, context="",
+        goal="READABILITY", confidence=0.7, context="",
         raw_code="", language="python"
     )
     return RoutingPayload(
@@ -91,7 +91,7 @@ class TestAPAPlanner:
         """Surgical CREATE should include SCRAPE_PATTERNS step."""
         intent = IntentPayload(
             op=OperationType.CREATE, target="auth.py",
-            goal="create", confidence=0.9, context="",
+            goal="FEATURE_ADD", confidence=0.9, context="",
             raw_code="", language="python", scrap_query="modern auth"
         )
         routing = RoutingPayload(
@@ -108,7 +108,7 @@ class TestAPAPlanner:
         """Surgical DEBUG should include TRACE_EXECUTION."""
         intent = IntentPayload(
             op=OperationType.DEBUG, target="auth.py",
-            goal="debug", confidence=0.9, context="",
+            goal="BUG_FIX", confidence=0.9, context="",
             raw_code="", language="python"
         )
         routing = RoutingPayload(
@@ -125,7 +125,7 @@ class TestAPAPlanner:
         """Surgical DELETE should include CHECK_DEPENDENCIES."""
         intent = IntentPayload(
             op=OperationType.DELETE, target="auth.py",
-            goal="delete", confidence=0.9, context="",
+            goal="BUG_FIX", confidence=0.9, context="",
             raw_code="", language="python"
         )
         routing = RoutingPayload(
@@ -159,7 +159,7 @@ class TestAPAPlanner:
         """Fast EXPLAIN should include EXPLAIN_CODE step."""
         intent = IntentPayload(
             op=OperationType.EXPLAIN, target="utils.py",
-            goal="readability", confidence=0.7, context="",
+            goal="READABILITY", confidence=0.7, context="",
             raw_code="", language="python"
         )
         routing = RoutingPayload(
@@ -211,7 +211,7 @@ class TestAPAPlanner:
         """Surgical REFACTOR/OPTIMIZE should include REPLACE_AST_NODE."""
         intent = IntentPayload(
             op=OperationType.REFACTOR, target="auth.py",
-            goal="security", confidence=0.9, context="",
+            goal="SECURITY_HARDEN", confidence=0.9, context="",
             raw_code="", language="python"
         )
         routing = RoutingPayload(

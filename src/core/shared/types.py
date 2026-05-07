@@ -6,7 +6,7 @@ and data payloads for communication between pipeline levels.
 """
 
 import enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 __all__ = [
     "OperationType", "GoalType", "CriticalityLevel", "RoutePath",
@@ -41,6 +41,7 @@ class GoalType(str, enum.Enum):
     SECURITY_HARDEN = "SECURITY_HARDEN"
     PERFORMANCE = "PERFORMANCE"
     READABILITY = "READABILITY"
+    AUTOMATION = "AUTOMATION"
 
 
 class CriticalityLevel(int, enum.Enum):
@@ -106,12 +107,12 @@ class RoutePath(str, enum.Enum):
 # ============================================================
 
 class IntentPayload:
-    def __init__(self, op: str = OperationType.SEARCH, target: str = "unknown",
-                 goal: str = GoalType.FEATURE_ADD, scrap_query: str = "", confidence: float = 0.0,
+    def __init__(self, op: Union[str, OperationType] = OperationType.SEARCH.value, target: str = "unknown",
+                 goal: Union[str, GoalType] = GoalType.FEATURE_ADD.value, scrap_query: str = "", confidence: float = 0.0,
                  language: str = "python", raw_code: str = "", context: str = "") -> None:
-        self.op = op
+        self.op = op.value if isinstance(op, enum.Enum) else op
         self.target = target
-        self.goal = goal
+        self.goal = goal.value if isinstance(goal, enum.Enum) else goal
         self.scrap_query = scrap_query
         self.confidence = confidence
         self.language = language
@@ -120,11 +121,11 @@ class IntentPayload:
 
 
 class RoutingPayload:
-    def __init__(self, intent: Optional[IntentPayload] = None, criticality: int = CriticalityLevel.FAST_STANDARD,
-                 route: str = RoutePath.FAST_PATH, reason: str = "") -> None:
+    def __init__(self, intent: Optional[IntentPayload] = None, criticality: Union[int, CriticalityLevel] = CriticalityLevel.FAST_STANDARD.value,
+                 route: Union[str, RoutePath] = RoutePath.FAST_PATH.value, reason: str = "") -> None:
         self.intent = intent or IntentPayload()
-        self.criticality = criticality
-        self.route = route
+        self.criticality = criticality.value if isinstance(criticality, enum.Enum) else criticality
+        self.route = route.value if isinstance(route, enum.Enum) else route
         self.reason = reason
 
 

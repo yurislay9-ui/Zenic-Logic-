@@ -265,13 +265,17 @@ class DatabaseMixin:
         ]
         conn = self._get_connection()
         try:
+            # Validate DEFAULT_TENANT_ID contains no SQL-injectable characters
+            _safe_default = self.DEFAULT_TENANT_ID
+            if not _safe_default.isidentifier() and not all(c.isalnum() or c == '_' for c in _safe_default):
+                raise ValueError(f"DEFAULT_TENANT_ID contains unsafe characters: {_safe_default!r}")
             for table in tables:
                 assert table in self._VALID_TABLES, f"Invalid table: {table}"
                 try:
                     conn.execute(
-                        f"ALTER TABLE \"{table}\" ADD COLUMN tenant_id TEXT DEFAULT '{self.DEFAULT_TENANT_ID}'"
+                        f'ALTER TABLE "{table}" ADD COLUMN tenant_id TEXT DEFAULT %s' % repr(_safe_default)
                     )
-                    logger.info(f"SmartMemory: Added tenant_id column to '{table}'")
+                    logger.info("SmartMemory: Added tenant_id column to '%s'", table)
                 except sqlite3.OperationalError:
                     # Column already exists, ignore
                     pass

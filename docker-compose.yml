@@ -26,8 +26,6 @@
 #    docker compose run --rm certbot   # Obtain SSL cert
 # ============================================================
 
-version: "3.9"
-
 services:
   # ── PostgreSQL Database ──────────────────────────────────
   db:
@@ -219,7 +217,7 @@ services:
     environment:
       PGHOST: db
       PGUSER: ${POSTGRES_USER:-titan}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       PGDATABASE: ${POSTGRES_DB:-titan_db}
     volumes:
       - backup_data:/backups

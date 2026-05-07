@@ -1,6 +1,10 @@
 """
 ZENIC LOGIC — Shared Retry Utility.
 
+NOTE: This is the simple procedural retry. For the RetryConfig-based version
+used by the server/circuit-breaker, see src.core.patterns.resilience.retry.
+For the v18 agent decorator version, see src.core.agents_v2.resilience.retry.
+
 Eliminates duplicated retry-with-exponential-backoff patterns across
 all engine modules. Every engine had its own copy of the same retry loop;
 this module provides a single source of truth.
@@ -27,6 +31,13 @@ T = TypeVar("T")
 # Default retry constants
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 0.1  # 100ms
+
+__all__ = [
+    "DEFAULT_BASE_DELAY",
+    "DEFAULT_MAX_RETRIES",
+    "with_retry",
+    "with_retry_or_false",
+]
 
 
 def with_retry(

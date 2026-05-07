@@ -28,6 +28,7 @@ __all__ = [
     "retry",
     "retry_async",
     "with_retry",
+    "with_config_retry",
     "with_retry_async",
     "RetryScope",
 ]
@@ -174,6 +175,12 @@ def with_retry(
     if last_exception is not None:
         raise last_exception
     raise RuntimeError("with_retry: unreachable state")
+
+
+# Alias: prefer ``with_config_retry`` to distinguish from
+# ``src.core.shared.retry.with_retry`` (simple procedural retry)
+# and ``src.core.agents_v2.resilience.with_agent_retry`` (decorator-style).
+with_config_retry = with_retry
 
 
 async def with_retry_async(

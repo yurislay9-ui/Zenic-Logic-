@@ -32,7 +32,7 @@ def sample_intent():
     return IntentPayload(
         op=OperationType.CREATE,
         target="auth",
-        goal="create",
+        goal="FEATURE_ADD",
         confidence=0.9,
         context="",
         raw_code="",
@@ -105,7 +105,7 @@ class TestTheoremCache:
         similar_intent = IntentPayload(
             op=OperationType.CREATE,
             target="login",
-            goal="create",
+            goal="FEATURE_ADD",
             confidence=0.9,
             context="",
             raw_code="",

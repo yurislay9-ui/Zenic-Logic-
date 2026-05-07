@@ -1,6 +1,12 @@
 """
 V18 Pipeline Orchestrator — Connects all single-responsibility agents.
 
+.. deprecated::
+    This module is NOT wired into the main execution path.
+    The ``DAGOrchestrator`` and ``UnifiedDAGOrchestrator`` handle request
+    processing.  This class is retained for future v18 pipeline activation
+    but should not be imported or used in production code paths.
+
 6-Phase Pipeline (FULLY WIRED):
   Phase 1: UNDERSTAND  (A48 → A01 → A02 → A03 → A04)
   Phase 2: CONTEXT     (A05 → A06 → A07 → A08)
@@ -634,7 +640,7 @@ class PipelineOrchestrator:
             return True
         # Also check if the intent goal is related to automation
         if intent_result and isinstance(intent_result, IntentResult):
-            if intent_result.goal == "AUTOMATION":
+            if intent_result.operation == "CREATE" and "automat" in message.lower():
                 return True
         return False
 

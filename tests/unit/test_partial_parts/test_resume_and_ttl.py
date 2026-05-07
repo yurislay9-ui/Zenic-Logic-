@@ -14,7 +14,7 @@ class TestResumeFromPartial:
 
     def test_invalid_token_returns_error(self, manager, mock_orchestrator):
         """Resuming with invalid token should return error."""
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             manager.resume_from_partial("nonexistent_token")
         )
         assert result["status"] == "ERROR"
@@ -37,7 +37,7 @@ class TestResumeFromPartial:
         trial_pass = MagicMock()
         trial_pass.status = "PASS"
         mock_orchestrator.sandbox.validate_code = AsyncMock(return_value=trial_pass)
-        resume_result = asyncio.get_event_loop().run_until_complete(
+        resume_result = asyncio.run(
             manager.resume_from_partial(token)
         )
         assert resume_result["status"] == "SUCCESS"
@@ -62,7 +62,7 @@ class TestResumeFromPartial:
         trial_pass = MagicMock()
         trial_pass.status = "PASS"
         mock_orchestrator.sandbox.validate_code = AsyncMock(return_value=trial_pass)
-        resume_result = asyncio.get_event_loop().run_until_complete(
+        resume_result = asyncio.run(
             manager.resume_from_partial(token)
         )
         mock_orchestrator._abortive.execute_subtask.assert_called()
@@ -87,7 +87,7 @@ class TestResumeFromPartial:
         trial_pass = MagicMock()
         trial_pass.status = "PASS"
         mock_orchestrator.sandbox.validate_code = AsyncMock(return_value=trial_pass)
-        resume_result = asyncio.get_event_loop().run_until_complete(
+        resume_result = asyncio.run(
             manager.resume_from_partial(token, subtask_index=1)
         )
         mock_orchestrator._abortive.execute_subtask.assert_called_once()
@@ -104,11 +104,11 @@ class TestResumeFromPartial:
         state = mock_orchestrator._pending_resumptions[token]
         state["subtasks"] = [
             {"message": "Isolate module", "target": "auth.py",
-             "operation": "CREATE", "goal": "isolate",
+             "operation": "CREATE", "goal": "BUG_FIX",
              "solver_insights": {}, "mcts_hints": [],
              "parent_violations": [], "parent_context": {}, "depth": 0},
             {"message": "Apply mutation", "target": "auth.py",
-             "operation": "REFACTOR", "goal": "mutate"},
+             "operation": "REFACTOR", "goal": "COMPLEXITY_REDUCTION"},
         ]
         state["subtask_results"] = []
         mock_orchestrator._abortive.execute_subtask = AsyncMock(return_value={
@@ -117,7 +117,7 @@ class TestResumeFromPartial:
         trial_pass = MagicMock()
         trial_pass.status = "PASS"
         mock_orchestrator.sandbox.validate_code = AsyncMock(return_value=trial_pass)
-        resume_result = asyncio.get_event_loop().run_until_complete(
+        resume_result = asyncio.run(
             manager.resume_from_partial(token)
         )
         assert mock_orchestrator._abortive.execute_subtask.call_count == 2

@@ -36,6 +36,7 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 
 # ── Core imports ──
 from src.config.loader import load_settings
+from src.core.shared.types import GoalType
 from src.core.tenant._context import (
     TenantContext,
     set_current_tenant,
@@ -1096,7 +1097,7 @@ class UnifiedDAGOrchestrator(DAGOrchestrator):
         if any(kw in msg_lower for kw in automation_keywords):
             return True
         if intent_result and hasattr(intent_result, "goal"):
-            if intent_result.goal == "AUTOMATION":
+            if intent_result.goal == "AUTOMATION" or intent_result.goal == GoalType.AUTOMATION:
                 return True
         return False
 

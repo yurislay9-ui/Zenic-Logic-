@@ -10,6 +10,11 @@ import threading
 import time
 from typing import Optional
 
+try:
+    from typing import Self
+except ImportError:
+    Self = None  # type: ignore[misc,assignment]  # Fallback for Python <3.11
+
 
 class BulkheadFullError(Exception):
     """Raised when bulkhead is at capacity."""

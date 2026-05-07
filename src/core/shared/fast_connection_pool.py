@@ -315,7 +315,7 @@ class FastPool:
             lock.release()
 
     @contextmanager
-    def batch_commit(self, db_name: str, batch_size: int = 100):
+    def batch_commit(self, db_name: str, batch_size: int = 100):  # noqa: ARG002
         """
         Context manager for batch write operations.
         
@@ -452,9 +452,17 @@ class FastPool:
         Returns:
             Total rows deleted
         """
+        # Validate table names to prevent SQL injection via f-string interpolation
+        _VALID_TABLES = frozenset({
+            "ast_nodes", "theorems", "ledger", "requests",
+            "episodes", "patterns", "projects", "cache_entries",
+        })
         total_deleted = 0
         with self.write(db_name) as conn:
             for table in tables:
+                if table not in _VALID_TABLES:
+                    logger.warning("purge_tenant: skipping invalid table name %r", table)
+                    continue
                 try:
                     cursor = conn.execute(
                         f"DELETE FROM {table} WHERE tenant_id = ?",

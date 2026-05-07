@@ -321,7 +321,7 @@ class DAGOrchestrator(
         elapsed = int((time.time() - start_time) * 1000)
         return self._build_response(ctx, "COMPLETED", elapsed)
 
-    def set_client_id(self, client_id: str):
+    def set_client_id(self, client_id: str) -> None:
         """Brecha B: Set the client_id for multi-client isolation."""
         self._memory.set_client_id(client_id)
         self._current_client_id = client_id

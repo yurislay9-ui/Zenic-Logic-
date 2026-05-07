@@ -36,9 +36,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir \
-       gunicorn>=21.2.0 \
-       psycopg2-binary>=2.9.9 \
-       asyncpg>=0.29.0
+       "gunicorn>=21.2.0" \
+       "psycopg2-binary>=2.9.9" \
+       "asyncpg>=0.29.0"
 
 # Copy source code
 COPY . .
@@ -53,10 +53,10 @@ FROM base AS development
 
 # Install dev tools
 RUN pip install --no-cache-dir \
-    watchfiles>=0.21.0 \
-    pytest>=7.4.0 \
-    pytest-asyncio>=0.21.0 \
-    httpx>=0.25.0
+    "watchfiles>=0.21.0" \
+    "pytest>=7.4.0" \
+    "pytest-asyncio>=0.21.0" \
+    "httpx>=0.25.0"
 
 # Development runs as root for convenience (volume mounts)
 USER root

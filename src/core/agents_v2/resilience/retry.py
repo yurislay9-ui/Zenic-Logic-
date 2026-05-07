@@ -51,7 +51,7 @@ RETRY_CONFIGS = {
 }
 
 
-def with_retry(
+def with_agent_retry(
     func: Optional[Callable] = None,
     *,
     config: Optional[AgentRetryConfig] = None,
@@ -61,12 +61,12 @@ def with_retry(
     Decorator that adds retry with exponential backoff to an agent method.
 
     Usage:
-        @with_retry(config=AgentRetryConfig(max_attempts=3))
+        @with_agent_retry(config=AgentRetryConfig(max_attempts=3))
         def execute(self, input_data):
             ...
 
         # Or with defaults:
-        @with_retry
+        @with_agent_retry
         def execute(self, input_data):
             ...
     """

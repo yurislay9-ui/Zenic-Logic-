@@ -22,9 +22,9 @@ class TestIntentPayload:
     def test_default_values(self):
         """Default values should match OperationType.SEARCH, etc."""
         payload = IntentPayload()
-        assert payload.op == OperationType.SEARCH
+        assert payload.op == OperationType.SEARCH.value
         assert payload.target == "unknown"
-        assert payload.goal == GoalType.FEATURE_ADD
+        assert payload.goal == GoalType.FEATURE_ADD.value
         assert payload.scrap_query == ""
         assert payload.confidence == 0.0
         assert payload.language == "python"
@@ -62,15 +62,15 @@ class TestRoutingPayload:
     def test_default_values(self):
         """Default values should match CriticalityLevel.FAST_STANDARD."""
         payload = RoutingPayload()
-        assert payload.criticality == CriticalityLevel.FAST_STANDARD
-        assert payload.route == RoutePath.FAST_PATH
+        assert payload.criticality == CriticalityLevel.FAST_STANDARD.value
+        assert payload.route == RoutePath.FAST_PATH.value
         assert payload.reason == ""
         assert isinstance(payload.intent, IntentPayload)
 
     def test_custom_intent(self):
         """Should accept a custom IntentPayload."""
         intent = IntentPayload(op="DEBUG")
-        payload = RoutingPayload(intent=intent, criticality=3, route="SURGICAL")
+        payload = RoutingPayload(intent=intent, criticality=3, route="SURGICAL_PATH_FULL")
         assert payload.intent.op == "DEBUG"
         assert payload.criticality == 3
 

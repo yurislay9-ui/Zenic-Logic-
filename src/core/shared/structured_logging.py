@@ -75,8 +75,9 @@ class StructuredFormatter(logging.Formatter):
 
         except Exception as e:
             # Fallback a formato plano si JSON falla
-            # Note: using print instead of logger to avoid recursion in formatter
-            print(f"StructuredFormatter: JSON formatting failed: {e}")
+            # Note: using print to stderr instead of logger to avoid recursion in formatter
+            import sys
+            print(f"StructuredFormatter: JSON formatting failed: {e}", file=sys.stderr)
             return super().format(record)
 
 

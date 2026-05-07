@@ -6,6 +6,7 @@ still works exactly as before.
 """
 
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -19,6 +20,15 @@ from ._rbac_mixin import RbacMixin
 from ._api_key_mixin import ApiKeyMixin
 from ._validation_mixin import ValidationMixin
 from ._tenant_mixin import TenantMixin
+
+# Placeholder secrets that MUST be changed in production
+_INSECURE_SECRETS = frozenset({
+    "CHANGE_ME_GENERATE_A_SECURE_JWT_SECRET",
+    "CHANGE_ME_GENERATE_A_SECURE_SECRET",
+    "changeme",
+    "secret",
+    "jwt_secret",
+})
 
 
 class AuthService(DbPasswordMixin, TokenMixin, UserMixin, RbacMixin,
@@ -40,6 +50,19 @@ class AuthService(DbPasswordMixin, TokenMixin, UserMixin, RbacMixin,
             self._db_path = str(d / "auth.sqlite")
 
         self._secret_key = secret_key or os.environ.get("TITAN_AUTH_SECRET", "")
+
+        # ── Production secret validation ──────────────────────
+        # In production mode, REFUSE to start with a placeholder secret.
+        if os.environ.get("TITAN_ENV") == "production":
+            if self._secret_key in _INSECURE_SECRETS:
+                logger.critical(
+                    "SECURITY: TITAN_AUTH_SECRET is set to a known placeholder. "
+                    "The application REFUSES to start with an insecure secret in production. "
+                    "Generate a secure secret with: "
+                    "python3 -c \"import secrets; print(secrets.token_urlsafe(48))\""
+                )
+                sys.exit(1)
+
         if not self._secret_key:
             kf = Path(self._db_path).parent / ".auth_secret"
             if kf.exists():

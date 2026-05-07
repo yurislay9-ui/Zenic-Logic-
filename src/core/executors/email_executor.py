@@ -4,7 +4,10 @@ TITAN OMNISCALE X - EmailExecutor (Phase 7.1)
 Ejecutor de envío de emails reales vía SMTP.
 """
 
-import os, logging, smtplib, asyncio
+import asyncio
+import logging
+import os
+import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase

@@ -186,21 +186,21 @@ def main():
         try:
             from src.server.tenant_rate_limiter import TenantRateLimiter
             rate_limiter = TenantRateLimiter(
-                max_requests_per_minute=args.ram_limit // 64,
+                max_requests_per_minute=max(1, args.ram_limit // 64),
                 burst_size=10,
                 global_max_concurrent=20,
-                default_user_rpm=args.ram_limit // 64,
+                default_user_rpm=max(1, args.ram_limit // 64),
                 default_user_burst=10,
             )
-        except Exception:
+        except ImportError:
             rate_limiter = RateLimiter(
-                max_requests_per_minute=args.ram_limit // 64,
+                max_requests_per_minute=max(1, args.ram_limit // 64),
                 burst_size=10,
                 global_max_concurrent=20,
             )
     else:
         rate_limiter = RateLimiter(
-            max_requests_per_minute=args.ram_limit // 64,
+            max_requests_per_minute=max(1, args.ram_limit // 64),
             burst_size=10,
             global_max_concurrent=20,
         )

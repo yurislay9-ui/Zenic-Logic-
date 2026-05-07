@@ -22,7 +22,7 @@ def critical_intent():
     return IntentPayload(
         op=OperationType.CREATE,
         target="auth_service",
-        goal="create",
+        goal="FEATURE_ADD",
         confidence=0.9,
         context="",
         raw_code="",
@@ -36,7 +36,7 @@ def moderate_intent():
     return IntentPayload(
         op=OperationType.CREATE,
         target="api_endpoint",
-        goal="create",
+        goal="FEATURE_ADD",
         confidence=0.8,
         context="",
         raw_code="",
@@ -50,7 +50,7 @@ def simple_intent():
     return IntentPayload(
         op=OperationType.EXPLAIN,
         target="utils",
-        goal="explain",
+        goal="READABILITY",
         confidence=0.7,
         context="",
         raw_code="",
@@ -72,7 +72,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.DELETE,
             target="payment_handler",
-            goal="delete",
+            goal="COMPLEXITY_REDUCTION",
             confidence=0.9,
             context="",
             raw_code="",
@@ -86,7 +86,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.REFACTOR,
             target="crypto_module",
-            goal="refactor",
+            goal="MODERN_PATTERN",
             confidence=0.8,
             context="",
             raw_code="",
@@ -116,7 +116,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.CREATE,
             target="feature_module",
-            goal="create",
+            goal="FEATURE_ADD",
             confidence=0.8,
             context="",
             raw_code="",
@@ -132,7 +132,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.DELETE,
             target="old_util",
-            goal="delete",
+            goal="COMPLEXITY_REDUCTION",
             confidence=0.8,
             context="",
             raw_code="",
@@ -146,7 +146,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.DEBUG,
             target="some_function",
-            goal="debug",
+            goal="BUG_FIX",
             confidence=0.8,
             context="",
             raw_code="",
@@ -166,7 +166,7 @@ class TestMacroRouter:
         intent = IntentPayload(
             op=OperationType.CREATE,
             target="db_connection",
-            goal="create",
+            goal="FEATURE_ADD",
             confidence=0.9,
             context="",
             raw_code="",

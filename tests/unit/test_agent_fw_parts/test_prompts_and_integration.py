@@ -140,14 +140,7 @@ class TestOrchestratorCableado:
         from src.core.orchestrator import TitanOrchestrator
         import asyncio
         orch = TitanOrchestrator()
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("closed")
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        status = loop.run_until_complete(orch.get_system_status())
+        status = asyncio.run(orch.get_system_status())
         assert "agent_framework" in status
         assert "runner_stats" in status["agent_framework"]
         assert "cache_stats" in status["agent_framework"]

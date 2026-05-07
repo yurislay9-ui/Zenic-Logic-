@@ -163,7 +163,7 @@ class TestSubtaskDescriptorRepr:
 
     def test_repr_format(self):
         """__repr__ should follow SubtaskDescriptor(...) format."""
-        desc = SubtaskDescriptor(message="Test", target="t.py", operation="CREATE", goal="ADD", depth=0)
+        desc = SubtaskDescriptor(message="Test", target="t.py", operation="CREATE", goal="FEATURE_ADD", depth=0)
         r = repr(desc)
         assert r.startswith("SubtaskDescriptor(")
         assert r.endswith(")")

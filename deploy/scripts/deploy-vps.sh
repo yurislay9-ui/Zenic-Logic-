@@ -77,10 +77,11 @@ echo "  ✓ User ${TITAN_USER} created"
 
 # ── Step 3: PostgreSQL Setup ───────────────────────────────
 echo "[3/8] Setting up PostgreSQL..."
-sudo -u postgres psql -c "CREATE USER titan WITH PASSWORD 'titan_change_me';" 2>/dev/null || true
+DB_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
+sudo -u postgres psql -c "CREATE USER titan WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || true
 sudo -u postgres psql -c "CREATE DATABASE titan_db OWNER titan;" 2>/dev/null || true
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE titan_db TO titan;" 2>/dev/null || true
-echo "  ✓ PostgreSQL database created (CHANGE PASSWORD IN PRODUCTION!)"
+echo "  ✓ PostgreSQL database created with random password"
 
 # ── Step 4: Copy Application ──────────────────────────────
 echo "[4/8] Installing application..."
@@ -93,11 +94,11 @@ echo "  ✓ Application copied to ${INSTALL_DIR}"
 echo "[5/8] Creating Python virtual environment..."
 sudo -u ${TITAN_USER} python3.12 -m venv ${INSTALL_DIR}/venv
 sudo -u ${TITAN_USER} ${INSTALL_DIR}/venv/bin/pip install --upgrade pip
-sudo -u ${TITAN_USER} ${INSTALL_DIR}/venv/bin/pip install -r ${INSTALL_DIR}/requirements.txt
+sudo -u ${TITAN_USER} ${INSTALL_DIR}/venv/bin/pip install ${INSTALL_DIR}/
 sudo -u ${TITAN_USER} ${INSTALL_DIR}/venv/bin/pip install \
-    gunicorn>=21.2.0 \
-    psycopg2-binary>=2.9.9 \
-    asyncpg>=0.29.0
+    "gunicorn>=21.2.0" \
+    "psycopg2-binary>=2.9.9" \
+    "asyncpg>=0.29.0"
 echo "  ✓ Python dependencies installed"
 
 # ── Step 6: Systemd Service ────────────────────────────────
@@ -112,8 +113,8 @@ if [ ! -f ${INSTALL_DIR}/.env ]; then
 TITAN_ENV=production
 TITAN_SERVER_MODE=fastapi
 TITAN_AUTH_ENABLED=true
-DATABASE_URL=postgresql+asyncpg://titan:titan_change_me@localhost:5432/titan_db
-DATABASE_URL_SYNC=postgresql+psycopg2://titan:titan_change_me@localhost:5432/titan_db
+DATABASE_URL=postgresql+asyncpg://titan:${DB_PASSWORD}@localhost:5432/titan_db
+DATABASE_URL_SYNC=postgresql+psycopg2://titan:${DB_PASSWORD}@localhost:5432/titan_db
 TITAN_AUTH_SECRET=${SECRET}
 TITAN_RAM_LIMIT_MB=2048
 TITAN_WORKERS=4
@@ -121,7 +122,7 @@ LOG_LEVEL=info
 EOF
     chown ${TITAN_USER}:${TITAN_USER} ${INSTALL_DIR}/.env
     chmod 600 ${INSTALL_DIR}/.env
-    echo "  ⚠ .env generated with DEFAULT passwords — CHANGE THEM!"
+    echo "  ✓ .env generated with random passwords"
 fi
 
 cp ${INSTALL_DIR}/deploy/systemd/titan-omniscale.service /etc/systemd/system/
@@ -180,7 +181,7 @@ echo "║  IMPORTANT:                                              ║"
 echo "║  1. Change default passwords in ${INSTALL_DIR}/.env       ║"
 echo "║  2. Change PostgreSQL password                          ║"
 echo "║  3. Set up backups: crontab -e                          ║"
-echo "║     0 2 * * * cd ${INSTALL_DIR} && docker compose run --rm backup ║"
+echo "║     0 2 * * * pg_dump -U titan titan_db | gzip > /var/backups/titan_db_$(date+\%F).sql.gz ║"
 echo "║                                                          ║"
 echo "║  Commands:                                               ║"
 echo "║    systemctl status titan-omniscale                      ║"

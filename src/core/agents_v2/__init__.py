@@ -36,7 +36,7 @@ from .schemas import (
 # Resilience patterns
 from .resilience import (
     BaseAgent, AgentCircuitBreaker, CircuitBreakerManager,
-    AgentRetryConfig, with_retry,
+    AgentRetryConfig, with_agent_retry,
     AgentBulkhead, BulkheadManager,
     GlobalHealthMonitor, AgentHealthSnapshot,
     AuditLogger,
@@ -113,7 +113,7 @@ __all__ = [
     "HealthSnapshot", "CircuitState", "AuditEntry",
     # Resilience
     "BaseAgent", "AgentCircuitBreaker", "CircuitBreakerManager",
-    "AgentRetryConfig", "with_retry",
+    "AgentRetryConfig", "with_agent_retry",
     "AgentBulkhead", "BulkheadManager",
     "GlobalHealthMonitor", "AgentHealthSnapshot",
     "AuditLogger",

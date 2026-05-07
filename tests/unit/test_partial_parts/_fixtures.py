@@ -20,9 +20,9 @@ def mock_orchestrator():
     orch._abortive = MagicMock()
     orch._abortive.generate_subtasks = MagicMock(return_value=[
         SubtaskDescriptor(message="Subtask isolation", target="auth.py",
-                          operation="CREATE", goal="isolate"),
+                          operation="CREATE", goal="BUG_FIX"),
         SubtaskDescriptor(message="Subtask mutation", target="auth.py",
-                          operation="CREATE", goal="mutate"),
+                          operation="CREATE", goal="COMPLEXITY_REDUCTION"),
     ])
     orch._abortive.execute_subtask = AsyncMock(return_value={
         "status": "SUCCESS", "code": "def hello(): pass", "message": ""
@@ -69,7 +69,7 @@ def mock_intent():
 def mock_routing():
     """Create a mock RoutingResult."""
     routing = MagicMock()
-    routing.route = "standard"
+    routing.route = "DEEP_PATH_CONSTRAINT"
     routing.criticality = 2
     return routing
 
