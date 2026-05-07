@@ -7,7 +7,7 @@ Collects evidence from all agent results to build a case for the ConsensusResolv
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import (
@@ -16,7 +16,7 @@ from ..schemas import (
 )
 
 
-class EvidenceCollectorV18(BaseAgent[List[Evidence]]):
+class EvidenceCollectorV18(BaseAgent[list[Evidence]]):
     """
     A41: Collect evidence for/against a decision.
 
@@ -25,7 +25,7 @@ class EvidenceCollectorV18(BaseAgent[List[Evidence]]):
     Fallback: Return empty evidence list.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A41_EvidenceCollector", **kwargs)
 
     # Evidence type weights (higher = more trusted)
@@ -44,7 +44,7 @@ class EvidenceCollectorV18(BaseAgent[List[Evidence]]):
         EvidenceType.SEMANTIC_SIMILARITY: 0.4,
     }
 
-    def execute(self, input_data: Any) -> List[Evidence]:
+    def execute(self, input_data: Any) -> list[Evidence]:
         """
         Collect evidence from agent results.
 
@@ -56,9 +56,17 @@ class EvidenceCollectorV18(BaseAgent[List[Evidence]]):
           - 'code_result': CodeResult (optional)
         """
         if not isinstance(input_data, dict):
-            return self.fallback(input_data)
+            # Try to handle list of results or object attributes
+            if isinstance(input_data, list):
+                # Might be a raw list of results — try to build evidence from items
+                return self.fallback(input_data)
+            elif hasattr(input_data, '__dict__'):
+                input_data = {k: v for k, v in input_data.__dict__.items() 
+                             if not k.startswith('_')}
+            else:
+                return self.fallback(input_data)
 
-        evidence: List[Evidence] = []
+        evidence: list[Evidence] = []
 
         # Security evidence (has VETO power)
         security = input_data.get("security_result")
@@ -163,5 +171,5 @@ class EvidenceCollectorV18(BaseAgent[List[Evidence]]):
 
         return evidence
 
-    def fallback(self, input_data: Any) -> List[Evidence]:
+    def fallback(self, input_data: Any) -> list[Evidence]:
         return []

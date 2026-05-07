@@ -8,7 +8,7 @@ INVARIANT: If SecurityScanner says NO (safe=False), it is NO. No override possib
 from __future__ import annotations
 
 import re
-from typing import Any, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import SecurityResult, ValidationIssue
@@ -17,7 +17,7 @@ from ..schemas import SecurityResult, ValidationIssue
 # DANGEROUS PATTERNS — If detected, safe=False, risk_score increases
 # ──────────────────────────────────────────────────────────────
 
-DANGEROUS_PATTERNS: List[tuple] = [
+DANGEROUS_PATTERNS: list[tuple] = [
     ("dangerous_eval", r'\beval\s*\(', "eval() is dangerous — use ast.literal_eval()"),
     ("dangerous_exec", r'\bexec\s*\(', "exec() is dangerous — avoid dynamic code execution"),
     ("os_system", r'\bos\.system\s*\(', "os.system() is dangerous — use subprocess with shell=False"),
@@ -37,7 +37,7 @@ DANGEROUS_PATTERNS: List[tuple] = [
 # SAFE PATTERNS — Evidence that code is well-written
 # ──────────────────────────────────────────────────────────────
 
-SAFE_PATTERNS: List[tuple] = [
+SAFE_PATTERNS: list[tuple] = [
     ("error_handling", r'\btry\s*:', "Proper error handling"),
     ("type_hints", r'def\s+\w+\s*\([^)]*:\s*\w+', "Type hints present"),
     ("logging", r'\blogging\b|\blogger\b', "Logging present"),
@@ -58,7 +58,7 @@ class SecurityScanner(BaseAgent[SecurityResult]):
     INVARIANT: If safe=False, it CANNOT be overridden. Security veto is absolute.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A23_SecurityScanner", **kwargs)
         self._dangerous_compiled = [
             (name, re.compile(pattern, re.IGNORECASE), msg)
@@ -102,7 +102,7 @@ class SecurityScanner(BaseAgent[SecurityResult]):
             source="deterministic",
         )
 
-    def _scan_dangerous(self, code: str) -> List[ValidationIssue]:
+    def _scan_dangerous(self, code: str) -> list[ValidationIssue]:
         """Scan for dangerous patterns."""
         threats = []
         for name, pattern, message in self._dangerous_compiled:
@@ -121,7 +121,7 @@ class SecurityScanner(BaseAgent[SecurityResult]):
                     break  # Only report first occurrence
         return threats
 
-    def _scan_safe(self, code: str) -> List[ValidationIssue]:
+    def _scan_safe(self, code: str) -> list[ValidationIssue]:
         """Scan for safe patterns (evidence of good practices)."""
         evidence = []
         for name, pattern, message in self._safe_compiled:
@@ -133,7 +133,7 @@ class SecurityScanner(BaseAgent[SecurityResult]):
                 ))
         return evidence
 
-    def _calculate_risk(self, threats: List, safe_evidence: List) -> float:
+    def _calculate_risk(self, threats: list, safe_evidence: list) -> float:
         """Calculate risk score from threats and safe patterns."""
         if not threats:
             return 0.0
@@ -171,8 +171,24 @@ class SecurityScanner(BaseAgent[SecurityResult]):
 
     def fallback(self, input_data: Any) -> SecurityResult:
         """
-        Fallback: Return safe=False (precaution principle).
-        When the scanner is degraded (circuit open, errors), we reject by default.
-        Security veto is absolute — safer to block than to pass dangerous code.
+        Fallback: Return safe=False with moderate risk (precaution principle).
+
+        When the scanner is degraded (circuit open, errors), we cannot guarantee
+        safety, so safe=False (veto applies). However, we use risk_score=0.5
+        (not 1.0) to avoid total pipeline lockout — downstream components can
+        differentiate between "scanner found real threats" (high risk_score)
+        and "scanner was unavailable" (moderate risk_score from fallback).
+
+        The source="fallback" field allows the pipeline to identify this as
+        a degraded result rather than an actively malicious one.
         """
-        return SecurityResult(safe=False, risk_score=1.0, source="fallback")
+        return SecurityResult(
+            safe=False,
+            risk_score=0.5,
+            source="fallback",
+            threats=[ValidationIssue(
+                severity="warning",
+                code="scanner_degraded",
+                message="Security scanner unavailable — cannot verify code safety",
+            )],
+        )

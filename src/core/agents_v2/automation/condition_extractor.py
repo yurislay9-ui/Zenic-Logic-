@@ -9,7 +9,7 @@ language descriptions (EN + ES bilingual) and builds a simple logic tree.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import AutoDescription, ConditionResult
@@ -53,7 +53,7 @@ class ConditionExtractor(BaseAgent[ConditionResult]):
     Fallback: Return empty conditions (no conditions = always execute).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A32_ConditionExtractor", **kwargs)
         self._compiled_patterns = [
             re.compile(p, re.IGNORECASE) for p in CONDITION_INTRODUCERS
@@ -113,7 +113,7 @@ class ConditionExtractor(BaseAgent[ConditionResult]):
             return input_data
         return ""
 
-    def _extract_condition_clauses(self, description: str) -> List[str]:
+    def _extract_condition_clauses(self, description: str) -> list[str]:
         """Extract raw condition clauses using regex patterns."""
         clauses = []
         seen = set()
@@ -143,8 +143,8 @@ class ConditionExtractor(BaseAgent[ConditionResult]):
         return condition
 
     def _build_logic_tree(
-        self, conditions: List[str], description: str
-    ) -> Dict[str, Any]:
+        self, conditions: list[str], description: str
+    ) -> dict[str, Any]:
         """
         Build a simple logic tree from conditions and description.
 

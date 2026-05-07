@@ -6,13 +6,13 @@ Deterministic. No AI.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import FixSuggestions, ValidationIssue
 
 # Fix suggestion catalog
-FIX_CATALOG: Dict[str, str] = {
+FIX_CATALOG: dict[str, str] = {
     "dangerous_eval": "Replace eval() with ast.literal_eval() for safe evaluation",
     "dangerous_exec": "Remove exec() and use function dispatch or importlib instead",
     "os_system": "Replace os.system() with subprocess.run(shell=False, check=True)",
@@ -49,7 +49,7 @@ class FixSuggester(BaseAgent[FixSuggestions]):
     Fallback: Return empty suggestions.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A28_FixSuggester", **kwargs)
 
     def execute(self, input_data: Any) -> FixSuggestions:
@@ -59,7 +59,7 @@ class FixSuggester(BaseAgent[FixSuggestions]):
         input_data should be a list of ValidationIssue objects,
         or a dict with 'issues' key.
         """
-        issues: List[ValidationIssue] = []
+        issues: list[ValidationIssue] = []
 
         if isinstance(input_data, list):
             issues = input_data

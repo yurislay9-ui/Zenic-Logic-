@@ -213,7 +213,8 @@ class InitMixin:
 
     def _init_common_state(self) -> None:
         """Initialize common state: request_count, locks, pending resumptions, patterns."""
-        self.request_count = 0
+        self._request_count = 0
+        self._request_count_lock = threading.Lock()
         self._pending_resumptions = {}
         self._resumptions_lock = threading.Lock()
         self._isolation_manager = get_isolation_manager()

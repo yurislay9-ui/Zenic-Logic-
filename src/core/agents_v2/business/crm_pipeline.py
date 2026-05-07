@@ -7,7 +7,7 @@ No AI. Lookup-table based stage management.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CRMResult
@@ -57,7 +57,7 @@ class CRMPipeline(BaseAgent[CRMResult]):
     Fallback: Empty CRMResult with no stages.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A11_CRMPipeline", **kwargs)
 
     def execute(self, input_data: Any) -> CRMResult:

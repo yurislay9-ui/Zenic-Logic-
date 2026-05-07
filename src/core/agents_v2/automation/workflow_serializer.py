@@ -9,7 +9,7 @@ a complete WorkflowSpec with YAML, JSON, and executable dict formats.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import (
@@ -36,7 +36,7 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
     Fallback: Return minimal empty workflow.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A34_WorkflowSerializer", **kwargs)
 
     def execute(self, input_data: Any) -> WorkflowSpec:
@@ -80,7 +80,7 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
             source="deterministic",
         )
 
-    def _normalize_trigger(self, trigger: Any) -> Dict[str, Any]:
+    def _normalize_trigger(self, trigger: Any) -> dict[str, Any]:
         """Normalize trigger to dict format."""
         if isinstance(trigger, TriggerSpec):
             return {
@@ -92,7 +92,7 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
             return trigger
         return {"type": "manual", "config": {}}
 
-    def _normalize_actions(self, actions: Any) -> List[Dict[str, Any]]:
+    def _normalize_actions(self, actions: Any) -> list[dict[str, Any]]:
         """Normalize actions to list of dicts."""
         if not actions:
             return [{"type": "log", "config": {"message": "No action specified"}}]
@@ -116,7 +116,7 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
             })
         return normalized
 
-    def _normalize_schedule(self, schedule: Any) -> Dict[str, Any]:
+    def _normalize_schedule(self, schedule: Any) -> dict[str, Any]:
         """Normalize schedule to dict format."""
         if isinstance(schedule, ScheduleSpec):
             return {
@@ -129,7 +129,7 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
             return schedule
         return {"type": "manual"}
 
-    def _normalize_conditions(self, conditions: Any) -> List[str]:
+    def _normalize_conditions(self, conditions: Any) -> list[str]:
         """Normalize conditions to list of strings."""
         if isinstance(conditions, ConditionResult):
             return conditions.conditions
@@ -147,11 +147,11 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
         self,
         name: str,
         description: str,
-        trigger: Dict[str, Any],
-        actions: List[Dict[str, Any]],
-        schedule: Dict[str, Any],
-        conditions: List[str],
-    ) -> Dict[str, Any]:
+        trigger: dict[str, Any],
+        actions: list[dict[str, Any]],
+        schedule: dict[str, Any],
+        conditions: list[str],
+    ) -> dict[str, Any]:
         """Build the complete executable workflow dict."""
         workflow = {
             "version": WORKFLOW_VERSION,
@@ -176,14 +176,14 @@ class WorkflowSerializer(BaseAgent[WorkflowSpec]):
 
         return workflow
 
-    def _to_yaml(self, data: Dict[str, Any]) -> str:
+    def _to_yaml(self, data: dict[str, Any]) -> str:
         """Convert dict to YAML string (manual, no yaml dependency required)."""
         lines = []
         self._dict_to_yaml_lines(data, lines, indent=0)
         return "\n".join(lines)
 
     def _dict_to_yaml_lines(
-        self, data: Any, lines: List[str], indent: int
+        self, data: Any, lines: list[str], indent: int
     ) -> None:
         """Recursively convert dict to YAML lines."""
         prefix = "  " * indent

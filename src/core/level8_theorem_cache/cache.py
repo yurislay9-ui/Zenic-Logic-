@@ -19,6 +19,9 @@ v17 - TENANT-AWARE:
 v16 EVICTION: Politica LRU con limite de entradas y limpieza automatica.
 Previene que la cache crezca sin control en dispositivos ARM con RAM limitada.
 
+FIX (Phase 2): Added retry with exponential backoff for DB operations.
+SQLite can fail transiently (database locked, busy timeout).
+
 Sin dependencias externas. Compatible con Android.
 """
 
@@ -28,14 +31,20 @@ import hashlib
 import json
 import time
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 from src.core.shared.contracts import IntentPayload
 from src.core.shared.db_initializer import get_connection
+from src.core.shared.retry import with_retry
+from src.core.shared.db_utils import purge_tenant_rows
+from src.core.shared.tenant_utils import resolve_tenant_id
 
 logger = logging.getLogger(__name__)
 
-# Default tenant_id for backward compatibility
-_ANONYMOUS_TENANT = "__anonymous__"
+# Named constants (previously magic numbers)
+_DEFAULT_MAX_ENTRIES = 500
+_CODE_HASH_LENGTH = 16
+_EVICTION_THRESHOLD = 0.9
+_EVICTION_HIT_PROTECTION = 50
 
 __all__ = ["TheoremCache"]
 
@@ -54,7 +63,7 @@ class TheoremCache:
     - Tenant-aware: todas las operaciones scoped por tenant_id
     """
 
-    def __init__(self, max_entries: int = 500):
+    def __init__(self, max_entries: int = _DEFAULT_MAX_ENTRIES):
         """
         Inicializa el cache con politica de eviction.
 
@@ -63,12 +72,7 @@ class TheoremCache:
                         En ARM con 12GB RAM, 500 entries ~ 5MB es seguro.
         """
         self.max_entries = max_entries
-        # Resolve tenant_id from thread-local TenantContext
-        try:
-            from src.core.tenant._context import get_current_tenant
-            self._tenant_id: str = get_current_tenant().effective_tenant_id
-        except Exception:
-            self._tenant_id = _ANONYMOUS_TENANT
+        self._tenant_id: str = resolve_tenant_id()
         logger.debug("TheoremCache initialized with tenant_id='%s'", self._tenant_id)
 
     def set_tenant_id(self, tenant_id: str) -> None:
@@ -123,14 +127,22 @@ class TheoremCache:
         return hashlib.sha256(structure.encode()).hexdigest()
 
     def _hash(self, intent, code=None):
-        """Hash compuesto basado en operacion, objetivo, target y codigo."""
+        """Compute composite hash from operation, goal, target, and optional code.
+
+        Args:
+            intent: IntentPayload with op, goal, and target attributes.
+            code: Optional source code string to include in the hash.
+
+        Returns:
+            Hex-encoded SHA-256 digest string.
+        """
         composite = f"{intent.op}|{intent.goal}|{intent.target}"
         if code:
-            code_hash = hashlib.sha256(code.encode()).hexdigest()[:16]
+            code_hash = hashlib.sha256(code.encode()).hexdigest()[:_CODE_HASH_LENGTH]
             composite = f"{composite}|{code_hash}"
         return hashlib.sha256(composite.encode()).hexdigest()
 
-    def lookup(self, intent, code=None, language="python"):
+    def lookup(self, intent, code=None, language="python") -> 'Optional[Dict[str, Any]]':
         """
         Busca en la cache usando hash compuesto primero,
         luego skeleton hash como fallback estructural.
@@ -169,16 +181,14 @@ class TheoremCache:
             logger.debug("Cache lookup error: %s", e)
         return None
 
-    def save(self, intent, proof, sol, code=None, language="python"):
-        """
-        Guarda una demostracion con hash compuesto y skeleton hash.
-        Ejecuta eviction LRU si se supera el limite de entradas.
+    def save(self, intent, proof, sol, code=None, language="python") -> None:
+        """Save a proof with composite and skeleton hash. Runs LRU eviction.
 
-        La entrada se guarda con el tenant_id actual para aislar
-        los datos entre tenants.
+        Uses shared retry utility for transient SQLite failures.
         """
         tid = self._tenant_id
-        try:
+
+        def _save_entry():
             skeleton_hash = None
             if code:
                 skeleton_hash = self._skeleton_hash(code, language)
@@ -194,11 +204,13 @@ class TheoremCache:
                 (self._hash(intent, code), intent.op, intent.goal, proof,
                  json.dumps(sol), skeleton_hash, tid))
             conn.commit()
-
-            # Eviction: eliminar entradas LRU si se supera el limite (scoped by tenant)
+            # Eviction: remove LRU entries if limit exceeded (scoped by tenant)
             self._evict_if_needed(conn)
-        except Exception as e:
-            logger.debug("Cache save error: %s", e)
+
+        try:
+            with_retry(_save_entry, label="TheoremCache save")
+        except Exception:
+            pass  # with_retry already logged the failure
 
     def _evict_if_needed(self, conn):
         """
@@ -225,7 +237,7 @@ class TheoremCache:
                 return
 
             # Calcular cuantas entradas eliminar (10% extra para evitar eviction frecuente)
-            to_evict = count - int(self.max_entries * 0.9)
+            to_evict = count - int(self.max_entries * _EVICTION_THRESHOLD)
 
             if to_evict <= 0:
                 return
@@ -237,7 +249,7 @@ class TheoremCache:
                 """DELETE FROM theorems
                 WHERE rowid IN (
                     SELECT rowid FROM theorems
-                    WHERE tenant_id=? AND hit_count <= 50
+                    WHERE tenant_id=? AND hit_count <= _EVICTION_HIT_PROTECTION
                     ORDER BY last_used ASC, hit_count ASC
                     LIMIT ?
                 )""",
@@ -256,8 +268,13 @@ class TheoremCache:
         except Exception as e:
             logger.debug("Cache eviction error: %s", e)
 
-    def get_stats(self) -> dict:
-        """Retorna estadisticas del cache scoped por el tenant actual."""
+    def get_stats(self) -> Dict[str, Any]:
+        """Return cache statistics scoped by the current tenant.
+
+        Returns:
+            Dict with keys: tenant_id, entries, max_entries, usage_pct,
+            total_hits, avg_hits, max_hits.
+        """
         tid = self._tenant_id
         try:
             conn = get_connection("theorem_cache.sqlite")
@@ -288,7 +305,7 @@ class TheoremCache:
             return {"tenant_id": tid, "entries": 0, "max_entries": self.max_entries, "usage_pct": 0}
 
     def clear(self):
-        """Limpia todo el cache del tenant actual."""
+        """Clear all cache entries for the current tenant."""
         tid = self._tenant_id
         try:
             conn = get_connection("theorem_cache.sqlite")
@@ -299,25 +316,10 @@ class TheoremCache:
             logger.warning("Cache clear error: %s", e)
 
     def purge_tenant_cache(self, tenant_id: str) -> int:
-        """Delete all cache entries for a specific tenant.
-
-        Used for GDPR compliance (right to be forgotten) or
-        tenant deprovisioning.
-
-        Args:
-            tenant_id: Tenant identifier to purge.
-
-        Returns:
-            Number of rows deleted.
-        """
+        """Delete all cache entries for a specific tenant (GDPR / deprovisioning)."""
         try:
             conn = get_connection("theorem_cache.sqlite")
-            cursor = conn.execute("DELETE FROM theorems WHERE tenant_id=?", (tenant_id,))
-            conn.commit()
-            count = cursor.rowcount
-            if count > 0:
-                logger.info("TheoremCache: purged %d entries for tenant '%s'", count, tenant_id)
-            return count
+            return purge_tenant_rows(conn, "theorems", tenant_id)
         except Exception as e:
             logger.error("TheoremCache: purge failed for tenant '%s': %s", tenant_id, e)
             return 0

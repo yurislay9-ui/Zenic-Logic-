@@ -8,7 +8,7 @@ No AI. Template-based multi-file project generation.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import ScaffoldResult
@@ -39,7 +39,7 @@ class ProjectScaffolder(BaseAgent[ScaffoldResult]):
     Fallback: Empty ScaffoldResult.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A21_ProjectScaffolder", **kwargs)
 
     def execute(self, input_data: Any) -> ScaffoldResult:
@@ -94,7 +94,7 @@ class ProjectScaffolder(BaseAgent[ScaffoldResult]):
         parts = [p for p in name.split('_') if p and p not in STOP_WORDS]
         return '_'.join(parts[:4]) if parts else "module"
 
-    def _scaffold_python(self, safe_name: str, requirements: str) -> List[Dict[str, str]]:
+    def _scaffold_python(self, safe_name: str, requirements: str) -> list[dict[str, str]]:
         """Generate Python project structure."""
         return [
             {"path": "main.py", "content": f'''"""
@@ -141,7 +141,7 @@ def test_app_runs():
 '''},
         ]
 
-    def _scaffold_kotlin(self, safe_name: str) -> List[Dict[str, str]]:
+    def _scaffold_kotlin(self, safe_name: str) -> list[dict[str, str]]:
         """Generate Kotlin project structure."""
         cap = safe_name.capitalize()
         return [
@@ -160,7 +160,7 @@ version = "1.0.0"
 '''},
         ]
 
-    def _scaffold_go(self, safe_name: str) -> List[Dict[str, str]]:
+    def _scaffold_go(self, safe_name: str) -> list[dict[str, str]]:
         """Generate Go project structure."""
         return [
             {"path": "main.go", "content": f'''// {safe_name} - Main
@@ -175,7 +175,7 @@ func main() {{
             {"path": "go.mod", "content": f"module zenic-logic.com/{safe_name}\n\ngo 1.21\n"},
         ]
 
-    def _scaffold_js(self, safe_name: str) -> List[Dict[str, str]]:
+    def _scaffold_js(self, safe_name: str) -> list[dict[str, str]]:
         """Generate JavaScript project structure."""
         cap = safe_name.capitalize()
         return [

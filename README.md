@@ -2,17 +2,19 @@
 
 # ZENIC LOGIC v18
 
-### Motor de IA Quirurgico Local — Arquitectura SRP 48 Agentes
+### Motor de IA Quirurgico Local — Arquitectura SRP 48 Agentes + Unified DAG
 
-**Servidor OpenAI-Compatible** para Cline, Aide, OpenCode, Open Design y mas.  
-Funciona en **Android/Termux** sin GPU.
+**Servidor OpenAI-Compatible** para Cline, Aide, OpenCode, Open Design y mas.
+Funciona en **Android/Termux** sin GPU. IA solo como arbitro binario YES/NO.
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Agents](https://img.shields.io/badge/Agents-48%20%7C%209%20Layers-orange.svg)](src/core/agents_v2/)
+[![DAG Nodes](https://img.shields.io/badge/DAG_Nodes-59%20%7C%203_Parallel_Groups-critical.svg)](src/core/dag_parts/unified_definition.py)
 [![Tests](https://img.shields.io/badge/Tests-381%20passed-brightgreen.svg)](tests/)
 [![AI%20Only](https://img.shields.io/badge/AI%20Usage-1%20Agent%20%7C%20Binary%20YES%2FNO-red.svg)](src/core/agents_v2/verdict/verdict_engine.py)
 [![Deterministic](https://img.shields.io/badge/Fallback-100%25%20Deterministic-purple.svg)](ARCHITECTURE_V18_SR_DESIGN.md)
+[![SharedMemory](https://img.shields.io/badge/Inter--Agent-SharedMemoryBus%20%7C%20SQLite%20WAL-informational.svg)](src/core/shared/shared_memory_bus.py)
 
 </div>
 
@@ -22,7 +24,7 @@ Funciona en **Android/Termux** sin GPU.
 
 > **Un agente = una funcion. Sin excepciones.**
 
-ZENIC LOGIC v18 es una reestructuracion radical del sistema de agentes siguiendo el Principio de Responsabilidad Unica (SRP). Los 9 agentes monoliticos originales fueron descompuestos en **48 agentes atomicos**, cada uno con exactamente una responsabilidad, un fallback determinista, y proteccion completa con circuit breaker, retry y auditoria.
+ZENIC LOGIC v18 es una reestructuracion radical del sistema de agentes siguiendo el Principio de Responsabilidad Unica (SRP). Los 9 agentes monoliticos originales fueron descompuestos en **48 agentes atomicos**, cada uno con exactamente una responsabilidad, un fallback determinista, y proteccion completa con circuit breaker, retry y auditoria. El orquestador unificado (Unified DAG) maneja **59 nodos** con ejecucion paralela via `asyncio.gather()`, comunicacion inter-agente por **SharedMemoryBus** con respaldo SQLite WAL, y cache de ruteo LRU con TTL.
 
 ### 6 Invariantes Arquitectonicos
 
@@ -37,7 +39,123 @@ ZENIC LOGIC v18 es una reestructuracion radical del sistema de agentes siguiendo
 
 ---
 
-## Arquitectura de 9 Capas
+## Arquitectura del Unified DAG Orchestrator
+
+El sistema opera con un **DAG (Directed Acyclic Graph) unificado** que fusiona el DAG v16 con el Pipeline v18 en un solo grafo de **59 nodos** con 3 grupos paralelos, ejecucion condicional por rutas, y retro-compatibilidad total con v16.
+
+```
+USER INPUT
+    |
+    v
++------------------------------------------------------------------+
+|  ENTRY: CACHE_CHECK → BILINGUAL_ROUTE → INTENT_CLASSIFY           |
++------------------------------------------------------------------+
+    |
+    v
++------------------------------------------------------------------+
+|  PHASE 1: UNDERSTAND (100% Determinista)                          |
+|                                                                    |
+|  [ENTITY_EXTRACT ∥ TARGET_RESOLVE]  ← PARALELO (asyncio.gather)  |
+|                     |                                              |
+|                     v                                              |
+|              CRITICALITY_SCORE                                     |
++------------------------------------------------------------------+
+    |
+    v
++------------------------------------------------------------------+
+|  PHASE 2: CONTEXT (100% Determinista)                             |
+|                                                                    |
+|  [MEMORY_COLLECT ∥ SEMANTIC_PREP]  ← PARALELO (asyncio.gather)   |
+|                     |                                              |
+|                     v                                              |
+|  RELEVANCE_SCORE → CONTEXT_COMPRESS → CONTEXT_PREFETCH            |
++------------------------------------------------------------------+
+    |
+    v
++------------------------------------------------------------------+
+|  ROUTING: AST_ANALYZE → THEOREM_CACHE → ROUTE → ROUTE_DECISION    |
+|                                                                    |
+|  ROUTE_DECISION → {code | biz | auto | reason | high_crit |       |
+|                    visual | abortive}                              |
++------------------------------------------------------------------+
+    |
+    +-------+--------+-------+--------+
+    |       |        |       |        |
+    v       v        v       v        v
++--------+ +------+ +-----+ +------+ +--------+
+| CODE   | | BIZ  | |AUTO | |REASON| |SOLVER  |
+| PATH   | | PATH | |PATH | | PATH | |VERIFY  |
+| 6 nodes| |8 nodes| |6 nds| |5 nds | |+Abort. |
++--------+ +------+ +-----+ +------+ +--------+
+    |       |        |       |        |
+    +-------+--------+-------+--------+
+            |
+            v
++------------------------------------------------------------------+
+|  PHASE 4: VALIDATE (100% Determinista)                             |
+|                                                                    |
+|  SECURITY_SCAN → SYNTAX_VALIDATE → RISK_CALC → FIX_SUGGEST       |
++------------------------------------------------------------------+
+    |
+    v
++------------------------------------------------------------------+
+|  PHASE 5: VERDICT (IA Solo Si Necesario)                          |
+|                                                                    |
+|  EVIDENCE_COLLECT → CONSENSUS_RESOLVE → VERDICT                   |
+|                                         |                         |
+|                              Consenso ≥ HIGH → Decision (Sin IA)  |
+|                              Consenso < HIGH → A43 VerdictEngine  |
+|                                                 (Qwen: YES/NO)    |
++------------------------------------------------------------------+
+    |
+    v
++------------------------------------------------------------------+
+|  PHASE 6: SANDBOX → LEDGER_COMMIT/ROLLBACK → THEOREM_SAVE        |
+|           → MEMORY_SAVE → DONE                                    |
++------------------------------------------------------------------+
+```
+
+### Componentes del Unified DAG
+
+| Componente | Descripcion | Rendimiento |
+|-----------|-------------|-------------|
+| **UnifiedDAGOrchestrator** | Fusiona DAG v16 + Pipeline v18 en un solo grafo paralelo | 59 nodos, 3 parallel groups |
+| **SharedMemoryBus** | Comunicacion inter-agente ultra-rapida con RingBuffer + Mailbox + SharedState | send() < 0.05ms, receive() < 0.05ms |
+| **FastConnectionPool** | Pool de conexiones SQLite con thread-local caching y WAL mode | get() < 0.01ms, 10-50x batch speedup |
+| **RoutingCache** | LRU cache para decisiones de ruteo TitanAgent (100 entradas, TTL 5 min) | Elimina llamadas LLM redundantes |
+| **Per-Node Latency** | Tracking de latencia por nodo (deque, ultimos 100) | Diagnostico de cuellos de botella |
+
+### SharedMemoryBus — Arquitectura Interna
+
+```
+                    SharedMemoryBus
+  +---------------------------------------------------+
+  |                                                    |
+  |  +-------------+  +-------------+  +------------+  |
+  |  | RingBuffer  |  | AgentMailbox|  | SharedState|  |
+  |  | 1024 slots  |  | per-agent   |  | KV + RWLock|  |
+  |  | 4KB/slot    |  | priority    |  | TTL + CB   |  |
+  |  | zero-copy   |  | heapq O(1)  |  | namespace  |  |
+  |  +------+------+  +------+------+  +-----+------+  |
+  |         |               |                |          |
+  |         +----------+----+----------------+          |
+  |                    |                                |
+  |          +---------v----------+                     |
+  |          | PersistenceLayer  |                     |
+  |          | SQLite WAL-mode   |                     |
+  |          | Batch 50ms/100ops |                     |
+  |          +--------------------+                     |
+  |                                                    |
+  |          +--------------------+                     |
+  |          |   BusMetrics       |                     |
+  |          |   Lock-free counts |                     |
+  |          +--------------------+                     |
+  +---------------------------------------------------+
+```
+
+---
+
+## Arquitectura de 9 Capas — 48 Agentes SRP
 
 ```
  CAPA 1: UNDERSTANDING          CAPA 2: MEMORY & CONTEXT
@@ -77,88 +195,6 @@ ZENIC LOGIC v18 es una reestructuracion radical del sistema de agentes siguiendo
  A45 HealthMonitor
  A46 AuditLogger
  A47 CircuitBreakerManager
-```
-
----
-
-## Pipeline de Ejecucion
-
-```
-User Input
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 1: ENTENDER (100% Determinista)               │
-│                                                       │
-│  A48 BilingualRouter ──► A01 IntentClassifier        │
-│         │                      │                      │
-│         ▼                      ▼                      │
-│  A02 EntityExtractor ──► A03 TargetResolver          │
-│                                │                      │
-│                                ▼                      │
-│                         A04 CriticalityScorer         │
-└──────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 2: CONTEXTO (100% Determinista)                │
-│                                                       │
-│  A05 MemoryCollector ──► A06 RelevanceScorer         │
-│         │                    │                        │
-│         ▼                    ▼                        │
-│  A08 ContextPrefetcher   A07 ContextCompressor       │
-└──────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 3: EJECUTAR (100% Determinista)                │
-│                                                       │
-│  A16 OperationRouter ──► {                            │
-│    A09-A15 Business  │ A17-A21 Code  │ A29-A39 Auto  │
-│  }                                                   │
-│  A22 DefensiveInjector (inyeccion F4 post-ejecucion)  │
-└──────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 4: VALIDAR (100% Determinista)                 │
-│                                                       │
-│  A23 SecurityScanner ──┐                             │
-│  A24 SyntaxValidator  ──┼──► A27 RiskCalculator      │
-│  A25 ChainValidator    ──┤        │                   │
-│  A26 ConfigValidator   ──┘        ▼                   │
-│                            A28 FixSuggester           │
-└──────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 5: VEREDICTO (IA Solo Si Necesario)            │
-│                                                       │
-│  A40 DeterministicPipeline ──► A41 EvidenceCollector  │
-│                                      │                │
-│                                      ▼                │
-│                               A42 ConsensusResolver   │
-│                                      │                │
-│                         ┌────────────┴───────────┐   │
-│                         │                        │   │
-│                   Consenso ≥ HIGH          Consenso < HIGH│
-│                         │                        │   │
-│                    Decision Hecha       A43 VerdictEngine │
-│                    (Sin IA)             (Qwen: YES/NO)  │
-│                                               │       │
-│                                      Circuit OK?       │
-│                                      Si → YES/NO       │
-│                                      No → Fallback NO  │
-└──────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────┐
-│  FASE 6: AUDITORIA (100% Determinista)               │
-│                                                       │
-│  A46 AuditLogger ◄──── Cada Decision                 │
-│  A45 HealthMonitor ◄─── Cada Ejecucion               │
-│  A47 CircuitBreakerManager ◄─ Cada LLM Call          │
-└──────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -267,10 +303,10 @@ Cada agente esta protegido por una combinacion de patrones de resiliencia:
 ### Circuit Breaker (por agente)
 
 ```
-CLOSED ──[3 fallos]──► OPEN ──[60s]──► HALF_OPEN ──[2 exitos]──► CLOSED
+CLOSED ──[3 fallos]──> OPEN ──[60s]──> HALF_OPEN ──[2 exitos]──> CLOSED
                               │                     │
                               │    [1 fallo]─────────┘
-                              ▼
+                              v
                          Fallback inmediato (0ms)
 ```
 
@@ -281,9 +317,9 @@ CLOSED ──[3 fallos]──► OPEN ──[60s]──► HALF_OPEN ──[2 ex
 ### Retry con Exponential Backoff
 
 ```
-delay = base_delay × (2.0 ** (attempt - 1))
+delay = base_delay x (2.0 ** (attempt - 1))
 delay = min(delay, max_delay)
-delay += random(0, 0.3 × delay)  # jitter
+delay += random(0, 0.3 x delay)  # jitter
 ```
 
 | Config | Valor |
@@ -313,7 +349,7 @@ delay += random(0, 0.3 × delay)  # jitter
 
 ---
 
-## Flujo de Veredicto: Ejemplo End-to-End
+## Flujo de Veredicto: Ejemplos End-to-End
 
 ### Caso: Consenso claro (sin IA)
 
@@ -325,7 +361,7 @@ A41 EvidenceCollector:
   AGAINST: (ninguno)
 
 A42 ConsensusResolver:
-  score_for = 0.9×1.5 + 0.8×1.2 = 2.31
+  score_for = 0.9x1.5 + 0.8x1.2 = 2.31
   score_against = 0
   confidence = CERTAIN (1.0)
   needs_llm = FALSE
@@ -344,8 +380,8 @@ A41 EvidenceCollector:
   AGAINST: SecurityResult.safe=false: eval() detectado (0.9)
 
 A42 ConsensusResolver:
-  score_for = 0.8×1.2 = 0.96
-  score_against = 0.9×1.5 = 1.35
+  score_for = 0.8x1.2 = 0.96
+  score_against = 0.9x1.5 = 1.35
   confidence = LOW (|score| < 0.3)
   needs_llm = TRUE
 
@@ -553,7 +589,7 @@ Zenic-Logic-/
 ├── src/
 │   ├── config/                      # Configuracion (YAML + loader)
 │   ├── core/
-│   │   ├── agents_v2/               # ← 48 Agentes SRP (NUEVO v18)
+│   │   ├── agents_v2/               # ← 48 Agentes SRP (V18)
 │   │   │   ├── understanding/       # Capa 1: A01-A04, A48
 │   │   │   ├── memory/              # Capa 2: A05-A08
 │   │   │   ├── business/            # Capa 3: A09-A16
@@ -565,29 +601,50 @@ Zenic-Logic-/
 │   │   │   ├── infrastructure/      # Capa 9: A44-A47
 │   │   │   ├── resilience/          # Patrones: BaseAgent, CB, Health, Audit
 │   │   │   ├── schemas/             # Tipos compartidos (single source of truth)
-│   │   │   └── pipeline_orchestrator.py  # Orquestador del pipeline
+│   │   │   └── pipeline_orchestrator.py  # Orquestador pipeline v18
+│   │   │
+│   │   ├── dag_parts/               # Unified DAG Orchestrator (59 nodos)
+│   │   │   ├── unified_orchestrator.py   # Orquestador unificado v16+v18
+│   │   │   ├── unified_definition.py     # Definicion del DAG (59 nodos)
+│   │   │   ├── orchestrator.py           # DAGOrchestrator v16
+│   │   │   ├── definition.py             # DAG v16 definition
+│   │   │   ├── node_executors.py         # Ejecutores de nodos v16
+│   │   │   ├── corrections.py            # Bucle de correcciones
+│   │   │   └── titan_agent.py            # Meta-router TitanAgent (F1)
+│   │   │
+│   │   ├── shared/                  # Infraestructura compartida
+│   │   │   ├── shared_memory_bus.py      # SharedMemoryBus (RingBuffer + Mailbox + SQLite WAL)
+│   │   │   ├── fast_connection_pool.py   # FastPool (thread-local SQLite pool)
+│   │   │   ├── z3_parts/                 # Z3 Solver (11 modulos)
+│   │   │   ├── symbolic_parts/           # Symbolic Executor (8 modulos)
+│   │   │   ├── governor_parts/           # Resource Governor (7 modulos)
+│   │   │   ├── sandbox_parts/            # Sandbox Isolation (4 modulos)
+│   │   │   ├── constants.py, contracts.py, types.py
+│   │   │   ├── db_utils.py, db_initializer.py
+│   │   │   ├── retry.py, timeout.py
+│   │   │   └── tenant_utils.py, ast_utils.py
 │   │   │
 │   │   ├── agents/                  # Agentes originales (v17, backward compat)
-│   │   ├── shared/                  # Infraestructura permanente (Z3, MCTS, etc.)
-│   │   ├── dag_parts/              # DAG Orchestrator (18 nodos)
-│   │   ├── memory_parts/           # SmartMemory (6 almacenes)
-│   │   ├── semantic_parts/         # SemanticEngine (embeddings)
-│   │   ├── reasoning_parts/        # ReasoningEngine original
-│   │   ├── mini_ai_parts/          # MiniAIEngine (Qwen3-0.6B)
-│   │   ├── template_parts/         # TemplateEngine
-│   │   ├── code_gen_parts/         # CodeGenerator original
-│   │   ├── auth_parts/             # JWT + RBAC + API keys
-│   │   ├── open_design/            # SSE + Artifact Builder
-│   │   ├── distributed/            # SAGA + Circuit Breaker distribuido
-│   │   ├── tenant/                 # Multi-tenancy
-│   │   └── observability/          # Tracing + Metrics + Health
+│   │   ├── memory_parts/            # SmartMemory (6 almacenes)
+│   │   ├── semantic_parts/          # SemanticEngine (embeddings)
+│   │   ├── reasoning_parts/         # ReasoningEngine original
+│   │   ├── mini_ai_parts/           # MiniAIEngine (Qwen3-0.6B)
+│   │   ├── template_parts/          # TemplateEngine
+│   │   ├── code_gen_parts/          # CodeGenerator original
+│   │   ├── auth_parts/              # JWT + RBAC + API keys
+│   │   ├── open_design/             # SSE + Artifact Builder
+│   │   ├── distributed/             # SAGA + Circuit Breaker distribuido
+│   │   ├── tenant/                  # Multi-tenancy
+│   │   ├── observability/           # Tracing + Metrics + Health
+│   │   ├── patterns/                # Design patterns library (18 modulos)
+│   │   └── ...                      # 40+ sub-modulos mas
 │   │
-│   └── templates/
-│       ├── apps/                    # App templates
-│       ├── automations/             # Automation templates
-│       ├── blocks/                  # Logic blocks
-│       ├── dna/                     # 4 Master Templates (validation gates)
-│       └── niches/                  # 107 YAML niches (20 dominios)
+│   └── server/                      # FastAPI HTTP server
+│       ├── fastapi_app.py
+│       ├── server.py
+│       ├── auth_middleware.py
+│       ├── security_middleware.py
+│       └── rate_limiter.py
 │
 ├── tests/
 │   ├── unit/
@@ -723,6 +780,6 @@ MIT License — ver [LICENSE](LICENSE) para detalles.
 
 <div align="center">
 
-**ZENIC LOGIC v18** — 48 Agentes SRP | Determinista por Diseno | IA Solo como Arbitro
+**ZENIC LOGIC v18** — 48 Agentes SRP | Unified DAG 59 Nodos | SharedMemoryBus | Determinista por Diseno | IA Solo como Arbitro
 
 </div>

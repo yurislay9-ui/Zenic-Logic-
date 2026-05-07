@@ -8,7 +8,7 @@ No AI. Regex + AST-based pattern fixing for Python, passthrough for others.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CodeResult
@@ -23,7 +23,7 @@ class CodeFixer(BaseAgent[CodeResult]):
     Fallback: Return original code unchanged.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A20_CodeFixer", **kwargs)
 
     def execute(self, input_data: Any) -> CodeResult:
@@ -65,7 +65,7 @@ class CodeFixer(BaseAgent[CodeResult]):
 
     def _fix_python(self, code: str) -> CodeResult:
         """Deterministic Python bug fixes."""
-        fixes: List[str] = []
+        fixes: list[str] = []
         lines = code.split('\n')
         fixed_lines = list(lines)
 

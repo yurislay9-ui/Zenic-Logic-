@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import MemoryEntries, ScoredEntry, ScoredEntries
@@ -49,7 +49,7 @@ W_HEURISTIC_BLEND = 0.50
 # recalling which types of past interactions.
 # ──────────────────────────────────────────────────────────────
 
-OP_RELEVANCE_WEIGHTS: Dict[str, Dict[str, float]] = {
+OP_RELEVANCE_WEIGHTS: dict[str, dict[str, float]] = {
     "CREATE": {
         "CREATE": 1.0, "REFACTOR": 0.6, "OPTIMIZE": 0.5,
         "DEBUG": 0.2, "SEARCH": 0.3, "ANALYZE": 0.4,
@@ -92,7 +92,7 @@ OP_RELEVANCE_WEIGHTS: Dict[str, Dict[str, float]] = {
     },
 }
 
-GOAL_RELEVANCE_WEIGHTS: Dict[str, Dict[str, float]] = {
+GOAL_RELEVANCE_WEIGHTS: dict[str, dict[str, float]] = {
     "FEATURE_ADD": {
         "FEATURE_ADD": 1.0, "PERFORMANCE": 0.5, "SECURITY_HARDEN": 0.4,
         "BUG_FIX": 0.3, "READABILITY": 0.3, "COMPLEXITY_REDUCTION": 0.4,
@@ -152,8 +152,9 @@ class RelevanceScorer(BaseAgent[ScoredEntries]):
       - Entries are sorted by combined_score descending.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A06_RelevanceScorer", **kwargs)
+        self._semantic_engine = None
 
     def execute(self, input_data: Any) -> ScoredEntries:
         """
@@ -197,6 +198,11 @@ class RelevanceScorer(BaseAgent[ScoredEntries]):
             source="deterministic",
         )
 
+    def wire(self, semantic_engine=None) -> None:
+        """Inject SemanticEngine for similarity-based scoring."""
+        if semantic_engine is not None:
+            self._semantic_engine = semantic_engine
+
     def fallback(self, input_data: Any) -> ScoredEntries:
         """Safe fallback: empty scored entries."""
         return ScoredEntries(entries=[], deduplicated=False, source="fallback")
@@ -205,9 +211,9 @@ class RelevanceScorer(BaseAgent[ScoredEntries]):
     # PRIVATE: Scoring & Dedup Methods
     # ──────────────────────────────────────────────────────────
 
-    def _flatten_entries(self, memory_entries: MemoryEntries) -> List[Dict[str, Any]]:
+    def _flatten_entries(self, memory_entries: MemoryEntries) -> list[dict[str, Any]]:
         """Flatten MemoryEntries into a list of dicts with source_type."""
-        flat: List[Dict[str, Any]] = []
+        flat: list[dict[str, Any]] = []
 
         for store_name in ("working", "long_term", "episodic", "procedural"):
             store = getattr(memory_entries, store_name, [])
@@ -219,10 +225,10 @@ class RelevanceScorer(BaseAgent[ScoredEntries]):
         return flat
 
     def _score_all(
-        self, entries: List[Dict[str, Any]], current_op: str, current_goal: str
-    ) -> List[ScoredEntry]:
+        self, entries: list[dict[str, Any]], current_op: str, current_goal: str
+    ) -> list[ScoredEntry]:
         """Score all entries using the weighted multi-factor formula."""
-        scored: List[ScoredEntry] = []
+        scored: list[ScoredEntry] = []
 
         # Get relevance weight maps for current operation/goal
         op_weights = OP_RELEVANCE_WEIGHTS.get(current_op, {})
@@ -264,14 +270,14 @@ class RelevanceScorer(BaseAgent[ScoredEntries]):
 
         return scored
 
-    def _deduplicate(self, entries: List[ScoredEntry]) -> List[ScoredEntry]:
+    def _deduplicate(self, entries: list[ScoredEntry]) -> list[ScoredEntry]:
         """
         Remove near-identical entries based on content prefix hash.
 
         Strategy: hash the first N characters of content. If two entries
         have the same hash, keep the one with the higher combined_score.
         """
-        seen_hashes: Dict[str, ScoredEntry] = {}
+        seen_hashes: dict[str, ScoredEntry] = {}
 
         for entry in entries:
             # Hash the content prefix for dedup

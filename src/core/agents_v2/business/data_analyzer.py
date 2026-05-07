@@ -8,7 +8,7 @@ No AI. Pure mathematical operations on data.
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import AnalyticsResult
@@ -36,7 +36,7 @@ class DataAnalyzer(BaseAgent[AnalyticsResult]):
     Fallback: Empty AnalyticsResult with no metrics.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A15_DataAnalyzer", **kwargs)
 
     def execute(self, input_data: Any) -> AnalyticsResult:
@@ -65,9 +65,9 @@ class DataAnalyzer(BaseAgent[AnalyticsResult]):
         # Cap dataset size
         dataset = dataset[:MAX_DATASET_SIZE]
 
-        metrics: Dict[str, float] = {}
-        trends: List[str] = []
-        insights: List[str] = []
+        metrics: dict[str, float] = {}
+        trends: list[str] = []
+        insights: list[str] = []
 
         # ── Basic count ──
         count = len(dataset)
@@ -149,7 +149,7 @@ class DataAnalyzer(BaseAgent[AnalyticsResult]):
         )
 
     @staticmethod
-    def _extract_numeric_values(dataset: list, field: Optional[str] = None) -> List[float]:
+    def _extract_numeric_values(dataset: list, field: Optional[str] = None) -> list[float]:
         """Extract numeric values from dataset. If field is specified, extract that field only."""
         values = []
 
@@ -164,12 +164,11 @@ class DataAnalyzer(BaseAgent[AnalyticsResult]):
                 for v in item.values():
                     if isinstance(v, (int, float)):
                         values.append(float(v))
-                        break  # First numeric field per item
 
         return values
 
     @staticmethod
-    def _median(values: List[float]) -> float:
+    def _median(values: list[float]) -> float:
         """Compute median of a list of values."""
         sorted_vals = sorted(values)
         n = len(sorted_vals)
@@ -179,14 +178,18 @@ class DataAnalyzer(BaseAgent[AnalyticsResult]):
         return sorted_vals[mid]
 
     @staticmethod
-    def _variance(values: List[float]) -> float:
+    def _variance(values: list[float]) -> float:
         """Compute population variance."""
+        if len(values) < 2:
+            return 0.0
         avg = sum(values) / len(values)
         return sum((x - avg) ** 2 for x in values) / len(values)
 
     @classmethod
-    def _stdev(cls, values: List[float]) -> float:
+    def _stdev(cls, values: list[float]) -> float:
         """Compute population standard deviation."""
+        if len(values) < 2:
+            return 0.0
         return math.sqrt(cls._variance(values))
 
     def fallback(self, input_data: Any) -> AnalyticsResult:

@@ -15,7 +15,7 @@ Ported from:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import ProblemType, ReasoningResult, ReasoningStep
@@ -24,7 +24,7 @@ from ..schemas import ProblemType, ReasoningResult, ReasoningStep
 # REASONING TEMPLATES — One per problem type
 # ──────────────────────────────────────────────────────────────
 
-REASONING_TEMPLATES: Dict[str, Dict[str, Any]] = {
+REASONING_TEMPLATES: dict[str, dict[str, Any]] = {
     "api": {
         "answer": (
             "Design a REST API with proper endpoints, request/response schemas, "
@@ -163,7 +163,7 @@ REASONING_TEMPLATES: Dict[str, Dict[str, Any]] = {
 }
 
 # Generic template for unknown problem types
-GENERIC_TEMPLATE: Dict[str, Any] = {
+GENERIC_TEMPLATE: dict[str, Any] = {
     "answer": (
         "Based on analysis, this requires a structured implementation with: "
         "(1) Data models and validation, (2) Business logic with error handling, "
@@ -187,7 +187,7 @@ class TemplateReasoner(BaseAgent[ReasoningResult]):
     Fallback: Return generic reasoning template.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A37_TemplateReasoner", **kwargs)
 
     def execute(self, input_data: Any) -> ReasoningResult:
@@ -267,9 +267,9 @@ class TemplateReasoner(BaseAgent[ReasoningResult]):
             return getattr(input_data, "context", "")
         return ""
 
-    def _build_steps(self, template: Dict[str, Any]) -> List[ReasoningStep]:
+    def _build_steps(self, template: dict[str, Any]) -> list[ReasoningStep]:
         """Build ReasoningStep list from template."""
-        steps: List[ReasoningStep] = []
+        steps: list[ReasoningStep] = []
         for i, step_data in enumerate(template.get("steps", [])):
             steps.append(ReasoningStep(
                 step_number=i + 1,
@@ -279,7 +279,7 @@ class TemplateReasoner(BaseAgent[ReasoningResult]):
             ))
         return steps
 
-    def list_available_templates(self) -> List[str]:
+    def list_available_templates(self) -> list[str]:
         """List all available reasoning template names."""
         return list(REASONING_TEMPLATES.keys())
 

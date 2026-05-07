@@ -15,7 +15,7 @@ Ported from:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import ProblemType
@@ -24,7 +24,7 @@ from ..schemas import ProblemType
 # PROBLEM TYPE KEYWORDS — EN + ES bilingual
 # ──────────────────────────────────────────────────────────────
 
-PROBLEM_TYPE_KEYWORDS: Dict[str, List[str]] = {
+PROBLEM_TYPE_KEYWORDS: dict[str, list[str]] = {
     "api": [
         "api", "endpoint", "rest", "route", "fastapi", "flask",
         "servidor", "server", "request", "response", "http",
@@ -116,7 +116,7 @@ class ProblemDetector(BaseAgent[ProblemType]):
     Fallback: Return 'general' type with medium complexity.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A35_ProblemDetector", **kwargs)
 
     def execute(self, input_data: Any) -> ProblemType:
@@ -263,7 +263,7 @@ class ProblemDetector(BaseAgent[ProblemType]):
 
         return round(min(score, 1.0), 2)
 
-    def detect_all_types(self, input_data: Any) -> List[Tuple[str, float]]:
+    def detect_all_types(self, input_data: Any) -> list[tuple[str, float]]:
         """
         Detect ALL matching problem types with their match strengths.
 
@@ -275,7 +275,7 @@ class ProblemDetector(BaseAgent[ProblemType]):
             return []
 
         query_lower = query.lower()
-        results: List[Tuple[str, float]] = []
+        results: list[tuple[str, float]] = []
 
         for ptype, keywords in PROBLEM_TYPE_KEYWORDS.items():
             match_count = sum(1 for kw in keywords if kw in query_lower)

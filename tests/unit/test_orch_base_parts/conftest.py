@@ -1,5 +1,6 @@
 """Shared fixtures for orchestrator_base tests."""
 
+import threading
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -84,7 +85,8 @@ def fully_mocked_orch(mock_settings):
         orch._reasoning.stats = {}
 
         # Mock common state
-        orch.request_count = 0
+        orch._request_count = 0
+        orch._request_count_lock = threading.Lock()
 
         # Mock agent framework
         orch._agent_runner = MagicMock()

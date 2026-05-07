@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import Verdict, VerdictInput, VerdictOutput, ConsensusResult, Evidence
@@ -55,7 +55,7 @@ class VerdictEngineV18(BaseAgent[VerdictOutput]):
     Fallback: Return NO (precaution principle).
     """
 
-    def __init__(self, mini_ai=None, **kwargs):
+    def __init__(self, mini_ai=None, **kwargs) -> None:
         super().__init__(name="A43_VerdictEngine", **kwargs)
         self._mini_ai = mini_ai
         self._verdict_lock = threading.Lock()
@@ -145,8 +145,10 @@ class VerdictEngineV18(BaseAgent[VerdictOutput]):
                 parsed = self._parse_verdict_response(response)
                 if parsed == "YES":
                     yes_count += 1
+                    self._cb_manager.record_success(self.name)
                 else:
                     no_count += 1
+                    self._cb_manager.record_success(self.name)
 
                 # Early exit if clear majority
                 if yes_count >= VERDICT_CONSENSUS_THRESHOLD:
@@ -160,15 +162,13 @@ class VerdictEngineV18(BaseAgent[VerdictOutput]):
 
             except Exception as e:
                 no_count += 1  # Any failure counts as NO
+                self._cb_manager.record_failure(self.name)
                 retry_count += 1
 
         # Determine verdict by majority
         verdict = Verdict.YES if yes_count >= VERDICT_CONSENSUS_THRESHOLD else Verdict.NO
         total_attempts = yes_count + no_count
         confidence = max(yes_count, no_count) / total_attempts if total_attempts > 0 else 0.0
-
-        # NOTE: Circuit breaker recording is handled by BaseAgent.run()
-        # Do NOT record here — it would double-count and cause premature circuit trips.
 
         # Update stats
         with self._verdict_lock:
@@ -278,6 +278,6 @@ class VerdictEngineV18(BaseAgent[VerdictOutput]):
         )
 
     @property
-    def verdict_stats(self) -> Dict:
+    def verdict_stats(self) -> dict:
         with self._verdict_lock:
             return dict(self._verdict_stats)

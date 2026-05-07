@@ -9,7 +9,7 @@ Unlike triggers, actions can match MULTIPLE types simultaneously.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import AutoDescription, ActionSpec
@@ -18,7 +18,7 @@ from ..schemas import AutoDescription, ActionSpec
 # ACTION KEYWORDS — EN + ES bilingual
 # ──────────────────────────────────────────────────────────────
 
-ACTION_KEYWORDS: Dict[str, List[str]] = {
+ACTION_KEYWORDS: dict[str, list[str]] = {
     "email": [
         "email", "correo", "enviar", "mail", "smtp",
         "notificar por correo", "envío", "envio",
@@ -57,7 +57,7 @@ ACTION_KEYWORDS: Dict[str, List[str]] = {
 }
 
 # Default action configs for each type
-DEFAULT_ACTION_CONFIGS: Dict[str, Dict[str, Any]] = {
+DEFAULT_ACTION_CONFIGS: dict[str, dict[str, Any]] = {
     "email": {
         "to": "admin@company.com",
         "subject": "Automated Report",
@@ -108,7 +108,7 @@ class ActionInferrer(BaseAgent[ActionSpec]):
     Fallback: Return a log action (safest default).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A30_ActionInferrer", **kwargs)
 
     def execute(self, input_data: Any) -> ActionSpec:
@@ -127,7 +127,7 @@ class ActionInferrer(BaseAgent[ActionSpec]):
             return actions[0]
         return self.fallback(input_data)
 
-    def infer_all(self, input_data: Any) -> List[ActionSpec]:
+    def infer_all(self, input_data: Any) -> list[ActionSpec]:
         """
         Infer ALL matching action types from description.
 
@@ -145,7 +145,7 @@ class ActionInferrer(BaseAgent[ActionSpec]):
             )]
 
         desc_lower = description.lower()
-        actions: List[ActionSpec] = []
+        actions: list[ActionSpec] = []
 
         for action_type, keywords in ACTION_KEYWORDS.items():
             if any(kw in desc_lower for kw in keywords):
@@ -180,7 +180,7 @@ class ActionInferrer(BaseAgent[ActionSpec]):
 
     def _build_action_config(
         self, action_type: str, description: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build configuration for a detected action type."""
         base_config = DEFAULT_ACTION_CONFIGS.get(action_type, {}).copy()
 

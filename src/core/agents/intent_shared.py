@@ -15,56 +15,30 @@ Single source of truth for:
 
 import re
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
+
+# ── Import canonical constants (single source of truth) ──
+from ..shared.constants import (
+    VALID_INTENT_OPERATIONS,
+    VALID_INTENT_GOALS,
+    VALID_INVENTORY_OPERATIONS,  # noqa: F401 — re-export for backward compat
+    VALID_LANGUAGES,
+    EXT_LANG_MAP,
+    FENCE_LANG_MAP,
+)
+
+# Backward-compatible aliases (consumers may import these names)
+VALID_OPERATIONS = VALID_INTENT_OPERATIONS
+VALID_GOALS = VALID_INTENT_GOALS
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-#  VALID CONSTANTS
-# ============================================================
-
-VALID_OPERATIONS = frozenset({
-    "CREATE", "REFACTOR", "DELETE", "SEARCH",
-    "ANALYZE", "EXPLAIN", "DEBUG", "OPTIMIZE",
-})
-
-VALID_GOALS = frozenset({
-    "COMPLEXITY_REDUCTION", "MODERN_PATTERN", "BUG_FIX",
-    "FEATURE_ADD", "SECURITY_HARDEN", "PERFORMANCE", "READABILITY",
-})
-
-VALID_LANGUAGES = frozenset({
-    "python", "kotlin", "go", "javascript", "typescript",
-    "java", "rust", "c", "cpp", "ruby",
-})
-
-# Extension → language mapping
-EXT_LANG_MAP: Dict[str, str] = {
-    ".py": "python", ".kt": "kotlin", ".go": "go",
-    ".js": "javascript", ".ts": "typescript", ".java": "java",
-    ".rs": "rust", ".rb": "ruby", ".cpp": "cpp", ".c": "c", ".h": "c",
-}
-
-# Code fence lang → language mapping
-FENCE_LANG_MAP: Dict[str, str] = {
-    "python": "python", "py": "python",
-    "kotlin": "kotlin", "kt": "kotlin",
-    "go": "go", "golang": "go",
-    "javascript": "javascript", "js": "javascript",
-    "typescript": "typescript", "ts": "typescript",
-    "java": "java",
-    "rust": "rust", "rs": "rust",
-    "ruby": "ruby", "rb": "ruby",
-    "c": "c", "cpp": "cpp", "c++": "cpp",
-}
 
 
 # ============================================================
 #  KEYWORD MAPS FOR TF-IDF CLASSIFICATION
 # ============================================================
 
-OP_KEYWORDS: Dict[str, List[str]] = {
+OP_KEYWORDS: dict[str, list[str]] = {
     "CREATE": [
         "crear", "create", "generar", "generate", "hacer", "make",
         "construir", "build", "nuevo", "new", "agregar", "add",
@@ -108,7 +82,7 @@ OP_KEYWORDS: Dict[str, List[str]] = {
     ],
 }
 
-GOAL_KEYWORDS: Dict[str, List[str]] = {
+GOAL_KEYWORDS: dict[str, list[str]] = {
     "COMPLEXITY_REDUCTION": [
         "simplificar", "simplify", "reducir complejidad",
         "less complex", "mas simple", "clean code",
@@ -144,7 +118,7 @@ GOAL_KEYWORDS: Dict[str, List[str]] = {
 #  SHARED UTILITY FUNCTIONS
 # ============================================================
 
-def extract_target_and_language(message: str) -> Tuple[str, str]:
+def extract_target_and_language(message: str) -> tuple[str, str]:
     """
     Extrae el nombre del target (archivo/modulo) y el lenguaje del mensaje.
 
@@ -185,7 +159,7 @@ def extract_target_and_language(message: str) -> Tuple[str, str]:
     return target, language
 
 
-def extract_code_block(message: str) -> Tuple[str, str]:
+def extract_code_block(message: str) -> tuple[str, str]:
     """
     Extrae código de un bloque de valla (```lang ... ```).
 
@@ -210,9 +184,9 @@ def extract_code_block(message: str) -> Tuple[str, str]:
     return "", ""
 
 
-def extract_entities(message: str) -> Dict[str, Any]:
+def extract_entities(message: str) -> dict[str, Any]:
     """Extrae entidades nombradas del mensaje (nombres de archivos, clases, etc.)."""
-    entities: Dict[str, Any] = {}
+    entities: dict[str, Any] = {}
 
     # File references: "auth.py", "user_service.kt"
     files = re.findall(r'\b([a-zA-Z_]\w*\.\w+)\b', message)

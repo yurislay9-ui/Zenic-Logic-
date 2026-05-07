@@ -62,13 +62,26 @@ class WebhookExecutor(ActionExecutor):
                 "response_body": result.data.get("body", "")[:500], "http_success": result.success}
 
     def _verify_webhook(self, config):
-        """Verifica la firma HMAC-SHA256 de un webhook entrante."""
+        """Verifica la firma HMAC-SHA256 de un webhook entrante.
+
+        SECURITY (H-06 fix): Added max-length validation on signature
+        to prevent memory exhaustion attacks with extremely long signatures.
+        """
         secret = config.get("secret", "")
         signature = config.get("verify_signature", "")
         body = config.get("verify_body", "")
 
         if not secret: raise ValueError("Secret is required for webhook verification")
         if not signature: raise ValueError("Signature to verify is required")
+
+        # SECURITY: Reject extremely long signatures to prevent memory exhaustion
+        MAX_SIGNATURE_LENGTH = 256  # SHA-256 hex is 64 chars; allow some overhead
+        if len(signature) > MAX_SIGNATURE_LENGTH:
+            logger.warning("WebhookExecutor: Signature rejected (length=%d, max=%d)",
+                           len(signature), MAX_SIGNATURE_LENGTH)
+            raise ValueError(
+                f"Signature too long: {len(signature)} chars (max {MAX_SIGNATURE_LENGTH})"
+            )
 
         if signature.startswith("sha256="): signature = signature[7:]
         expected = hmac.new(secret.encode(), str(body).encode(), hashlib.sha256).hexdigest()

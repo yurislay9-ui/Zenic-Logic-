@@ -18,11 +18,15 @@ Ported from:
   - mini_ai_parts/_tasks.py (BoundedTasksMixin)
 """
 
+# DEPRECATED: This agent violates the SRP invariant (7 tasks in 1 agent).
+# Individual A01-A04 agents should be used instead. This module will be
+# split into separate agents (A40a-A40g) in a future refactoring.
+
 from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import PipelineResult, IntentResult, EntityResult
@@ -31,7 +35,7 @@ from ..schemas import PipelineResult, IntentResult, EntityResult
 # EXTENSION → LANGUAGE MAPPING
 # ──────────────────────────────────────────────────────────────
 
-EXT_LANG_MAP: Dict[str, str] = {
+EXT_LANG_MAP: dict[str, str] = {
     ".py": "python", ".kt": "kotlin", ".go": "go",
     ".js": "javascript", ".ts": "typescript", ".java": "java",
     ".rs": "rust", ".rb": "ruby", ".cpp": "cpp", ".c": "c",
@@ -42,7 +46,7 @@ EXT_LANG_MAP: Dict[str, str] = {
 # OPERATION KEYWORDS (Task 1: classify_intent)
 # ──────────────────────────────────────────────────────────────
 
-OP_KEYWORDS: Dict[str, List[str]] = {
+OP_KEYWORDS: dict[str, list[str]] = {
     "CREATE": [
         "create", "build", "make", "generate", "add", "implement",
         "desarrollar", "crear", "construir", "generar", "agregar", "implementar",
@@ -77,7 +81,7 @@ OP_KEYWORDS: Dict[str, List[str]] = {
     ],
 }
 
-GOAL_KEYWORDS: Dict[str, List[str]] = {
+GOAL_KEYWORDS: dict[str, list[str]] = {
     "FEATURE_ADD": [
         "feature", "functionality", "capability", "new", "extend",
         "característica", "funcionalidad", "capacidad", "nuevo", "extender",
@@ -112,7 +116,7 @@ GOAL_KEYWORDS: Dict[str, List[str]] = {
 # PATTERN HEURISTICS (Task 3: suggest_pattern)
 # ──────────────────────────────────────────────────────────────
 
-PATTERN_HEURISTICS: List[tuple] = [
+PATTERN_HEURISTICS: list[tuple] = [
     (["async", "await", "coroutine", "asincrono"], "async_await"),
     (["validate", "validar", "check", "verify", "verificar"], "validator"),
     (["repository", "repo", "database", "db", "base de datos"], "repository"),
@@ -128,7 +132,7 @@ PATTERN_HEURISTICS: List[tuple] = [
 # PATTERN LIBRARY (Task 5: generate_pattern)
 # ──────────────────────────────────────────────────────────────
 
-PATTERN_LIBRARY: Dict[str, Dict[str, str]] = {
+PATTERN_LIBRARY: dict[str, dict[str, str]] = {
     "python": {
         "async_await": "async def {name}({params}):\n    result = await {operation}({params})\n    return result\n",
         "validator": "def {name}(data: dict) -> bool:\n    required = {required_fields}\n    return all(k in data for k in required)\n",
@@ -155,7 +159,7 @@ PATTERN_LIBRARY: Dict[str, Dict[str, str]] = {
 # VIOLATION CATALOG (Task 6: explain_violation)
 # ──────────────────────────────────────────────────────────────
 
-VIOLATION_CATALOG: Dict[str, str] = {
+VIOLATION_CATALOG: dict[str, str] = {
     "exec_call": "Use of exec() allows arbitrary code execution, which is a critical security risk.",
     "eval_call": "Use of eval() allows arbitrary code execution, which is a critical security risk.",
     "import_call": "Dynamic import via __import__() can load untrusted modules at runtime.",
@@ -173,7 +177,7 @@ VIOLATION_CATALOG: Dict[str, str] = {
 }
 
 # Gap defaults for template filling (Task 4)
-GAP_DEFAULTS: Dict[str, str] = {
+GAP_DEFAULTS: dict[str, str] = {
     "NAME": "generated",
     "CLASS_NAME": "GeneratedClass",
     "FUNC_NAME": "generated_function",
@@ -199,7 +203,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     Fallback: Return empty results with low confidence.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A40_DeterministicPipeline", **kwargs)
 
     def execute(self, input_data: Any) -> PipelineResult:
@@ -274,7 +278,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     #  TASK 1: classify_intent
     # ──────────────────────────────────────────────────────────
 
-    def _classify_intent(self, text: str) -> Dict[str, Any]:
+    def _classify_intent(self, text: str) -> dict[str, Any]:
         """Classify user intent using keyword scoring (EN + ES)."""
         if not text:
             return {"operation": "SEARCH", "goal": "FEATURE_ADD", "confidence": 0.0, "source": "deterministic"}
@@ -315,7 +319,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     #  TASK 2: extract_entities
     # ──────────────────────────────────────────────────────────
 
-    def _extract_entities(self, text: str) -> Dict[str, Any]:
+    def _extract_entities(self, text: str) -> dict[str, Any]:
         """Extract entities (file, language, function) using regex."""
         if not text:
             return {"file": "", "lang": "unknown", "function": None, "confidence": 0.0, "source": "deterministic"}
@@ -362,7 +366,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     #  TASK 3: suggest_pattern
     # ──────────────────────────────────────────────────────────
 
-    def _suggest_pattern(self, target: str, description: str) -> Dict[str, Any]:
+    def _suggest_pattern(self, target: str, description: str) -> dict[str, Any]:
         """Suggest a code pattern using heuristics."""
         desc_lower = description.lower()
         target_lower = target.lower()
@@ -388,7 +392,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
 
     def _fill_template_gaps(
         self, template: str, context: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Fill template gaps with context and defaults."""
         if not template:
             return {"result": "", "confidence": 1.0, "source": "deterministic"}
@@ -430,7 +434,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     def _generate_pattern(
         self, pattern_desc: str, language: str = "python",
         context: Any = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate code snippet from template library."""
         ctx = context if isinstance(context, dict) else {}
         lang_patterns = PATTERN_LIBRARY.get(language, PATTERN_LIBRARY["python"])
@@ -473,8 +477,8 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     # ──────────────────────────────────────────────────────────
 
     def _explain_violation(
-        self, code: str, violations: List[str]
-    ) -> Dict[str, Any]:
+        self, code: str, violations: list[str]
+    ) -> dict[str, Any]:
         """Explain violations using catalog."""
         if not violations:
             return {
@@ -507,7 +511,7 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
 
     def _describe_subtask(
         self, target: str, action: str, context: str = ""
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a descriptive name for a subtask."""
         safe_target = re.sub(r'[^a-z0-9_]', '_', target.lower()).strip('_')
         safe_action = re.sub(r'[^a-z0-9_]', '_', action.lower()).strip('_')
@@ -527,32 +531,32 @@ class DeterministicPipeline(BaseAgent[PipelineResult]):
     #  INDIVIDUAL TASK ACCESS (for partial execution)
     # ──────────────────────────────────────────────────────────
 
-    def classify_intent(self, text: str) -> Dict[str, Any]:
+    def classify_intent(self, text: str) -> dict[str, Any]:
         """Public API: Task 1 — classify intent."""
         return self._classify_intent(text)
 
-    def extract_entities(self, text: str) -> Dict[str, Any]:
+    def extract_entities(self, text: str) -> dict[str, Any]:
         """Public API: Task 2 — extract entities."""
         return self._extract_entities(text)
 
-    def suggest_pattern(self, target: str, description: str) -> Dict[str, Any]:
+    def suggest_pattern(self, target: str, description: str) -> dict[str, Any]:
         """Public API: Task 3 — suggest pattern."""
         return self._suggest_pattern(target, description)
 
-    def fill_template_gaps(self, template: str, context: Any = None) -> Dict[str, Any]:
+    def fill_template_gaps(self, template: str, context: Any = None) -> dict[str, Any]:
         """Public API: Task 4 — fill template gaps."""
         return self._fill_template_gaps(template, context or {})
 
     def generate_pattern(self, pattern_desc: str, language: str = "python",
-                         context: Any = None) -> Dict[str, Any]:
+                         context: Any = None) -> dict[str, Any]:
         """Public API: Task 5 — generate pattern."""
         return self._generate_pattern(pattern_desc, language, context)
 
-    def explain_violation(self, code: str, violations: List[str] = None) -> Dict[str, Any]:
+    def explain_violation(self, code: str, violations: list[str] = None) -> dict[str, Any]:
         """Public API: Task 6 — explain violation."""
         return self._explain_violation(code, violations or [])
 
-    def describe_subtask(self, target: str, action: str) -> Dict[str, Any]:
+    def describe_subtask(self, target: str, action: str) -> dict[str, Any]:
         """Public API: Task 7 — describe subtask."""
         return self._describe_subtask(target, action)
 

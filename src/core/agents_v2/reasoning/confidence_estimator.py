@@ -15,7 +15,7 @@ Ported from:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import ConfidenceResult, ReasoningResult, ReasoningStep
@@ -75,7 +75,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
     Fallback: Return low confidence with caution recommendation.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A38_ConfidenceEstimator", **kwargs)
 
     def execute(self, input_data: Any) -> ConfidenceResult:
@@ -92,7 +92,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
         answer = self._extract_answer(input_data)
         base_confidence = self._extract_base_confidence(input_data)
 
-        factors: List[str] = []
+        factors: list[str] = []
 
         # Factor 1: Answer length and detail
         length_score = self._score_answer_length(answer, factors)
@@ -182,7 +182,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
             return input_data.get("confidence", 0.5)
         return 0.5
 
-    def _score_answer_length(self, answer: str, factors: List[str]) -> float:
+    def _score_answer_length(self, answer: str, factors: list[str]) -> float:
         """Score based on answer length and detail level."""
         if not answer:
             factors.append("empty_answer: -0.3")
@@ -201,7 +201,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
 
         return max(0.1, min(0.95, score))
 
-    def _score_language_certainty(self, answer: str, factors: List[str]) -> float:
+    def _score_language_certainty(self, answer: str, factors: list[str]) -> float:
         """Score based on certainty vs hedging language."""
         if not answer:
             return 0.5
@@ -229,7 +229,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
 
         return max(0.1, min(0.95, score))
 
-    def _score_security_risks(self, answer: str, factors: List[str]) -> float:
+    def _score_security_risks(self, answer: str, factors: list[str]) -> float:
         """Score based on security risk detection (highest impact)."""
         if not answer:
             return 0.5
@@ -242,7 +242,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
 
         return max(0.05, min(0.95, score))
 
-    def _score_quality(self, answer: str, factors: List[str]) -> float:
+    def _score_quality(self, answer: str, factors: list[str]) -> float:
         """Score based on quality indicators."""
         if not answer:
             return 0.5
@@ -266,7 +266,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
         return max(0.1, min(0.95, score))
 
     def _score_step_completeness(
-        self, result: Optional[ReasoningResult], factors: List[str]
+        self, result: Optional[ReasoningResult], factors: list[str]
     ) -> float:
         """Score based on reasoning step completeness."""
         if not result or not result.steps:
@@ -302,7 +302,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
         return max(0.1, min(0.95, score))
 
     def _score_template_match(
-        self, result: Optional[ReasoningResult], factors: List[str]
+        self, result: Optional[ReasoningResult], factors: list[str]
     ) -> float:
         """Score bonus for matching a known template."""
         if not result:
@@ -319,7 +319,7 @@ class ConfidenceEstimator(BaseAgent[ConfidenceResult]):
         return 0.5
 
     def estimate_with_evidence(
-        self, result: Any, evidence_for: List[str] = None, evidence_against: List[str] = None
+        self, result: Any, evidence_for: list[str] = None, evidence_against: list[str] = None
     ) -> ConfidenceResult:
         """
         Estimate confidence with explicit evidence lists.

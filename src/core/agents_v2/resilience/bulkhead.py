@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Dict, Optional
+from typing import Optional
 
 
 class BulkheadFullError(Exception):
@@ -25,7 +25,7 @@ class AgentBulkhead:
         max_concurrent: int = 4,
         max_queue: int = 20,
         timeout: float = 30.0,
-    ):
+    ) -> None:
         self.name = name
         self.max_concurrent = max_concurrent
         self.max_queue = max_queue
@@ -71,7 +71,7 @@ class AgentBulkhead:
         self._semaphore.release()
 
     @property
-    def stats(self) -> Dict:
+    def stats(self) -> dict:
         return {
             "name": self.name,
             "max_concurrent": self.max_concurrent,
@@ -83,12 +83,12 @@ class AgentBulkhead:
         }
 
     # Context manager support
-    def __enter__(self):
+    def __enter__(self) -> Self:
         if not self.acquire():
             raise BulkheadFullError(f"Bulkhead {self.name} is at capacity")
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args) -> None:
         self.release()
 
 
@@ -109,8 +109,8 @@ BULKHEAD_CONFIGS = {
 class BulkheadManager:
     """Manages per-agent bulkhead instances."""
 
-    def __init__(self):
-        self._bulkheads: Dict[str, AgentBulkhead] = {}
+    def __init__(self) -> None:
+        self._bulkheads: dict[str, AgentBulkhead] = {}
         self._lock = threading.Lock()
 
     def get_bulkhead(self, agent_name: str) -> AgentBulkhead:
@@ -123,7 +123,7 @@ class BulkheadManager:
                 )
             return self._bulkheads[agent_name]
 
-    def all_stats(self) -> Dict[str, Dict]:
+    def all_stats(self) -> dict[str, dict]:
         with self._lock:
             return {name: b.stats for name, b in self._bulkheads.items()}
 

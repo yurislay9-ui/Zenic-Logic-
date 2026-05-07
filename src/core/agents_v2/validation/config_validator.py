@@ -14,7 +14,7 @@ Validates:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import ConfigResult, ValidationIssue
@@ -24,7 +24,7 @@ from ..schemas import ConfigResult, ValidationIssue
 # ──────────────────────────────────────────────────────────────
 
 # Required keys per config type
-REQUIRED_KEYS: Dict[str, List[str]] = {
+REQUIRED_KEYS: dict[str, list[str]] = {
     "app": ["name", "version"],
     "database": ["host", "port", "name"],
     "server": ["host", "port"],
@@ -33,7 +33,7 @@ REQUIRED_KEYS: Dict[str, List[str]] = {
 }
 
 # Optional keys with their default values
-OPTIONAL_KEYS_WITH_DEFAULTS: Dict[str, Dict[str, Any]] = {
+OPTIONAL_KEYS_WITH_DEFAULTS: dict[str, dict[str, Any]] = {
     "app": {
         "debug": False,
         "env": "production",
@@ -62,7 +62,7 @@ OPTIONAL_KEYS_WITH_DEFAULTS: Dict[str, Dict[str, Any]] = {
 }
 
 # Value constraints: (min, max) or list of allowed values
-VALUE_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
+VALUE_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "app": {
         "debug": {"type": bool},
         "env": {"allowed": ["development", "staging", "production", "test"]},
@@ -94,7 +94,7 @@ VALUE_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
 }
 
 # Security checks: keys that should not have weak/default values
-SECURITY_SENSITIVE_KEYS: Dict[str, List[str]] = {
+SECURITY_SENSITIVE_KEYS: dict[str, list[str]] = {
     "weak_secret_keys": [
         "change-this",
         "change-this-in-production",
@@ -120,7 +120,7 @@ class ConfigValidator(BaseAgent[ConfigResult]):
     Fallback: Return valid=True with defaults applied (trust when cannot parse).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A26_ConfigValidator", **kwargs)
 
     def execute(self, input_data: Any) -> ConfigResult:
@@ -150,7 +150,7 @@ class ConfigValidator(BaseAgent[ConfigResult]):
             )
 
         issues = list(parse_issues)
-        defaults_applied: List[str] = []
+        defaults_applied: list[str] = []
 
         # 1. Schema validation (required keys)
         if config_type and config_type in REQUIRED_KEYS:
@@ -195,7 +195,7 @@ class ConfigValidator(BaseAgent[ConfigResult]):
 
     def _parse_config(
         self, config_data: Any
-    ) -> Tuple[Optional[Dict[str, Any]], List[ValidationIssue]]:
+    ) -> tuple[Optional[dict[str, Any]], list[ValidationIssue]]:
         """Parse config data from various formats into a dict."""
         issues = []
 
@@ -248,8 +248,8 @@ class ConfigValidator(BaseAgent[ConfigResult]):
         return None, issues
 
     def _validate_required_keys(
-        self, config: Dict[str, Any], config_type: str
-    ) -> Tuple[List[ValidationIssue], List[str]]:
+        self, config: dict[str, Any], config_type: str
+    ) -> tuple[list[ValidationIssue], list[str]]:
         """Validate that all required keys are present."""
         issues = []
         defaults_applied = []
@@ -275,8 +275,8 @@ class ConfigValidator(BaseAgent[ConfigResult]):
         return issues, defaults_applied
 
     def _validate_constraints(
-        self, config: Dict[str, Any], config_type: str
-    ) -> List[ValidationIssue]:
+        self, config: dict[str, Any], config_type: str
+    ) -> list[ValidationIssue]:
         """Validate value types and constraints."""
         issues = []
         constraints = VALUE_CONSTRAINTS.get(config_type, {})
@@ -358,8 +358,8 @@ class ConfigValidator(BaseAgent[ConfigResult]):
         return issues
 
     def _validate_custom_schema(
-        self, config: Dict[str, Any], schema: Dict[str, Any]
-    ) -> Tuple[List[ValidationIssue], List[str]]:
+        self, config: dict[str, Any], schema: dict[str, Any]
+    ) -> tuple[list[ValidationIssue], list[str]]:
         """Validate against a custom user-provided schema."""
         issues = []
         defaults_applied = []
@@ -383,7 +383,7 @@ class ConfigValidator(BaseAgent[ConfigResult]):
 
         return issues, defaults_applied
 
-    def _validate_security(self, config: Dict[str, Any]) -> List[ValidationIssue]:
+    def _validate_security(self, config: dict[str, Any]) -> list[ValidationIssue]:
         """Check for security best practices."""
         issues = []
 
@@ -466,8 +466,8 @@ class ConfigValidator(BaseAgent[ConfigResult]):
         return issues
 
     def _apply_defaults(
-        self, config: Dict[str, Any], config_type: str
-    ) -> List[str]:
+        self, config: dict[str, Any], config_type: str
+    ) -> list[str]:
         """Apply default values for missing optional keys."""
         applied = []
         defaults = OPTIONAL_KEYS_WITH_DEFAULTS.get(config_type, {})

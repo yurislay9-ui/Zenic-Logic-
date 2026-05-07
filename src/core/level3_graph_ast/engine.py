@@ -7,6 +7,11 @@ y regex para otros lenguajes. Almacena nodos en SQLite con conexiones.
 v16 FIX: Usa connection pool de db_initializer en vez de abrir
 conexiones nuevas por cada operacion. Batch inserts para scan_project.
 
+FIX (Phase 2): Added retry with exponential backoff for DB write
+operations (_store_node, _store_nodes_batch). SQLite can fail
+transiently (database locked, busy timeout) especially under
+concurrent access.
+
 Sin dependencias externas. Compatible con Android.
 """
 
@@ -15,24 +20,36 @@ import re
 import hashlib
 import json
 import logging
+from functools import lru_cache
 from pathlib import Path
 from src.core.shared.db_initializer import get_connection
+from src.core.shared.constants import EXT_LANG_MAP
+from src.core.shared.retry import with_retry
+from src.core.shared.db_utils import escape_sql_like, purge_tenant_rows
+from src.core.shared.tenant_utils import resolve_tenant_id
+from src.core.shared.ast_utils import compute_cyclomatic_complexity, extract_function_calls, extract_class_connections
 
 logger = logging.getLogger(__name__)
 
 SKIP_DIRS = {'.git', 'node_modules', 'venv', '__pycache__', '.venv', 'dist', 'build'}
 
 
+@lru_cache(maxsize=32)
+def _detect_language_cached(suffix: str) -> str:
+    """Detect programming language from file extension.
+
+    Cached because the same extension is looked up repeatedly during
+    project scans. Uses EXT_LANG_MAP from shared.constants as the
+    single source of truth.
+    """
+    return EXT_LANG_MAP.get(suffix, "python")
+
+
 class GraphASTEngine:
     """Motor de AST usando ast nativo para Python, regex para otros. Tenant-aware (Phase 2)."""
 
     def __init__(self):
-        # Resolve tenant_id from thread-local TenantContext
-        try:
-            from src.core.tenant._context import get_current_tenant
-            self._tenant_id: str = get_current_tenant().effective_tenant_id
-        except Exception:
-            self._tenant_id = "__anonymous__"
+        self._tenant_id: str = resolve_tenant_id()
         logger.debug("GraphASTEngine initialized with tenant_id='%s'", self._tenant_id)
         self._init_db()
 
@@ -66,6 +83,21 @@ class GraphASTEngine:
             logger.debug("ast_nodes tenant migration skipped: %s", e)
 
     def scan_code(self, code, file_path="input.py", language="python"):
+        """Parse source code and return a list of AST node dicts.
+
+        Dispatches to _parse_python for Python code and _parse_regex
+        for all other languages.
+
+        Args:
+            code: Source code string to parse.
+            file_path: Logical file path for the source (default "input.py").
+            language: Programming language identifier (default "python").
+
+        Returns:
+            List of node dicts with keys: file_path, node_type, name,
+            start_byte, end_byte, content_hash, docstring, complexity,
+            connections.
+        """
         if language == "python":
             return self._parse_python(code, file_path)
         return self._parse_regex(code, file_path, language)
@@ -95,12 +127,26 @@ class GraphASTEngine:
             self._store_nodes_batch(all_nodes)
 
     def _detect_language(self, suffix):
-        mapping = {".py": "python", ".kt": "kotlin", ".go": "go",
-                   ".js": "javascript", ".ts": "typescript",
-                   ".java": "java", ".rs": "rust"}
-        return mapping.get(suffix, "python")
+        """Detect programming language from file extension.
+
+        Delegates to the module-level cached function for O(1) repeated
+        lookups during project scans.
+        """
+        return _detect_language_cached(suffix)
 
     def _parse_python(self, code, file_path):
+        """Parse Python source using the ast module.
+
+        Extracts functions, classes, and imports with their metadata
+        including complexity, connections, and docstrings.
+
+        Args:
+            code: Python source code string.
+            file_path: Logical file path for the source.
+
+        Returns:
+            List of node dicts for all detected AST elements.
+        """
         nodes = []
         try:
             tree = ast.parse(code)
@@ -149,6 +195,19 @@ class GraphASTEngine:
         return nodes
 
     def _parse_regex(self, code, file_path, language):
+        """Parse non-Python source using regex patterns.
+
+        Falls back to regex-based function detection for languages
+        that cannot be parsed by Python's ast module.
+
+        Args:
+            code: Source code string.
+            file_path: Logical file path for the source.
+            language: Programming language identifier.
+
+        Returns:
+            List of node dicts for detected function definitions.
+        """
         nodes = []
         patterns = {
             "kotlin": r'(?:fun|companion object)\s+(\w+)\s*[\(<]',
@@ -173,8 +232,11 @@ class GraphASTEngine:
         return nodes
 
     def _store_node(self, node_data):
-        """Insertar un solo nodo usando connection pool. Tenant-aware."""
-        try:
+        """Insert a single node using connection pool. Tenant-aware.
+
+        Uses shared retry utility for transient SQLite failures.
+        """
+        def _insert():
             conn = get_connection("graph_ast.sqlite")
             conn.execute(
                 """INSERT OR REPLACE INTO ast_nodes
@@ -188,13 +250,17 @@ class GraphASTEngine:
                  node_data["connections"], self._tenant_id)
             )
             conn.commit()
-        except Exception as e:
-            logging.getLogger(__name__).debug("Error storing node: %s", e)
+
+        with_retry(_insert, label="GraphAST store_node")
 
     def _store_nodes_batch(self, nodes):
-        """Batch insert de multiples nodos en una sola transaccion. Tenant-aware."""
-        try:
-            tid = self._tenant_id
+        """Batch insert multiple nodes in a single transaction. Tenant-aware.
+
+        Uses shared retry utility for transient SQLite failures.
+        """
+        tid = self._tenant_id
+
+        def _batch_insert():
             conn = get_connection("graph_ast.sqlite")
             conn.executemany(
                 """INSERT OR REPLACE INTO ast_nodes
@@ -207,71 +273,59 @@ class GraphASTEngine:
                  for n in nodes]
             )
             conn.commit()
-        except Exception as e:
-            logging.getLogger(__name__).debug("Error batch storing nodes: %s", e)
+
+        with_retry(_batch_insert, base_delay=0.2, label="GraphAST store_nodes_batch")
 
     def _cyclomatic_complexity(self, func_node):
-        complexity = 1
-        for node in ast.walk(func_node):
-            if isinstance(node, (ast.If, ast.While, ast.For, ast.ExceptHandler)):
-                complexity += 1
-            elif isinstance(node, ast.BoolOp):
-                complexity += len(node.values) - 1
-            elif isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-                complexity += 1
-        return complexity
+        """Compute McCabe cyclomatic complexity using shared ast_utils."""
+        return compute_cyclomatic_complexity(func_node)
 
     def _extract_calls(self, func_node):
-        calls = []
-        for node in ast.walk(func_node):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name):
-                    calls.append(node.func.id)
-                elif isinstance(node.func, ast.Attribute):
-                    calls.append(node.func.attr)
-        return list(set(calls))
+        """Extract unique function call names using shared ast_utils."""
+        return extract_function_calls(func_node)
 
     def _extract_class_connections(self, class_node):
-        connections = []
-        for base in class_node.bases:
-            if isinstance(base, ast.Name):
-                connections.append(f"extends:{base.id}")
-            elif isinstance(base, ast.Attribute):
-                connections.append(f"extends:{base.attr}")
-        for node in class_node.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                connections.append(f"method:{node.name}")
-        return connections
+        """Extract class connections using shared ast_utils."""
+        return extract_class_connections(class_node)
 
     def get_node_info(self, target_name):
-        """Get node info filtered by current tenant_id."""
+        """Get node info filtered by current tenant_id.
+
+        Security: Escapes SQL LIKE wildcards AND backslash to prevent
+        LIKE injection attacks (e.g. target_name='%' matches everything).
+        """
         conn = get_connection("graph_ast.sqlite")
+        # Security: Use shared escape utility to prevent LIKE injection
+        escaped_name = escape_sql_like(target_name)
         return [dict(r) for r in conn.execute(
-            "SELECT * FROM ast_nodes WHERE name LIKE ? AND tenant_id = ?",
-            (f"%{target_name}%", self._tenant_id)).fetchall()]
+            "SELECT * FROM ast_nodes WHERE name LIKE ? ESCAPE '\\' AND tenant_id = ?",
+            (f"%{escaped_name}%", self._tenant_id)).fetchall()]
 
     def purge_tenant_data(self, tenant_id: str) -> int:
-        """Delete all AST data for a specific tenant (GDPR / deprovisioning).
-
-        Args:
-            tenant_id: Tenant identifier to purge.
-
-        Returns:
-            Number of rows deleted.
-        """
+        """Delete all AST data for a specific tenant (GDPR / deprovisioning)."""
         try:
             conn = get_connection("graph_ast.sqlite")
-            cursor = conn.execute("DELETE FROM ast_nodes WHERE tenant_id=?", (tenant_id,))
-            conn.commit()
-            count = cursor.rowcount
-            if count > 0:
-                logger.info("GraphASTEngine: purged %d entries for tenant '%s'", count, tenant_id)
-            return count
+            return purge_tenant_rows(conn, "ast_nodes", tenant_id)
         except Exception as e:
             logger.error("GraphASTEngine: purge failed for tenant '%s': %s", tenant_id, e)
             return 0
 
     def analyze_structure(self, code, language="python"):
+        """Analyze code structure and return summary statistics.
+
+        Parses the code, persists detected nodes, and returns aggregate
+        metrics including function/class/import counts, complexity stats,
+        and connection information.
+
+        Args:
+            code: Source code string to analyze.
+            language: Programming language identifier (default "python").
+
+        Returns:
+            Dict with keys: functions, classes, imports, max_complexity,
+            total_complexity, avg_complexity, connections, function_names,
+            class_names.
+        """
         nodes = self.scan_code(code, "analysis_target", language)
         # Persistir nodos individuales (para consultas posteriores)
         if nodes:

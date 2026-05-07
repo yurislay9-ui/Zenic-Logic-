@@ -1,6 +1,12 @@
-"""Mixin: Isolated execution for ReflexionSandbox."""
+"""Mixin: Isolated execution for ReflexionSandbox.
+
+FIX (Phase 2): Added retry for workspace creation failures.
+If workspace creation fails (e.g., filesystem contention), we retry
+up to 2 times before giving up.
+"""
 
 import ast
+import time
 
 from ._imports import logger, create_sandbox_globals
 
@@ -29,6 +35,10 @@ class IsolatedExecMixin:
                 '__globals__', '__code__', '__closure__', '__func__',
                 '__self__', '__dict__', '__weakref__',
                 '__builtins__', '__import__',
+                '__call__', '__new__', '__init__', '__del__',
+                '__getattr__', '__getattribute__', '__setattr__', '__delattr__',
+                '__enter__', '__exit__',
+                '__reduce__', '__reduce_ex__', '__getstate__', '__setstate__',
             }
             for node in ast.walk(tree):
                 # Block attribute access to dunder attributes (sandbox escape vectors)
@@ -37,6 +47,16 @@ class IsolatedExecMixin:
                         if node.attr in dangerous_attrs:
                             raise ImportError(
                                 f"Sandbox: access to '{node.attr}' is blocked "
+                                f"for security (line {node.lineno})"
+                            )
+                # SECURITY: Block dict-style access to dunder attributes
+                # e.g. obj['__class__'] — this bypasses attribute access checks
+                if isinstance(node, ast.Subscript):
+                    if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                        key = node.slice.value
+                        if key.startswith('__') and key.endswith('__') and key in dangerous_attrs:
+                            raise ImportError(
+                                f"Sandbox: dict access to '{key}' is blocked "
                                 f"for security (line {node.lineno})"
                             )
                 # Block getattr/hasattr with dunder string literals
@@ -57,12 +77,33 @@ class IsolatedExecMixin:
             return {"error": str(e)}
 
         workspace = None
-        try:
-            # Crear workspace aislado para esta ejecucion
-            workspace = self._isolation_manager.create_workspace(
-                ttl_seconds=self.timeout_seconds * 2 + 60  # TTL > timeout
-            )
 
+        # FIX (Phase 2): Retry workspace creation — can fail transiently
+        # due to filesystem contention or temp directory issues
+        max_ws_retries = 3
+        ws_base_delay = 0.2
+
+        for ws_attempt in range(1, max_ws_retries + 1):
+            try:
+                workspace = self._isolation_manager.create_workspace(
+                    ttl_seconds=self.timeout_seconds * 2 + 60  # TTL > timeout
+                )
+                break  # Success
+            except Exception as ws_err:
+                if ws_attempt < max_ws_retries:
+                    delay = ws_base_delay * (2 ** (ws_attempt - 1))
+                    logger.debug(
+                        "Sandbox: Workspace creation attempt %d/%d failed: %s — retrying in %.1fs",
+                        ws_attempt, max_ws_retries, ws_err, delay
+                    )
+                    time.sleep(delay)
+                else:
+                    return {"error": f"Sandbox: Failed to create workspace after {max_ws_retries} attempts: {ws_err}"}
+
+        if workspace is None:
+            return {"error": "Sandbox: Failed to create workspace (unknown error)"}
+
+        try:
             # Escribir codigo en el workspace aislado
             workspace.write_code(code, filename=f"{target_name}")
 

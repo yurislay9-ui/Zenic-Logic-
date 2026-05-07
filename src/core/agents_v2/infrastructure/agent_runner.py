@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 import threading
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional, Type
 
 from ..resilience import BaseAgent, AgentRetryConfig, CircuitBreakerManager, BulkheadManager, GlobalHealthMonitor, AuditLogger, AuditEntry
 from ..schemas import AgentResult
@@ -39,7 +39,7 @@ class AgentRunner(BaseAgent[AgentResult]):
         audit_logger: Optional[AuditLogger] = None,
         retry_config: Optional[AgentRetryConfig] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             name="A44_AgentRunner",
             circuit_breaker_manager=circuit_breaker_manager,
@@ -49,7 +49,7 @@ class AgentRunner(BaseAgent[AgentResult]):
             retry_config=retry_config,
             **kwargs,
         )
-        self._registered_agents: Dict[str, BaseAgent] = {}
+        self._registered_agents: dict[str, BaseAgent] = {}
         self._registry_lock = threading.Lock()
 
     # ──────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ class AgentRunner(BaseAgent[AgentResult]):
                 data=result.get("data"),
                 source=result.get("source", "deterministic"),
                 duration_ms=result.get("duration_ms", 0.0),
-                error="",
+                error=result.get("error", ""),
             )
 
         return AgentResult(
@@ -131,7 +131,7 @@ class AgentRunner(BaseAgent[AgentResult]):
             source="deterministic",
         )
 
-    def run_agent(self, agent_name: str, input_data: Any) -> Dict[str, Any]:
+    def run_agent(self, agent_name: str, input_data: Any) -> dict[str, Any]:
         """
         Convenience method: Run a registered agent by name.
 

@@ -84,14 +84,14 @@ class TestActionExecutor:
 
             result = await self.registry.execute_action(
                 "file_operation",
-                {"operation": "write", "destination": file_path, "content": "Hello Phase 7!"},
+                {"operation": "write", "destination": file_path, "content": "Hello Phase 7!", "base_dir": tmpdir},
                 {}
             )
             assert result.success is True
 
             result = await self.registry.execute_action(
                 "file_operation",
-                {"operation": "read", "source": file_path},
+                {"operation": "read", "source": file_path, "base_dir": tmpdir},
                 {}
             )
             assert result.success is True

@@ -2,6 +2,7 @@
 Tests for ActionResult and validator utility functions.
 """
 
+import os
 import tempfile
 import pytest
 
@@ -86,10 +87,16 @@ class TestSafePath:
             with pytest.raises(ValueError, match="Path traversal"):
                 _safe_path("../../../etc/passwd", tmpdir)
 
-    def test_absolute_path_in_tmp(self):
-        """Absolute path in /tmp should be allowed."""
-        result = _safe_path("/tmp/test_file.txt", "/some/base")
-        assert result.startswith("/tmp")
+    def test_absolute_path_outside_base_blocked(self):
+        """Absolute path outside base_dir should be blocked (H-05 fix)."""
+        with pytest.raises(ValueError, match="Path traversal"):
+            _safe_path("/tmp/test_file.txt", "/some/base")
+
+    def test_absolute_path_within_base_allowed(self):
+        """Absolute path within base_dir should be allowed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = _safe_path(os.path.join(tmpdir, "test_file.txt"), tmpdir)
+            assert result.startswith(tmpdir)
 
 
 class TestValidateSql:

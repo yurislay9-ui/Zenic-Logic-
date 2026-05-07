@@ -174,7 +174,8 @@ class DAGOrchestrator(
                         reads from thread-local storage or creates anonymous.
         """
         start_time = time.time()
-        self.request_count += 1
+        with self._request_count_lock:
+            self._request_count += 1
 
         # Phase 2: Set TenantContext for this request
         if tenant_ctx is None:

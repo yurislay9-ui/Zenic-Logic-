@@ -2,6 +2,13 @@
 
 from ._imports import OperationType
 
+# MCTS reward weight constants
+_MCTS_BASE_REWARD = 0.1
+_MCTS_DEPTH_REWARD = 0.1
+_MCTS_VALIDATION_REWARD = 0.2
+_MCTS_COMPLETENESS_BONUS = 0.3
+_MCTS_SHALLOW_PENALTY = 0.1
+
 
 class MCTSMixin:
     """Mixin providing MCTS action generation and reward function."""
@@ -49,25 +56,25 @@ class MCTSMixin:
         Premia planes que: cubren mas operaciones, son mas profundos,
         incluyen validacion, y terminan en estados completos.
         """
-        reward = 0.1
+        reward = _MCTS_BASE_REWARD
         depth = state.get("depth", 0)
         taken = state.get("taken_actions", [])
 
         # Premiar profundidad (hasta el limite)
-        reward += min(depth, self.MCTS_MAX_DEPTH) * 0.1
+        reward += min(depth, self.MCTS_MAX_DEPTH) * _MCTS_DEPTH_REWARD
 
         # Premiar inclusion de validacion
         validation_actions = [a for a in taken if "VALIDATE" in a or "SYMBOLIC" in a]
-        reward += len(validation_actions) * 0.2
+        reward += len(validation_actions) * _MCTS_VALIDATION_REWARD
 
         # Premiar planes completos (que incluyen generacion + validacion)
         has_generation = any(a in taken for a in ["GENERATE_CODE", "REPLACE_AST_NODE", "PATCH_FIX"])
         has_validation = len(validation_actions) > 0
         if has_generation and has_validation:
-            reward += 0.3
+            reward += _MCTS_COMPLETENESS_BONUS
 
         # Penalizar planes muy superficiales
         if depth < 2 and len(taken) < 2:
-            reward -= 0.1
+            reward -= _MCTS_SHALLOW_PENALTY
 
         return max(0.0, min(1.0, reward))

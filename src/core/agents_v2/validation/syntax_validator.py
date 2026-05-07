@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import Any, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import SyntaxResult, ValidationIssue
@@ -20,10 +20,10 @@ class SyntaxValidator(BaseAgent[SyntaxResult]):
 
     Single Responsibility: Syntax validation ONLY.
     Method: ast.parse() for Python, brace balance for JS/TS.
-    Fallback: Return valid=True (trust when cannot parse).
+    Fallback: Return valid=False (fail-closed for safety).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A24_SyntaxValidator", **kwargs)
 
     def execute(self, input_data: Any) -> SyntaxResult:
@@ -162,14 +162,46 @@ class SyntaxValidator(BaseAgent[SyntaxResult]):
 
     @staticmethod
     def _function_returns_on_all_paths(func_node: ast.FunctionDef) -> bool:
-        """Check if a function returns on all paths (simple heuristic)."""
+        """Check if a function returns on all paths (simple heuristic).
+
+        - No return at all = void function → True (OK)
+        - Has return with value but may fall through → False (warning)
+        - All paths return → True (OK)
+        """
         has_return = False
         for node in ast.walk(func_node):
             if isinstance(node, ast.Return) and node.value is not None:
                 has_return = True
                 break
-        # If no return at all, it's a void function — OK
-        return True
+
+        # No return statements → void function, that's fine
+        if not has_return:
+            return True
+
+        # Has returns — check if function might fall through without returning.
+        # Simple heuristic: if the function body's last statement is a Return,
+        # or all branches of the last if/else return, it's likely complete.
+        # For simplicity, we check if there's a top-level return at the end.
+        last_stmt = func_node.body[-1] if func_node.body else None
+        if isinstance(last_stmt, ast.Return):
+            return True
+
+        # Check if the last statement is an if/else where both branches return
+        if isinstance(last_stmt, ast.If):
+            if_return = False
+            else_return = False
+            if last_stmt.body and isinstance(last_stmt.body[-1], ast.Return):
+                if_return = True
+            if last_stmt.orelse and isinstance(last_stmt.orelse[-1], ast.Return):
+                else_return = True
+            if if_return and else_return:
+                return True
+
+        # Has returns but might not return on all paths
+        return False
 
     def fallback(self, input_data: Any) -> SyntaxResult:
-        return SyntaxResult(valid=True, source="fallback")
+        return SyntaxResult(valid=False, source="fallback", errors=[
+            ValidationIssue(severity="warning", code="validation_degraded",
+                           message="Syntax validation unavailable — treating as invalid for safety")
+        ])

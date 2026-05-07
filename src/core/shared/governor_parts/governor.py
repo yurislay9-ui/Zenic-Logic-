@@ -46,6 +46,7 @@ class ResourceGovernor(
         self._thermal_throttle = 1.0  # 1.0 = normal, 0.5 = reducir a la mitad
         self._gc_count = 0
         self._request_count = 0
+        self._request_count_lock = threading.Lock()
         self._model_manager = None  # Ref to ModelManager for model swap
 
         # Stats

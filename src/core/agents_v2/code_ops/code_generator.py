@@ -8,7 +8,7 @@ No AI. Template library with placeholder substitution.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CodeResult
@@ -42,7 +42,7 @@ class CodeGenerator(BaseAgent[CodeResult]):
     Fallback: Empty CodeResult with no code.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A17_CodeGenerator", **kwargs)
 
     def execute(self, input_data: Any) -> CodeResult:

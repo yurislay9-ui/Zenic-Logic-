@@ -7,7 +7,7 @@ No AI. Pure string/structure manipulation.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import NotificationResult
@@ -46,7 +46,7 @@ class NotificationDispatcher(BaseAgent[NotificationResult]):
     Fallback: NotificationResult with sent=False.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A14_NotificationDispatcher", **kwargs)
 
     def execute(self, input_data: Any) -> NotificationResult:

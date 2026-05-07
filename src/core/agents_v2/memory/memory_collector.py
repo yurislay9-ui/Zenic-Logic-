@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import MemoryEntries
@@ -45,7 +45,7 @@ class MemoryCollector(BaseAgent[MemoryEntries]):
       - Each store collection is independent — failure of one doesn't block others.
     """
 
-    def __init__(self, smart_memory=None, semantic_engine=None, **kwargs):
+    def __init__(self, smart_memory=None, semantic_engine=None, **kwargs) -> None:
         super().__init__(name="A05_MemoryCollector", **kwargs)
         self._smart_memory = smart_memory
         self._semantic_engine = semantic_engine
@@ -108,9 +108,9 @@ class MemoryCollector(BaseAgent[MemoryEntries]):
     # PRIVATE: Per-Store Collection Methods
     # ──────────────────────────────────────────────────────────
 
-    def _collect_working(self, operation: str, goal: str) -> List[Dict[str, Any]]:
+    def _collect_working(self, operation: str, goal: str) -> list[dict[str, Any]]:
         """Collect entries from working memory (current session context)."""
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         now = time.time()
 
         try:
@@ -142,9 +142,9 @@ class MemoryCollector(BaseAgent[MemoryEntries]):
 
         return entries
 
-    def _collect_long_term(self, message: str, operation: str, goal: str) -> List[Dict[str, Any]]:
+    def _collect_long_term(self, message: str, operation: str, goal: str) -> list[dict[str, Any]]:
         """Collect entries from long-term memory (previously successful solutions)."""
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
 
         if not message:
             return entries
@@ -173,9 +173,9 @@ class MemoryCollector(BaseAgent[MemoryEntries]):
 
         return entries[:MAX_ENTRIES_PER_STORE]
 
-    def _collect_episodic(self, operation: str, goal: str) -> List[Dict[str, Any]]:
+    def _collect_episodic(self, operation: str, goal: str) -> list[dict[str, Any]]:
         """Collect entries from episodic memory (event history)."""
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
 
         # Fetch error episodes for DEBUG/BUG_FIX
         if operation in ("DEBUG",) or goal in ("BUG_FIX",):
@@ -199,9 +199,9 @@ class MemoryCollector(BaseAgent[MemoryEntries]):
 
         return entries[:MAX_ENTRIES_PER_STORE]
 
-    def _collect_procedural(self, operation: str, goal: str) -> List[Dict[str, Any]]:
+    def _collect_procedural(self, operation: str, goal: str) -> list[dict[str, Any]]:
         """Collect entries from procedural memory (learned patterns)."""
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
 
         # Fetch procedural patterns relevant to CREATE/OPTIMIZE
         if operation in ("CREATE", "OPTIMIZE", "REFACTOR"):

@@ -18,7 +18,7 @@ No AI. All compression is deterministic. No LLM summarization.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import ScoredEntries, ScoredEntry, CompressedContext
@@ -39,7 +39,7 @@ MIN_PARTIAL_CONTENT_CHARS = 120  # Minimum chars for a truncated entry
 # Default budget distribution, adjustable per operation/goal.
 # ──────────────────────────────────────────────────────────────
 
-DEFAULT_TOKEN_BUDGET: Dict[str, int] = {
+DEFAULT_TOKEN_BUDGET: dict[str, int] = {
     "intent": 50,
     "code": 200,
     "reasoning": 150,
@@ -48,7 +48,7 @@ DEFAULT_TOKEN_BUDGET: Dict[str, int] = {
 }
 
 # Per-operation budget adjustments (multipliers applied to default)
-OP_BUDGET_ADJUSTMENTS: Dict[str, Dict[str, float]] = {
+OP_BUDGET_ADJUSTMENTS: dict[str, dict[str, float]] = {
     "CREATE": {
         "code": 1.25, "intent": 0.6, "validation": 0.7,
         "reasoning": 0.9, "reserve": 1.0,
@@ -76,7 +76,7 @@ OP_BUDGET_ADJUSTMENTS: Dict[str, Dict[str, float]] = {
 }
 
 # Per-goal budget adjustments
-GOAL_BUDGET_ADJUSTMENTS: Dict[str, Dict[str, float]] = {
+GOAL_BUDGET_ADJUSTMENTS: dict[str, dict[str, float]] = {
     "SECURITY_HARDEN": {
         "validation": 1.5, "reserve": 0.5,
     },
@@ -104,7 +104,7 @@ class ContextCompressor(BaseAgent[CompressedContext]):
       - Design system preservation: if enabled, budget is expanded.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A07_ContextCompressor", **kwargs)
         self._design_system_mode: bool = False
         self._design_system_budget_multiplier: float = 1.0
@@ -188,7 +188,7 @@ class ContextCompressor(BaseAgent[CompressedContext]):
         )
 
     def allocate_budget_for(self, operation: str, goal: str,
-                             total: int = TOTAL_CONTEXT_BUDGET) -> Dict[str, int]:
+                             total: int = TOTAL_CONTEXT_BUDGET) -> dict[str, int]:
         """Public API for budget allocation (used by pipeline orchestrator)."""
         return self._allocate_budget(operation, goal, total)
 
@@ -197,8 +197,8 @@ class ContextCompressor(BaseAgent[CompressedContext]):
     # ──────────────────────────────────────────────────────────
 
     def _compress_entries(
-        self, entries: List[ScoredEntry], max_tokens: int
-    ) -> Tuple[str, int]:
+        self, entries: list[ScoredEntry], max_tokens: int
+    ) -> tuple[str, int]:
         """
         Compress entries to fit within max_tokens budget.
 
@@ -210,7 +210,7 @@ class ContextCompressor(BaseAgent[CompressedContext]):
         if not entries:
             return "", 0
 
-        selected: List[Tuple[ScoredEntry, bool]] = []  # (entry, is_truncated)
+        selected: list[tuple[ScoredEntry, bool]] = []  # (entry, is_truncated)
         token_count = 0
 
         for entry in entries:
@@ -232,7 +232,7 @@ class ContextCompressor(BaseAgent[CompressedContext]):
             return best.content[:max_tokens * CHARS_PER_TOKEN], 1
 
         # Build compressed text
-        parts: List[str] = []
+        parts: list[str] = []
         for entry, is_truncated in selected:
             source_type = entry.source_type or "ctx"
             score_str = f"{entry.combined_score:.2f}"
@@ -255,7 +255,7 @@ class ContextCompressor(BaseAgent[CompressedContext]):
 
     def _allocate_budget(
         self, op: str, goal: str, total: int = TOTAL_CONTEXT_BUDGET
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Allocate token budget per category based on operation and goal.
 
@@ -281,5 +281,17 @@ class ContextCompressor(BaseAgent[CompressedContext]):
         if total_allocated > total:
             scale = total / total_allocated
             budget = {k: max(int(v * scale), 20) for k, v in budget.items()}
+            # Second pass: verify total after min-floor enforcement
+            # The min floor of 20 can cause total to still exceed budget
+            total_allocated = sum(budget.values())
+            if total_allocated > total:
+                # Reduce only categories above minimum, proportional to excess
+                excess = total_allocated - total
+                reducible = {k: v - 20 for k, v in budget.items() if v > 20}
+                total_reducible = sum(reducible.values())
+                if total_reducible > 0:
+                    for k in reducible:
+                        reduction = int(excess * (reducible[k] / total_reducible))
+                        budget[k] = max(budget[k] - reduction, 20)
 
         return budget

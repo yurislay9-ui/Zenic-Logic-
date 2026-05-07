@@ -14,28 +14,14 @@ import re
 import threading
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, TypeVar, Generic, Union
+from typing import Any, Generic, Optional, TypeVar, Union
+
+# ── Unified AgentResult: re-export from v2 schemas (single source of truth) ──
+from src.core.agents_v2.schemas.types import AgentResult  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')  # Output type
-
-
-class AgentResult:
-    """Resultado estándar de cualquier agente."""
-
-    def __init__(self, success: bool = False, data: Any = None,
-                 source: str = "fallback", error: str = "",
-                 duration_ms: int = 0, cache_hit: bool = False) -> None:
-        self.success = success
-        self.data = data
-        self.source = source
-        self.error = error
-        self.duration_ms = duration_ms
-        self.cache_hit = cache_hit
-
-    def __repr__(self) -> str:
-        return f"AgentResult(success={self.success}, source={self.source}, duration={self.duration_ms}ms)"
 
 
 class BaseAgent(ABC, Generic[T]):
@@ -66,7 +52,7 @@ class BaseAgent(ABC, Generic[T]):
         self._stats_lock = threading.Lock()
 
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Estadísticas de uso del agente."""
         return {
             "name": self.name,
@@ -81,7 +67,7 @@ class BaseAgent(ABC, Generic[T]):
         }
 
     @abstractmethod
-    def build_prompt(self, input_data: Any) -> Tuple[str, str]:
+    def build_prompt(self, input_data: Any) -> tuple[str, str]:
         """
         Construye el prompt para el LLM.
 
@@ -136,7 +122,7 @@ class BaseAgent(ABC, Generic[T]):
                 self._last_error = error
 
     @staticmethod
-    def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
+    def extract_json(text: str) -> Optional[Union[dict[str, Any], list[Any]]]:
         """
         Extrae JSON de una respuesta del LLM.
         Maneja bloques de código markdown y texto circundante.

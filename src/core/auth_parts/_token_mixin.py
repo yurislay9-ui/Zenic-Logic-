@@ -1,5 +1,8 @@
 """
 Token management mixin for AuthService — JWT, HMAC, revocation.
+
+PERFORMANCE (H-03 fix): Removed per-call connection close() since
+connections are now thread-local pooled in DbPasswordMixin._conn().
 """
 
 from ._imports import (
@@ -99,16 +102,15 @@ class TokenMixin:
         expires_at = datetime.fromtimestamp(exp).isoformat() if exp else None
         now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
-        try:
-            c.execute("INSERT OR IGNORE INTO revoked_tokens (jti, user_id, revoked_at, expires_at) "
-                      "VALUES (?, ?, ?, ?)", (jti, int(payload.get("sub", 0)), now, expires_at))
-            c.commit()
-            return True
-        except sqlite3.Error as e:
-            logger.error(f"AuthService: revoke_token error: {e}")
-            return False
-        finally:
-            c.close()
+        with self._lock:
+            try:
+                c.execute("INSERT OR IGNORE INTO revoked_tokens (jti, user_id, revoked_at, expires_at) "
+                          "VALUES (?, ?, ?, ?)", (jti, int(payload.get("sub", 0)), now, expires_at))
+                c.commit()
+                return True
+            except sqlite3.Error as e:
+                logger.error(f"AuthService: revoke_token error: {e}")
+                return False
 
     def _encode_hmac(self, payload: dict) -> str:
         """Encode payload using HMAC-SHA256."""
@@ -150,22 +152,17 @@ class TokenMixin:
         if not token_jti:
             return False
         c = self._conn()
-        try:
-            with self._lock:
-                return c.execute("SELECT 1 FROM revoked_tokens WHERE jti = ?", (token_jti,)).fetchone() is not None
-        finally:
-            c.close()
+        with self._lock:
+            return c.execute("SELECT 1 FROM revoked_tokens WHERE jti = ?", (token_jti,)).fetchone() is not None
 
     def cleanup_revoked_tokens(self) -> int:
         """Remove expired tokens from blacklist. Returns count removed."""
         now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
-        try:
+        with self._lock:
             n = c.execute("DELETE FROM revoked_tokens WHERE expires_at IS NOT NULL AND expires_at < ?",
                           (now,)).rowcount
             c.commit()
             if n:
                 logger.info(f"AuthService: cleaned {n} expired revoked tokens")
             return n
-        finally:
-            c.close()

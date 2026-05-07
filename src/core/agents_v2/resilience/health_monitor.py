@@ -11,7 +11,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -51,12 +51,12 @@ class GlobalHealthMonitor:
         window_size: int = 50,
         unhealthy_threshold: float = 0.3,
         warning_threshold: float = 0.7,
-    ):
+    ) -> None:
         self.window_size = window_size
         self.unhealthy_threshold = unhealthy_threshold
         self.warning_threshold = warning_threshold
 
-        self._windows: Dict[str, deque] = {}
+        self._windows: dict[str, deque] = {}
         self._lock = threading.Lock()
 
     def record_call(
@@ -114,13 +114,13 @@ class GlobalHealthMonitor:
                 warning=warning,
             )
 
-    def all_snapshots(self) -> Dict[str, AgentHealthSnapshot]:
+    def all_snapshots(self) -> dict[str, AgentHealthSnapshot]:
         """Get health snapshots for all tracked agents."""
         with self._lock:
             names = list(self._windows.keys())
         return {name: self.get_snapshot(name) for name in names}
 
-    def system_health(self) -> Dict[str, Any]:
+    def system_health(self) -> dict[str, Any]:
         """Get system-wide health summary."""
         snapshots = self.all_snapshots()
         if not snapshots:

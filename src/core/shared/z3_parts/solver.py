@@ -9,6 +9,7 @@ Combines all mixin classes into the final Z3Solver class with:
 
 import gc
 import logging
+from typing import Any, Callable, Dict, List, Set
 
 try:
     import z3 as z3_module
@@ -58,7 +59,7 @@ class Z3Solver(
     - Mismo contrato de interfaz, poder expresivo reducido
     """
 
-    def __init__(self, timeout_ms=15000):
+    def __init__(self, timeout_ms: int = 15000):
         self.timeout_ms = timeout_ms
         self._solver_type = "Z3" if HAS_Z3 else "AC3_FALLBACK"
         # Bidirectional mapping for bijective value encoding
@@ -69,14 +70,14 @@ class Z3Solver(
         self._sort_counter = 0
 
     @property
-    def solver_type(self):
+    def solver_type(self) -> str:
         return self._solver_type
 
     # ================================================================
     #  Public API - same signatures as before + new prove_code_safety
     # ================================================================
 
-    def prove_null_safety(self, variable_names, nullable_vars):
+    def prove_null_safety(self, variable_names: List[str], nullable_vars: Set[str]) -> Dict[str, Any]:
         """
         Verifica que variables no-nullable nunca reciben valor None.
 
@@ -88,10 +89,11 @@ class Z3Solver(
             dict con status, solver_type, y counterexamples si los hay
         """
         if HAS_Z3:
+            self._reset_z3_state()  # Phase 3: prevent memory leak
             return self._z3_prove_null_safety(variable_names, nullable_vars)
         return self._ac3_prove_null_safety(variable_names, nullable_vars)
 
-    def prove_type_safety(self, variables_with_types):
+    def prove_type_safety(self, variables_with_types: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Verifica consistencia de tipos en operaciones.
 
@@ -102,10 +104,11 @@ class Z3Solver(
             dict con status y resultados
         """
         if HAS_Z3:
+            self._reset_z3_state()  # Phase 3: prevent memory leak
             return self._z3_prove_type_safety(variables_with_types)
         return self._ac3_prove_type_safety(variables_with_types)
 
-    def prove_invariant(self, invariant_func, variables, domains):
+    def prove_invariant(self, invariant_func: Callable[..., bool], variables: List[str], domains: Dict[str, List[Any]]) -> Dict[str, Any]:
         """
         Verifica una invariante sobre dominios de variables.
 
@@ -118,12 +121,13 @@ class Z3Solver(
             dict con status: PROVEN, VIOLATED, TIMEOUT
         """
         if HAS_Z3:
+            self._reset_z3_state()  # Phase 3: prevent memory leak
             return self._z3_prove_invariant(invariant_func, variables, domains)
         # Fallback: usar AC-3 solver para verificacion exhaustiva
         solver = ConstraintSolver(timeout_ms=self.timeout_ms)
         return solver.verify_invariant(invariant_func, variables, domains)
 
-    def solve_constraints(self, domains, constraints):
+    def solve_constraints(self, domains: Dict[str, List[Any]], constraints: List[Constraint]) -> Dict[str, Any]:
         """
         Resuelve un sistema de restricciones.
 
@@ -140,7 +144,7 @@ class Z3Solver(
         solver = ConstraintSolver(timeout_ms=self.timeout_ms)
         return solver.solve(domains, constraints)
 
-    def prove_code_safety(self, ast_analysis, raw_code):
+    def prove_code_safety(self, ast_analysis: Dict[str, Any], raw_code: str) -> Dict[str, Any]:
         """
         MAIN new method: Extracts REAL constraints from code via AST analysis
         and proves safety properties using Z3 with deep semantic encoding.
@@ -175,6 +179,9 @@ class Z3Solver(
         }
 
         try:
+            # Reset Z3 state for this proof session (Phase 3: prevent memory leak)
+            self._reset_z3_state()
+
             # ---- Phase 1: Extract variable nullability from annotations ----
             variables_info = ast_analysis.get("variables", [])
             all_var_names = [v["name"] for v in variables_info]

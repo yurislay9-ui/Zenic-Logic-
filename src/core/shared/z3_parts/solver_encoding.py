@@ -4,10 +4,19 @@ Z3 Solver Encoding Mixin.
 Provides domain classification and constraint encoding helpers:
 - _classify_domain: Domain type classification (ENUM, NUMERIC_INT, NUMERIC_REAL, BOOLEAN, MIXED)
 - _add_enum_constraint: Enum/Mixed constraint encoding
-- _add_numeric_constraint: Numeric constraint encoding
+- _add_numeric_constraint: Numeric constraint encoding (FIXED: proper fallback)
 - _add_boolean_constraint: Boolean constraint encoding
 - _encode_value: Bijective value encoding to integers
 - _decode_value: Bijective value decoding from integers
+- _reset_encoding: Clear encoding maps to prevent unbounded memory growth
+
+FIX (Phase 2): _add_numeric_constraint fallback was trivially true
+(Implies(v1 == v2, True)). Now uses domain-aware sampling with the
+constraint's .satisfied() method to build proper Z3 constraints.
+
+FIX (Phase 3): Added _reset_encoding() to prevent unbounded growth of
+_encode_map/_decode_map across solver invocations. Added max size limit
+with LRU-style eviction when maps exceed _MAX_ENCODE_ENTRIES.
 """
 
 import logging
@@ -19,6 +28,17 @@ except ImportError:
     _HAS_Z3 = False
 
 logger = logging.getLogger(__name__)
+
+# Maximum domain size for exhaustive pair enumeration in numeric fallback
+_MAX_EXHAUSTIVE_PAIRS = 500
+# Maximum entries in bijective encoding maps before eviction (Phase 3)
+_MAX_ENCODE_ENTRIES = 10000
+# Number of entries to evict when limit is reached
+_EVICT_BATCH_SIZE = 2000
+# Default max samples for numeric domain sampling
+_DEFAULT_MAX_SAMPLES = 20
+# Decimal precision for Z3 Real value conversion
+_REAL_DECIMAL_PRECISION = 6
 
 
 class Z3SolverEncodingMixin:
@@ -121,7 +141,8 @@ class Z3SolverEncodingMixin:
         else:
             solver.add(z3_module.BoolVal(False))
 
-    def _add_numeric_constraint(self, solver, z3_vars, constraint, num_type="int"):
+    def _add_numeric_constraint(self, solver, z3_vars, constraint, num_type="int",
+                                 var_meta=None):
         """
         Add a constraint between numeric variables using native
         Z3 arithmetic/comparison expressions.
@@ -132,7 +153,10 @@ class Z3SolverEncodingMixin:
         - Equality: v1 == v2
         - Functional: v1 == v2 + k, v1 == v2 * k
 
-        Falls back to valid-pair enumeration for complex predicates.
+        FIX (Phase 2): The fallback previously added a trivially true
+        constraint (Implies(v1 == v2, True)). Now it uses domain-aware
+        sampling with the constraint's .satisfied() method to build
+        proper Z3 constraints from the actual predicate behavior.
         """
         v1 = z3_vars[constraint.var1]
         v2 = z3_vars[constraint.var2]
@@ -170,27 +194,107 @@ class Z3SolverEncodingMixin:
             solver.add(v1 == v2)
             return
 
-        # Fallback: enumerate valid pairs and encode natively
-        # This is needed for complex lambda predicates that
-        # can't be parsed from the description string
-        domains1 = constraint.var1
-        domains2 = constraint.var2
-        # We don't have access to the original domains here,
-        # so we build the constraint by testing a sample range
-        # and encoding the pattern. For complex predicates,
-        # we use Implies to encode the constraint:
-        # If (v1 == some_val), then (v2 must satisfy predicate)
-        # This is more precise than the old valid-pair table
-        # for arithmetic constraints
-        solver.add(z3_module.Implies(
-            v1 == v2,  # At minimum, equal values must satisfy
-            z3_module.BoolVal(True)
-        ))
+        # ============================================================
+        #  FIXED FALLBACK: Domain-aware constraint encoding
+        #  Instead of trivially true Implies(v1==v2, True), we now
+        #  enumerate domain values and test constraint.satisfied()
+        #  to build proper Z3 constraints.
+        # ============================================================
+        if var_meta is not None:
+            meta1 = var_meta.get(constraint.var1, {})
+            meta2 = var_meta.get(constraint.var2, {})
+            vals1 = meta1.get("values", [])
+            vals2 = meta2.get("values", [])
 
-        # For the general case, we need the domain values.
-        # Signal that we need domain-aware encoding
-        # (the caller should use _add_enum_constraint for this)
-        logger.debug("Numeric constraint '%s' uses fallback encoding", constraint.description)
+            if vals1 and vals2:
+                total_pairs = len(vals1) * len(vals2)
+
+                if total_pairs <= _MAX_EXHAUSTIVE_PAIRS:
+                    # Exhaustive enumeration: test every (v1, v2) pair
+                    valid_conditions = []
+                    for val1 in vals1:
+                        for val2 in vals2:
+                            try:
+                                if constraint.satisfied(val1, val2):
+                                    # Build Z3 condition for this valid pair
+                                    cond1 = (v1 == val1) if num_type == "int" else (v1 == z3_module.RealVal(str(val1)))
+                                    cond2 = (v2 == val2) if num_type == "int" else (v2 == z3_module.RealVal(str(val2)))
+                                    valid_conditions.append(z3_module.And(cond1, cond2))
+                            except Exception:
+                                continue
+
+                    if valid_conditions:
+                        solver.add(z3_module.Or(*valid_conditions))
+                    else:
+                        # No valid pairs → constraint is unsatisfiable
+                        solver.add(z3_module.BoolVal(False))
+                        logger.debug(
+                            "Numeric constraint '%s': no valid pairs found — adding False",
+                            constraint.description
+                        )
+                    return
+                else:
+                    # Large domain: sample representative values
+                    # Group vals1 into bins and test boundary + midpoint values
+                    sample1 = self._sample_numeric_domain(vals1, max_samples=_DEFAULT_MAX_SAMPLES)
+                    sample2 = self._sample_numeric_domain(vals2, max_samples=_DEFAULT_MAX_SAMPLES)
+
+                    valid_conditions = []
+                    for val1 in sample1:
+                        for val2 in sample2:
+                            try:
+                                if constraint.satisfied(val1, val2):
+                                    cond1 = (v1 == val1) if num_type == "int" else (v1 == z3_module.RealVal(str(val1)))
+                                    cond2 = (v2 == val2) if num_type == "int" else (v2 == z3_module.RealVal(str(val2)))
+                                    valid_conditions.append(z3_module.And(cond1, cond2))
+                            except Exception:
+                                continue
+
+                    if valid_conditions:
+                        # Use Implies for sampled valid pairs (approximate)
+                        # This is less precise than exhaustive but handles large domains
+                        solver.add(z3_module.Or(*valid_conditions))
+                        logger.debug(
+                            "Numeric constraint '%s': sampled %d/%d pairs, found %d valid",
+                            constraint.description,
+                            len(sample1) * len(sample2),
+                            total_pairs,
+                            len(valid_conditions),
+                        )
+                    else:
+                        solver.add(z3_module.BoolVal(False))
+                    return
+
+        # Last resort: if no domain info available at all, log a warning
+        # and add a minimal constraint (v1 and v2 are related)
+        logger.warning(
+            "Numeric constraint '%s' has no domain info — adding equality fallback. "
+            "Consider providing var_meta for proper constraint encoding.",
+            constraint.description
+        )
+        solver.add(v1 == v2)
+
+    def _sample_numeric_domain(self, values, max_samples=_DEFAULT_MAX_SAMPLES):
+        """Sample representative values from a numeric domain for constraint testing.
+
+        Strategy: take min, max, midpoint, and evenly spaced interior values.
+        """
+        if len(values) <= max_samples:
+            return list(values)
+
+        sorted_vals = sorted(set(v for v in values if isinstance(v, (int, float))))
+        if not sorted_vals:
+            return values[:max_samples]
+
+        if len(sorted_vals) <= max_samples:
+            return sorted_vals
+
+        # Uniform sampling across the range
+        step = (len(sorted_vals) - 1) / (max_samples - 1)
+        indices = [int(round(i * step)) for i in range(max_samples)]
+        indices = sorted(set(max(0, min(i, len(sorted_vals) - 1)) for i in indices))
+
+        return [sorted_vals[i] for i in indices]
 
     def _add_boolean_constraint(self, solver, z3_vars, constraint):
         """
@@ -242,11 +346,43 @@ class Z3SolverEncodingMixin:
     #  Encoding helpers - Bijective mapping (no hash collisions)
     # ================================================================
 
+    def _reset_encoding(self):
+        """
+        Clear bijective encoding maps to prevent unbounded memory growth.
+
+        FIX (Phase 3): The _encode_map and _decode_map grew without bound
+        across solver invocations because only _z3_prove_invariant() reset
+        them. Now every top-level solve/proof method calls this before starting.
+
+        The deep encoding (_z3_solve_attempt) doesn't use bijective mapping
+        at all, so these maps are legacy baggage that just accumulates.
+        """
+        self._encode_map = {}
+        self._decode_map = {}
+        self._next_encode_id = 0
+
     def _encode_value(self, value):
         """
         Bijective encoding of domain values to unique sequential integers.
         No collisions possible - each value gets a unique ID.
+
+        FIX (Phase 3): Added max size limit with LRU-style eviction.
+        When _encode_map exceeds _MAX_ENCODE_ENTRIES, the oldest entries
+        are evicted to prevent unbounded memory growth on long-running
+        solver instances.
         """
+        # Evict oldest entries if limit reached
+        if len(self._encode_map) >= _MAX_ENCODE_ENTRIES:
+            keys_to_evict = list(self._encode_map.keys())[:_EVICT_BATCH_SIZE]
+            for k in keys_to_evict:
+                eid = self._encode_map.pop(k, None)
+                if eid is not None:
+                    self._decode_map.pop(eid, None)
+            logger.debug(
+                "Z3Solver: Encoding map evicted %d entries (limit: %d)",
+                len(keys_to_evict), _MAX_ENCODE_ENTRIES
+            )
+
         # Use a stable key that handles unhashable types
         try:
             key = (type(value).__name__, value)

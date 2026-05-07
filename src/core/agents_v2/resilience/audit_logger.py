@@ -12,7 +12,7 @@ import json
 import threading
 import time
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class AuditEntry:
@@ -36,7 +36,7 @@ class AuditEntry:
         circuit_breaker_state: str = "CLOSED",
         evidence_summary: str = "",
         timestamp: Optional[float] = None,
-    ):
+    ) -> None:
         self.timestamp = timestamp or time.monotonic()
         self.agent = agent
         self.input_hash = input_hash
@@ -48,7 +48,7 @@ class AuditEntry:
         self.circuit_breaker_state = circuit_breaker_state
         self.evidence_summary = evidence_summary
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp,
             "agent": self.agent,
@@ -74,11 +74,11 @@ class AuditLogger:
     - Performance regression detection
     """
 
-    def __init__(self, max_entries: int = 200, total_max: int = 2000):
+    def __init__(self, max_entries: int = 200, total_max: int = 2000) -> None:
         self.max_entries = max_entries
         self.total_max = total_max
 
-        self._per_agent: Dict[str, deque] = {}
+        self._per_agent: dict[str, deque] = {}
         self._global: deque = deque(maxlen=total_max)
         self._lock = threading.Lock()
 
@@ -93,7 +93,7 @@ class AuditLogger:
             # Global buffer
             self._global.append(entry)
 
-    def get_recent(self, agent_name: Optional[str] = None, count: int = 20) -> List[AuditEntry]:
+    def get_recent(self, agent_name: Optional[str] = None, count: int = 20) -> list[AuditEntry]:
         """Get recent entries, optionally filtered by agent."""
         with self._lock:
             if agent_name:
@@ -102,7 +102,7 @@ class AuditLogger:
                 entries = list(self._global)
             return entries[-count:]
 
-    def get_failure_pattern(self, agent_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_failure_pattern(self, agent_name: Optional[str] = None) -> dict[str, Any]:
         """Analyze audit log for failure patterns."""
         entries = self.get_recent(agent_name, count=100)
         if not entries:
@@ -135,7 +135,7 @@ class AuditLogger:
         }
 
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "agents_tracked": len(self._per_agent),

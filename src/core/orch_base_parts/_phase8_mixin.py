@@ -185,5 +185,5 @@ class Phase8Mixin:
                 "automation_agent": self._automation_agent.stats if self._automation_agent else {},
                 "validation_agent": self._validation_agent.stats if self._validation_agent else {},
             },
-            "request_count": self.request_count,
+            "request_count": self._request_count,
         }

@@ -13,7 +13,7 @@ Validates:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import ChainResult, ValidationIssue
@@ -22,7 +22,7 @@ from ..schemas import ChainResult, ValidationIssue
 # COMPATIBILITY RULES — Between block categories
 # ──────────────────────────────────────────────────────────────
 
-CHAIN_COMPATIBILITY_RULES: Dict[tuple, str] = {
+CHAIN_COMPATIBILITY_RULES: dict[tuple, str] = {
     ("data", "validation"): "good",
     ("validation", "data"): "good",
     ("data", "business_logic"): "good",
@@ -36,14 +36,14 @@ CHAIN_COMPATIBILITY_RULES: Dict[tuple, str] = {
 }
 
 # Categories that require specific context
-CATEGORY_CONTEXT_REQUIREMENTS: Dict[str, List[str]] = {
+CATEGORY_CONTEXT_REQUIREMENTS: dict[str, list[str]] = {
     "auth": ["db"],
     "data": ["db"],
     "integrations": ["data_fields"],
 }
 
 # Categories that require specific initial data
-CATEGORY_DATA_REQUIREMENTS: Dict[str, Dict[str, str]] = {
+CATEGORY_DATA_REQUIREMENTS: dict[str, dict[str, str]] = {
     "integrations": {"email": "to"},
 }
 
@@ -57,7 +57,7 @@ class ChainValidator(BaseAgent[ChainResult]):
     Fallback: Return valid=True (trust when cannot parse).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A25_ChainValidator", **kwargs)
 
     def execute(self, input_data: Any) -> ChainResult:
@@ -88,8 +88,8 @@ class ChainValidator(BaseAgent[ChainResult]):
                 source="deterministic",
             )
 
-        incompatibilities: List[str] = []
-        missing: List[str] = []
+        incompatibilities: list[str] = []
+        missing: list[str] = []
 
         # 1. Empty chain check
         if not blocks:
@@ -133,7 +133,7 @@ class ChainValidator(BaseAgent[ChainResult]):
             source="deterministic",
         )
 
-    def _parse_chain(self, chain_data: Any) -> Optional[List[Any]]:
+    def _parse_chain(self, chain_data: Any) -> Optional[list[Any]]:
         """Parse chain data into a list of blocks."""
         if isinstance(chain_data, str):
             try:
@@ -153,10 +153,10 @@ class ChainValidator(BaseAgent[ChainResult]):
 
     def _validate_block_structure(
         self,
-        blocks: List[Any],
-        context: Dict[str, Any],
-        initial_data: Dict[str, Any],
-    ) -> List[str]:
+        blocks: list[Any],
+        context: dict[str, Any],
+        initial_data: dict[str, Any],
+    ) -> list[str]:
         """Validate individual block structure and requirements."""
         issues = []
 
@@ -202,7 +202,7 @@ class ChainValidator(BaseAgent[ChainResult]):
 
         return issues
 
-    def _validate_type_compatibility(self, blocks: List[Any]) -> List[str]:
+    def _validate_type_compatibility(self, blocks: list[Any]) -> list[str]:
         """Check that block outputs can feed into subsequent block inputs."""
         issues = []
 
@@ -245,11 +245,11 @@ class ChainValidator(BaseAgent[ChainResult]):
             return True
 
         # Normalize types to sets of strings
-        output_types: Set[str] = set()
+        output_types: set[str] = set()
         for o in outputs:
             output_types.add(o if isinstance(o, str) else o.get("type", ""))
 
-        input_types: Set[str] = set()
+        input_types: set[str] = set()
         for inp in inputs:
             input_types.add(inp if isinstance(inp, str) else inp.get("type", ""))
 
@@ -264,7 +264,7 @@ class ChainValidator(BaseAgent[ChainResult]):
 
         return False
 
-    def _validate_category_compatibility(self, blocks: List[Any]) -> List[str]:
+    def _validate_category_compatibility(self, blocks: list[Any]) -> list[str]:
         """Check category-level compatibility between consecutive blocks."""
         issues = []
 
@@ -286,10 +286,10 @@ class ChainValidator(BaseAgent[ChainResult]):
 
     def _check_missing_requirements(
         self,
-        blocks: List[Any],
-        context: Dict[str, Any],
-        initial_data: Dict[str, Any],
-    ) -> List[str]:
+        blocks: list[Any],
+        context: dict[str, Any],
+        initial_data: dict[str, Any],
+    ) -> list[str]:
         """Check for missing required elements in the chain."""
         missing = []
 
@@ -313,9 +313,9 @@ class ChainValidator(BaseAgent[ChainResult]):
 
     def _validate_strict(
         self,
-        blocks: List[Any],
-        existing_issues: List[str],
-    ) -> List[str]:
+        blocks: list[Any],
+        existing_issues: list[str],
+    ) -> list[str]:
         """Strict mode: additional validation checks."""
         issues = []
 

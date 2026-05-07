@@ -3,10 +3,18 @@ TITAN OMNISCALE X - Agent Schemas (Pydantic)
 
 Esquemas de entrada/salida para cada agente.
 Validación automática de respuestas del LLM.
+
+NOTE: TriggerSpec, ActionSpec, ScheduleSpec, ValidationIssue are now
+re-exported from agents_v2/schemas/types.py (single source of truth).
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from dataclasses import dataclass, field
+
+# ── Re-export unified types from v2 schemas (single source of truth) ──
+from src.core.agents_v2.schemas.types import (  # noqa: F401
+    TriggerSpec, ActionSpec, ScheduleSpec, ValidationIssue,
+)
 
 
 # ============================================================
@@ -27,7 +35,7 @@ class IntentOutput:
     goal: str = "FEATURE_ADD"       # COMPLEXITY_REDUCTION|MODERN_PATTERN|BUG_FIX|FEATURE_ADD|SECURITY_HARDEN|PERFORMANCE|READABILITY
     target: str = ""
     language: str = "python"
-    entities: Dict[str, Any] = field(default_factory=dict)
+    entities: dict[str, Any] = field(default_factory=dict)
     template_type: str = "generic"
     criticality: str = "standard"   # standard|moderate|critical
     confidence: float = 0.0
@@ -61,9 +69,9 @@ class ReasoningOutput:
     answer: str = ""
     confidence: float = 0.0
     mode: str = "step_by_step"
-    steps: List[ReasoningStep] = field(default_factory=list)
+    steps: list[ReasoningStep] = field(default_factory=list)
     refinements: int = 0
-    context_used: List[str] = field(default_factory=list)
+    context_used: list[str] = field(default_factory=list)
     memory_hits: int = 0
     source: str = "fallback"
     total_duration_ms: int = 0
@@ -77,8 +85,8 @@ class ReasoningOutput:
 class BusinessInput:
     """Input para BusinessLogicAgent."""
     operation_type: str = ""    # invoice|inventory|crm|task|report|notification|analytics|custom
-    data: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     description: str = ""
 
 
@@ -86,10 +94,10 @@ class BusinessInput:
 class BusinessOutput:
     """Output de BusinessLogicAgent."""
     success: bool = False
-    data: Dict[str, Any] = field(default_factory=dict)
-    side_effects: List[str] = field(default_factory=list)
-    insights: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    data: dict[str, Any] = field(default_factory=dict)
+    side_effects: list[str] = field(default_factory=list)
+    insights: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     source: str = "fallback"
 
 
@@ -104,7 +112,7 @@ class CodeInput:
     requirements: str = ""
     language: str = "python"
     existing_code: str = ""
-    constraints: Dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -120,7 +128,7 @@ class CodeOutput:
     """Output de CodeAgent."""
     code: str = ""
     language: str = "python"
-    files: List[FileSpec] = field(default_factory=list)
+    files: list[FileSpec] = field(default_factory=list)
     test_code: str = ""
     explanation: str = ""
     source: str = "fallback"
@@ -134,42 +142,20 @@ class CodeOutput:
 class AutomationInput:
     """Input para AutomationAgent."""
     description: str = ""
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
-class TriggerSpec:
-    """Especificación de un trigger."""
-    type: str = "manual"        # manual|schedule|event|webhook
-    config: Dict[str, Any] = field(default_factory=dict)
-    description: str = ""
-
-
-@dataclass
-class ActionSpec:
-    """Especificación de una acción."""
-    type: str = "log"           # email|http|db|file|webhook|notification|transform|schedule|log
-    config: Dict[str, Any] = field(default_factory=dict)
-    description: str = ""
-
-
-@dataclass
-class ScheduleSpec:
-    """Especificación de programación."""
-    type: str = "manual"        # manual|interval|cron|once
-    interval_seconds: int = 0
-    cron_expression: str = ""
-    description: str = ""
+# NOTE: TriggerSpec, ActionSpec, ScheduleSpec are imported from agents_v2/schemas/types.py
 
 
 @dataclass
 class AutomationOutput:
     """Output de AutomationAgent."""
     name: str = "unnamed_automation"
-    triggers: List[TriggerSpec] = field(default_factory=list)
-    actions: List[ActionSpec] = field(default_factory=list)
+    triggers: list[TriggerSpec] = field(default_factory=list)
+    actions: list[ActionSpec] = field(default_factory=list)
     schedule: ScheduleSpec = field(default_factory=ScheduleSpec)
-    conditions: List[str] = field(default_factory=list)
+    conditions: list[str] = field(default_factory=list)
     description: str = ""
     source: str = "fallback"
 
@@ -183,26 +169,19 @@ class ValidationInput:
     """Input para ValidationAgent."""
     target: str = "code"        # code|chain|config
     content: str = ""
-    rules: List[str] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
     language: str = "python"
 
 
-@dataclass
-class ValidationIssue:
-    """Un problema encontrado por la validación."""
-    severity: str = "warning"   # error|warning|info
-    code: str = ""
-    message: str = ""
-    line: int = 0
-    suggestion: str = ""
+# NOTE: ValidationIssue is imported from agents_v2/schemas/types.py
 
 
 @dataclass
 class ValidationOutput:
     """Output de ValidationAgent."""
     is_valid: bool = True
-    issues: List[ValidationIssue] = field(default_factory=list)
-    suggestions: List[str] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
     risk_score: float = 0.0
     source: str = "fallback"
 
@@ -236,9 +215,9 @@ class ContextEntry:
 class ContextOutput:
     """Output de ContextAgent (F3)."""
     compressed_context: str = ""            # Compressed context to inject
-    relevant_memories: List[Dict[str, Any]] = field(default_factory=list)
-    token_budget: Dict[str, int] = field(default_factory=dict)
-    context_scores: Dict[str, float] = field(default_factory=dict)
+    relevant_memories: list[dict[str, Any]] = field(default_factory=list)
+    token_budget: dict[str, int] = field(default_factory=dict)
+    context_scores: dict[str, float] = field(default_factory=dict)
     entries_used: int = 0
     entries_total: int = 0
     compression_ratio: float = 1.0
@@ -269,4 +248,4 @@ class CriticalityOutput:
     reason: str = ""                  # Explanation of why this level
     confidence: float = 0.0           # How confident in this assessment
     source: str = "fallback"          # "llm" or "fallback"
-    adjustments: Dict[str, Any] = field(default_factory=dict)  # Behavioral adjustments for downstream agents
+    adjustments: dict[str, Any] = field(default_factory=dict)  # Behavioral adjustments for downstream agents

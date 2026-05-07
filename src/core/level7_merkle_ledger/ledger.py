@@ -17,6 +17,10 @@ v16 - AISLAMIENTO:
 - Los snapshots y rollbacks operan dentro del workspace aislado
 - Las DBs del ledger son INDEPENDIENTES cuando opera en sandbox
 
+FIX (Phase 2): Added retry with exponential backoff for DB operations.
+SQLite can fail transiently (database locked, busy timeout) especially
+under concurrent write access.
+
 Sin dependencias externas. Compatible con Android.
 """
 
@@ -26,14 +30,16 @@ import sqlite3
 import time
 import logging
 from pathlib import Path
-from typing import Optional
 from src.core.shared.contracts import MerkleNode
 from src.core.shared.db_initializer import get_data_dir, get_connection
+from src.core.shared.retry import with_retry
+from src.core.shared.db_utils import purge_tenant_rows
+from src.core.shared.tenant_utils import resolve_tenant_id
 
 logger = logging.getLogger(__name__)
 
-# Default tenant_id for backward compatibility
-_ANONYMOUS_TENANT = "__anonymous__"
+# Number of hex characters to use for hashed backup filenames
+_BACKUP_HASH_LENGTH = 16
 
 
 class MerkleLedger:
@@ -42,12 +48,7 @@ class MerkleLedger:
     def __init__(self):
         self.bk_dir = get_data_dir() / "backups"
         self.bk_dir.mkdir(exist_ok=True)
-        # Resolve tenant_id from thread-local TenantContext
-        try:
-            from src.core.tenant._context import get_current_tenant
-            self._tenant_id: str = get_current_tenant().effective_tenant_id
-        except Exception:
-            self._tenant_id = _ANONYMOUS_TENANT
+        self._tenant_id: str = resolve_tenant_id()
         logger.debug("MerkleLedger initialized with tenant_id='%s'", self._tenant_id)
         self._init_db()
 
@@ -77,16 +78,35 @@ class MerkleLedger:
         # Migrate: add tenant_id column if it doesn't exist (for existing databases)
         try:
             from src.core.tenant._isolation import TenantIsolation
-            TenantIsolation.migrate_add_tenant_id(conn, "ledger", _ANONYMOUS_TENANT)
+            TenantIsolation.migrate_add_tenant_id(conn, "ledger", "__anonymous__")
         except Exception as e:
             logger.debug("Ledger tenant migration skipped: %s", e)
 
     def _hash_content(self, content):
+        """Compute SHA-256 hash of string or bytes content.
+
+        Args:
+            content: String or bytes to hash.
+
+        Returns:
+            Hex-encoded SHA-256 digest string.
+        """
         if isinstance(content, bytes):
             return hashlib.sha256(content).hexdigest()
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
     def _merkle_root(self, hashes):
+        """Compute Merkle root hash from a list of leaf hashes.
+
+        Pairs hashes and computes SHA-256 of concatenated pairs,
+        repeating until a single root hash remains.
+
+        Args:
+            hashes: List of hex-encoded hash strings.
+
+        Returns:
+            Single root hash string, or hash of b'empty' if no hashes.
+        """
         if not hashes:
             return hashlib.sha256(b'empty').hexdigest()
         if len(hashes) == 1:
@@ -158,14 +178,18 @@ class MerkleLedger:
                     pass
 
     def _record_operation(self, file_path, content_hash, parent_hash, operation, db_path=None, tenant_id=None):
-        """Registra una operacion en el ledger con tenant_id.
+        """Register an operation in the ledger with tenant_id.
 
-        Si db_path se proporciona, usa esa DB.
-        Si tenant_id se proporciona, usa ese tenant; si no, usa self._tenant_id.
+        If db_path is provided, uses that DB. Otherwise uses the pool.
+        If tenant_id is provided, uses that; otherwise uses self._tenant_id.
+
+        Uses shared retry utility for transient SQLite failures.
         """
         tid = tenant_id or self._tenant_id
         conn = None
-        try:
+
+        def _insert():
+            nonlocal conn
             if db_path:
                 conn = sqlite3.connect(db_path)
             else:
@@ -174,6 +198,11 @@ class MerkleLedger:
                 "INSERT INTO ledger (file_path, hash_sha256, parent_hash, operation, timestamp, tenant_id) VALUES (?,?,?,?,?,?)",
                 (file_path, content_hash, parent_hash, operation, time.time(), tid))
             conn.commit()
+
+        try:
+            with_retry(_insert, label="MerkleLedger record_operation")
+        except Exception:
+            pass  # with_retry already logged the failure
         finally:
             if db_path and conn:
                 try:
@@ -181,7 +210,24 @@ class MerkleLedger:
                 except Exception:
                     pass
 
-    def snapshot(self, rel_path, project_dir, workspace=None):
+    @staticmethod
+    def _validate_rel_path(rel_path: str, base_dir: Path) -> Path:
+        """Validate that rel_path resolves within base_dir to prevent path traversal.
+
+        Security: Prevents ../../etc/passwd style attacks by resolving the
+        full path and verifying it stays within the intended directory boundary.
+        """
+        target = base_dir / rel_path
+        resolved = target.resolve()
+        base_resolved = base_dir.resolve()
+        if not resolved.is_relative_to(base_resolved):
+            raise ValueError(
+                f"Path traversal detected: '{rel_path}' resolves to "
+                f"'{resolved}' which is outside '{base_resolved}'"
+            )
+        return resolved
+
+    def snapshot(self, rel_path: str, project_dir, workspace=None) -> None:
         """
         Crea un snapshot (backup) de un archivo.
 
@@ -207,16 +253,25 @@ class MerkleLedger:
                 logger.debug("Snapshot (sandbox): %s in workspace %s [tenant=%s]", rel_path, workspace.sandbox_id, tid)
         else:
             # MODO LEGACY: operar en el filesystem del sistema
-            p = Path(project_dir) / rel_path
+            # Security: Validate rel_path stays within project_dir
+            try:
+                project_path = Path(project_dir).resolve()
+                p = self._validate_rel_path(rel_path, project_path)
+            except ValueError as e:
+                logger.warning("Snapshot rejected (path traversal): %s", e)
+                return
             if p.exists():
                 content = p.read_text(encoding="utf-8")
-                bk_path = self.bk_dir / rel_path.replace("/", "_")
+                # Use hashed backup name to avoid path collision (a/b.py vs a_b.py)
+                import hashlib as _hl
+                safe_bk_name = _hl.sha256(rel_path.encode()).hexdigest()[:_BACKUP_HASH_LENGTH] + ".bak"
+                bk_path = self.bk_dir / safe_bk_name
                 shutil.copy2(p, bk_path)
                 content_hash = self._hash_content(content)
                 parent_hash = self._get_last_hash(rel_path, tenant_id=tid)
                 self._record_operation(rel_path, content_hash, parent_hash, "SNAPSHOT", tenant_id=tid)
 
-    def commit(self, rel_path, content, project_dir, workspace=None):
+    def commit(self, rel_path: str, content: str, project_dir, workspace=None) -> 'MerkleNode':
         """
         Escribe contenido y registra el commit en el ledger.
 
@@ -255,7 +310,16 @@ class MerkleLedger:
                         rel_path, root_hash[:12], workspace.sandbox_id, tid)
         else:
             # MODO LEGADO: escribir en el filesystem del sistema
-            p = Path(project_dir) / rel_path
+            # Security: Validate rel_path stays within project_dir
+            try:
+                project_path = Path(project_dir).resolve()
+                p = self._validate_rel_path(rel_path, project_path)
+            except ValueError as e:
+                logger.warning("Commit rejected (path traversal): %s", e)
+                return MerkleNode(
+                    file_path=rel_path, hash_sha256="REJECTED",
+                    parent_hash="N/A", timestamp=int(time.time()), operation="REJECTED"
+                )
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
             content_hash = self._hash_content(content)
@@ -275,10 +339,10 @@ class MerkleLedger:
 
         return MerkleNode(
             file_path=rel_path, hash_sha256=root_hash,
-            parent_hash=parent_hash, timestamp=time.time(), operation="COMMIT"
+            parent_hash=parent_hash, timestamp=int(time.time()), operation="COMMIT"
         )
 
-    def rollback(self, rel_path, project_dir, workspace=None):
+    def rollback(self, rel_path: str, project_dir, workspace=None) -> bool:
         """
         Restaura un archivo desde el backup.
 
@@ -309,8 +373,17 @@ class MerkleLedger:
             return success
         else:
             # MODO LEGADO: restaurar en el filesystem
-            bk = self.bk_dir / rel_path.replace("/", "_")
-            p = Path(project_dir) / rel_path
+            # Security: Validate rel_path stays within project_dir
+            try:
+                project_path = Path(project_dir).resolve()
+                p = self._validate_rel_path(rel_path, project_path)
+            except ValueError as e:
+                logger.warning("Rollback rejected (path traversal): %s", e)
+                return False
+            # Use hashed backup name (consistent with snapshot)
+            import hashlib as _hl2
+            safe_bk_name = _hl2.sha256(rel_path.encode()).hexdigest()[:_BACKUP_HASH_LENGTH] + ".bak"
+            bk = self.bk_dir / safe_bk_name
             if bk.exists():
                 shutil.copy2(bk, p)
                 content = p.read_text(encoding="utf-8")
@@ -343,25 +416,10 @@ class MerkleLedger:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_tenant ON ledger(tenant_id)")
 
     def purge_tenant_ledger(self, tenant_id: str) -> int:
-        """Delete all ledger entries for a specific tenant.
-
-        Used for GDPR compliance (right to be forgotten) or
-        tenant deprovisioning.
-
-        Args:
-            tenant_id: Tenant identifier to purge.
-
-        Returns:
-            Number of rows deleted.
-        """
+        """Delete all ledger entries for a specific tenant (GDPR / deprovisioning)."""
         try:
             conn = get_connection("merkle_ledger.sqlite")
-            cursor = conn.execute("DELETE FROM ledger WHERE tenant_id=?", (tenant_id,))
-            conn.commit()
-            count = cursor.rowcount
-            if count > 0:
-                logger.info("MerkleLedger: purged %d entries for tenant '%s'", count, tenant_id)
-            return count
+            return purge_tenant_rows(conn, "ledger", tenant_id)
         except Exception as e:
             logger.error("MerkleLedger: purge failed for tenant '%s': %s", tenant_id, e)
             return 0

@@ -17,7 +17,7 @@ No AI. All prefetching is deterministic based on operation/goal heuristics.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import PrefetchResult
@@ -40,7 +40,7 @@ EPISODE_SNIPPET_LEN = 100        # Max chars for episode snippets
 # What to prefetch for each operation/goal combination.
 # ──────────────────────────────────────────────────────────────
 
-PREFETCH_STRATEGIES: Dict[str, Dict[str, List[str]]] = {
+PREFETCH_STRATEGIES: dict[str, dict[str, list[str]]] = {
     "operation": {
         "CREATE": ["similar_solutions", "procedural_patterns"],
         "OPTIMIZE": ["similar_solutions", "procedural_patterns"],
@@ -79,7 +79,7 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
       - Gracefully handles SmartMemory/SemanticEngine unavailability.
     """
 
-    def __init__(self, smart_memory=None, semantic_engine=None, **kwargs):
+    def __init__(self, smart_memory=None, semantic_engine=None, **kwargs) -> None:
         super().__init__(name="A08_ContextPrefetcher", **kwargs)
         self._smart_memory = smart_memory
         self._semantic_engine = semantic_engine
@@ -120,8 +120,8 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
         strategies = self._get_strategies(operation, goal)
 
         # Execute each strategy
-        results: List[Dict[str, Any]] = []
-        hints: List[str] = []
+        results: list[dict[str, Any]] = []
+        hints: list[str] = []
 
         for strategy in strategies:
             fetched, hint = self._execute_strategy(strategy, message, operation, goal)
@@ -148,7 +148,7 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
     # PRIVATE: Strategy Methods
     # ──────────────────────────────────────────────────────────
 
-    def _get_strategies(self, operation: str, goal: str) -> List[str]:
+    def _get_strategies(self, operation: str, goal: str) -> list[str]:
         """Determine which prefetch strategies to execute, preserving order."""
         op_strategies = PREFETCH_STRATEGIES["operation"].get(operation, [])
         goal_strategies = PREFETCH_STRATEGIES["goal"].get(goal, [])
@@ -182,7 +182,7 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
 
     def _prefetch_solutions(self, message: str) -> tuple:
         """Prefetch similar solutions from long-term memory."""
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
 
         if not message:
             return results, ""
@@ -208,7 +208,7 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
 
     def _prefetch_episodes(self, operation: str, goal: str) -> tuple:
         """Prefetch error episodes for debugging tasks."""
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
 
         try:
             episodes = self._smart_memory.find_episodes(
@@ -228,7 +228,7 @@ class ContextPrefetcher(BaseAgent[PrefetchResult]):
 
     def _prefetch_patterns(self, operation: str) -> tuple:
         """Prefetch procedural patterns for creation/optimization tasks."""
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
 
         try:
             patterns = self._smart_memory.find_patterns(

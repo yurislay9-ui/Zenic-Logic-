@@ -7,7 +7,7 @@ No AI. All calculations are pure arithmetic with validation.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import InvoiceResult
@@ -34,7 +34,7 @@ class InvoiceProcessor(BaseAgent[InvoiceResult]):
     Fallback: Empty InvoiceResult with valid=False.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A09_InvoiceProcessor", **kwargs)
 
     def execute(self, input_data: Any) -> InvoiceResult:

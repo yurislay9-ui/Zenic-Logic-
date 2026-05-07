@@ -8,7 +8,7 @@ No AI. Pure AST transformation for Python, passthrough for other languages.
 from __future__ import annotations
 
 import ast
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CodeResult
@@ -23,7 +23,7 @@ class CodeRefactorer(BaseAgent[CodeResult]):
     Fallback: Return original code unchanged.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A18_CodeRefactorer", **kwargs)
 
     def execute(self, input_data: Any) -> CodeResult:
@@ -81,7 +81,7 @@ class CodeRefactorer(BaseAgent[CodeResult]):
                 source="deterministic",
             )
 
-        changes: List[str] = []
+        changes: list[str] = []
         lines = code.split('\n')
         modified_lines = list(lines)
 

@@ -15,6 +15,7 @@ from .invariants_patterns import Z3InvariantPatternsMixin
 from .solver_core import Z3SolverCoreMixin
 from .solver_encoding import Z3SolverEncodingMixin
 from .ac3_fallback import AC3FallbackMixin
+from .z3_context import z3_session
 
 __all__ = [
     "Z3Solver",
@@ -27,4 +28,5 @@ __all__ = [
     "Z3SolverCoreMixin",
     "Z3SolverEncodingMixin",
     "AC3FallbackMixin",
+    "z3_session",
 ]

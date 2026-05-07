@@ -10,6 +10,10 @@ MEJORAS v16:
 - Consulta complejidad y conexiones de nodos desde SQLite
 - Clasifica por criticidad basada en estructura + semantica
 
+FIX (Phase 2): Added retry with backoff for DB operations in
+_check_ast_criticality. SQLite can fail transiently (locked DB,
+busy timeout) and retrying prevents false negatives in routing.
+
 Sin dependencias externas. Compatible con Android.
 """
 
@@ -22,8 +26,13 @@ from src.core.shared.contracts import (
 )
 from src.config.loader import load_settings, get_critical_nodes, get_critical_patterns
 from src.core.shared.db_initializer import get_connection
+from src.core.shared.retry import with_retry
+from src.core.shared.db_utils import escape_sql_like
 
 logger = logging.getLogger(__name__)
+
+# Complexity threshold above which a function is considered critical
+_CRITICAL_COMPLEXITY_THRESHOLD = 15
 
 
 class MacroRouter:
@@ -54,7 +63,7 @@ class MacroRouter:
         self.critical_patterns = get_critical_patterns(self.settings)
         self.critical_keywords = get_critical_nodes(self.settings)
 
-    def route(self, intent):
+    def route(self, intent: 'IntentPayload') -> 'RoutingPayload':
         """Enruta basado en criticidad semantica + firmas topologicas del grafo AST."""
         target_lower = (intent.target or "unknown").lower()
         context_lower = (intent.context or "").lower()
@@ -122,21 +131,24 @@ class MacroRouter:
             reason="Operacion estandar. Respuesta directa."
         )
 
-    def _check_critical_keywords(self, target_lower, context_lower):
+    def _check_critical_keywords(self, target_lower: str, context_lower: str) -> bool:
         """Verifica si el target o contexto contienen keywords criticos desde YAML."""
         for keyword in self.critical_keywords:
+            # Security: Skip empty keywords to prevent regex match-everywhere bug
+            if not keyword:
+                continue
             if re.search(r'\b' + re.escape(keyword) + r'\b', target_lower) or re.search(r'\b' + re.escape(keyword) + r'\b', context_lower):
                 return True
         return False
 
-    def _check_critical_patterns(self, target_lower):
+    def _check_critical_patterns(self, target_lower: str) -> bool:
         """Verifica si el target coincide con patrones criticos globales desde YAML."""
         for pattern in self.critical_patterns:
             if fnmatch.fnmatch(target_lower, pattern):
                 return True
         return False
 
-    def _check_ast_criticality(self, target_name):
+    def _check_ast_criticality(self, target_name: str) -> bool:
         """
         Consulta el Grafo AST (Nivel 3) para verificar si el nodo target
         es critico basado en su topologia en el grafo.
@@ -145,11 +157,13 @@ class MacroRouter:
         1. Su nombre contiene keywords criticos, o
         2. Esta conectado a nodos criticos (distancia <= 2 en el grafo)
         3. Tiene alta centralidad (muchas conexiones entrantes)
+
+        Uses shared retry utility for transient SQLite failures.
         """
-        try:
+        def _query_ast():
             conn = get_connection("graph_ast.sqlite")
-            # Escape SQL LIKE wildcards to prevent unintended pattern matching
-            escaped_name = target_name.replace("%", "\\%").replace("_", "\\_")
+            # Security: Use shared escape utility to prevent LIKE injection
+            escaped_name = escape_sql_like(target_name)
             rows = conn.execute(
                 "SELECT name, node_type, connections, complexity FROM ast_nodes WHERE name LIKE ? ESCAPE '\\'",
                 (f"%{escaped_name}%",)
@@ -183,11 +197,13 @@ class MacroRouter:
                     pass
 
                 # Criterio 3: Alta centralidad (nodo con muchas conexiones = critico)
-                if node_type == "function" and complexity > 15:
+                if node_type == "function" and complexity > _CRITICAL_COMPLEXITY_THRESHOLD:
                     logger.debug("AST critical match (high complexity): %s complexity=%d", name, complexity)
                     return True
 
-        except Exception as e:
-            logger.debug("AST criticality check error: %s", e)
+            return False  # No criticality found after successful query
 
-        return False
+        try:
+            return with_retry(_query_ast, label="MacroRouter check_ast_criticality")
+        except Exception:
+            return False

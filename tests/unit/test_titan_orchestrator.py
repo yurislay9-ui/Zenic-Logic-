@@ -59,7 +59,9 @@ def _make_mock_orchestrator():
         orch = TitanOrchestrator()
 
     # Now manually set up all attributes that execute() needs
-    orch.request_count = 0
+    import threading
+    orch._request_count = 0
+    orch._request_count_lock = threading.Lock()
     orch._memory = MagicMock()
     orch._memory.check_cache = MagicMock(return_value=None)
     orch._memory.add_working = MagicMock()
@@ -126,10 +128,10 @@ class TestTitanOrchestratorInheritance:
         assert inspect.iscoroutinefunction(TitanOrchestrator.execute)
 
     def test_has_request_count(self):
-        """Instance should have request_count from BaseOrchestrator._init_common_state."""
+        """Instance should have _request_count from BaseOrchestrator._init_common_state."""
         orch = _make_mock_orchestrator()
-        assert hasattr(orch, "request_count")
-        assert orch.request_count == 0
+        assert hasattr(orch, "_request_count")
+        assert orch._request_count == 0
 
 
 # ===========================================================================
@@ -160,7 +162,7 @@ class TestExecuteCacheHit:
         orch._memory.check_cache.return_value = {"source": "test", "response": "x"}
 
         await orch.execute("test")
-        assert orch.request_count == 1
+        assert orch._request_count == 1
 
     @pytest.mark.asyncio
     async def test_cache_hit_logs_request(self):
@@ -203,7 +205,7 @@ class TestExecuteSandboxPass:
             MockSA._extract_code_block.return_value = (None, None)
             await orch.execute("test")
 
-        assert orch.request_count == 1
+        assert orch._request_count == 1
 
     @pytest.mark.asyncio
     async def test_success_includes_hash(self):

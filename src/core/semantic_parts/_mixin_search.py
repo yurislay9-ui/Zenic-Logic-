@@ -4,12 +4,17 @@ Mixin: Semantic search and clustering methods.
 
 from typing import Any, Dict, List, Tuple
 
+# Named constants (previously magic numbers)
+_DEFAULT_SEARCH_TOP_K = 5
+_DEFAULT_SEARCH_THRESHOLD = 0.5
+_DEFAULT_SIMILAR_THRESHOLD = 0.7
+
 
 class SearchMixin:
     """Semantic search and clustering for SemanticEngine."""
 
     def search(self, query: str, documents: List[Dict[str, Any]],
-               top_k: int = 5, threshold: float = 0.5) -> List[Tuple[Dict, float]]:
+               top_k: int = _DEFAULT_SEARCH_TOP_K, threshold: float = _DEFAULT_SEARCH_THRESHOLD) -> List[Tuple[Dict, float]]:
         """
         Búsqueda semántica en una lista de documentos.
 
@@ -44,7 +49,7 @@ class SearchMixin:
         return results[:top_k]
 
     def find_similar_intents(self, text: str, history: List[str],
-                              threshold: float = 0.7) -> List[Tuple[str, float]]:
+                              threshold: float = _DEFAULT_SIMILAR_THRESHOLD) -> List[Tuple[str, float]]:
         """
         Encuentra consultas previas semánticamente similares.
         Útil para SmartMemory: detectar si ya respondimos algo similar.

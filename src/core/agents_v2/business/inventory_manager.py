@@ -7,7 +7,7 @@ No AI. Pure arithmetic with threshold checks.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import InventoryResult
@@ -30,7 +30,7 @@ class InventoryManager(BaseAgent[InventoryResult]):
     Fallback: Empty InventoryResult with no levels.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A10_InventoryManager", **kwargs)
 
     def execute(self, input_data: Any) -> InventoryResult:
@@ -68,8 +68,8 @@ class InventoryManager(BaseAgent[InventoryResult]):
             new_qty = max(0, current_qty + quantity_change)
 
         # ── Alerts ──
-        alerts: List[str] = []
-        reorder: List[str] = []
+        alerts: list[str] = []
+        reorder: list[str] = []
 
         if new_qty <= 0:
             alerts.append(f"OUT_OF_STOCK:{product_id}:qty=0")

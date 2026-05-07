@@ -8,7 +8,7 @@ No AI. AST-based pattern detection for Python, passthrough for others.
 from __future__ import annotations
 
 import ast
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CodeResult
@@ -23,7 +23,7 @@ class CodeOptimizer(BaseAgent[CodeResult]):
     Fallback: Return original code unchanged.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A19_CodeOptimizer", **kwargs)
 
     def execute(self, input_data: Any) -> CodeResult:
@@ -74,7 +74,7 @@ class CodeOptimizer(BaseAgent[CodeResult]):
                 source="deterministic",
             )
 
-        improvements: List[str] = []
+        improvements: list[str] = []
 
         # Check for bare except
         for node in ast.walk(tree):

@@ -9,7 +9,7 @@ Supports bilingual EN/ES keywords.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import IntentResult
@@ -29,7 +29,7 @@ VALID_GOALS = frozenset({
 })
 
 # Bilingual keyword maps (EN + ES)
-OP_KEYWORDS: Dict[str, list] = {
+OP_KEYWORDS: dict[str, list] = {
     "CREATE": [
         "create", "build", "generate", "make", "add", "new", "implement",
         "crear", "construir", "generar", "hacer", "agregar", "nuevo", "implementar",
@@ -64,7 +64,7 @@ OP_KEYWORDS: Dict[str, list] = {
     ],
 }
 
-GOAL_KEYWORDS: Dict[str, list] = {
+GOAL_KEYWORDS: dict[str, list] = {
     "COMPLEXITY_REDUCTION": [
         "simplify", "reduce complexity", "clean up", "less complex",
         "simplificar", "reducir complejidad", "limpiar",
@@ -105,14 +105,14 @@ class IntentClassifier(BaseAgent[IntentResult]):
     Fallback: Default to SEARCH + FEATURE_ADD with low confidence.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A01_IntentClassifier", **kwargs)
         # Pre-compile keyword patterns for performance
         self._op_patterns = self._build_patterns(OP_KEYWORDS)
         self._goal_patterns = self._build_patterns(GOAL_KEYWORDS)
 
     @staticmethod
-    def _build_patterns(keywords: Dict[str, list]) -> Dict[str, list]:
+    def _build_patterns(keywords: dict[str, list]) -> dict[str, list]:
         """Pre-compile regex patterns for keyword matching."""
         patterns = {}
         for key, kws in keywords.items():
@@ -139,9 +139,9 @@ class IntentClassifier(BaseAgent[IntentResult]):
         # Score goals
         best_goal, goal_score = self._score_category(text, self._goal_patterns, "FEATURE_ADD")
 
-        # Confidence = average of normalized scores
-        confidence = min((op_score + goal_score) / 2.0, 1.0)
-        confidence = max(confidence, 0.1)  # Minimum confidence
+        # op_score and goal_score are each 0-1 normalized, so average is also 0-1.
+        # The max() ensures a minimum confidence floor for downstream agents.
+        confidence = max((op_score + goal_score) / 2.0, 0.1)
 
         return IntentResult(
             operation=best_op,
@@ -157,10 +157,10 @@ class IntentClassifier(BaseAgent[IntentResult]):
         )
 
     def _score_category(
-        self, text: str, patterns: Dict, default: str
+        self, text: str, patterns: dict, default: str
     ) -> tuple:
         """Score text against keyword patterns, return (best_key, score)."""
-        scores: Dict[str, float] = {}
+        scores: dict[str, float] = {}
 
         for key, (kws, compiled) in patterns.items():
             score = 0.0

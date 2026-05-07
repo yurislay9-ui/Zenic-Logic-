@@ -79,21 +79,23 @@ def _validate_url(url: str) -> bool:
 def _safe_path(path: str, base_dir: str = "") -> str:
     """Resuelve path y verifica que no escape del base_dir (path traversal).
 
-    Si base_dir es "", usa os.getcwd(). Si el path es absoluto y
-    está en un directorio permitido (/tmp, /var/tmp, etc.), lo permite.
-    Nunca permite ../ que escape del directorio base.
+    SECURITY (H-05 fix): Removed /tmp and home directory from allowed prefixes.
+    Only the explicitly configured base_dir is allowed. This prevents reading
+    sensitive files like ~/.ssh/, ~/.env, ~/.bashrc via FileExecutor.
+
+    If base_dir is "", uses os.getcwd(). Absolute paths are only allowed
+    if they resolve within the base_dir. Relative paths are resolved
+    against base_dir and must not escape it via ../ traversal.
     """
     if not base_dir: base_dir = os.getcwd()
     base_dir = os.path.realpath(base_dir)
 
-    # Si el path es absoluto, verificar que está en un directorio permitido
+    # Si el path es absoluto, verificar que está dentro del base_dir
     if os.path.isabs(path):
         resolved = os.path.realpath(path)
-        # Permitir rutas absolutas en directorios seguros
-        allowed_prefixes = [base_dir, "/tmp", "/var/tmp", os.path.expanduser("~")]
-        for prefix in allowed_prefixes:
-            if resolved.startswith(prefix + os.sep) or resolved == prefix:
-                return resolved
+        # SECURITY: Only allow paths within the configured base_dir
+        if resolved.startswith(base_dir + os.sep) or resolved == base_dir:
+            return resolved
         raise ValueError(f"Path traversal detected: '{path}' escapes base directory")
 
     # Path relativo: verificar que no escapa del base_dir

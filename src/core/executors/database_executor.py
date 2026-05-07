@@ -87,15 +87,40 @@ class DatabaseExecutor(ActionExecutor):
             return ActionResult(False, {"db_path": db_path}, f"Backup failed: {e}", self._elapsed_ms(start))
 
     async def _execute_script(self, db_path, script, start):
-        """Ejecuta un script SQL con múltiples statements."""
+        """Ejecuta un script SQL con múltiples statements.
+
+        SECURITY (C-03 fix): Each statement in the script is validated
+        via _validate_sql() before execution. This prevents bypassing
+        SQL injection protection by using operation='script'.
+        """
         if not script:
             return ActionResult(False, {}, "No SQL script provided", self._elapsed_ms(start))
+
+        # SECURITY: Split script into individual statements and validate each one
+        # This prevents DROP/DELETE/UPDATE injection via script mode
+        statements = [s.strip() for s in script.split(";") if s.strip()]
+        for stmt in statements:
+            if not _validate_sql(stmt):
+                logger.warning(
+                    "DatabaseExecutor: Script mode blocked dangerous statement: %s",
+                    stmt[:100]
+                )
+                return ActionResult(
+                    False,
+                    {"script_line": stmt[:100]},
+                    f"SQL validation failed in script: dangerous pattern detected",
+                    self._elapsed_ms(start)
+                )
+
         try:
             def _run():
                 conn = sqlite3.connect(db_path)
-                try: conn.executescript(script); conn.commit()
-                finally: conn.close()
+                try:
+                    conn.executescript(script)
+                    conn.commit()
+                finally:
+                    conn.close()
             await asyncio.to_thread(_run)
-            return ActionResult(True, {"script_lines": len(script.split(";"))}, duration_ms=self._elapsed_ms(start))
+            return ActionResult(True, {"script_lines": len(statements)}, duration_ms=self._elapsed_ms(start))
         except Exception as e:
             return ActionResult(False, {}, f"Script execution failed: {e}", self._elapsed_ms(start))

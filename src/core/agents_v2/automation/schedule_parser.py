@@ -64,7 +64,7 @@ class ScheduleParser(BaseAgent[ScheduleSpec]):
     Fallback: Return manual execution (safest default).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A31_ScheduleParser", **kwargs)
 
     def execute(self, input_data: Any) -> ScheduleSpec:

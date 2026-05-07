@@ -13,7 +13,7 @@ Ported from:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import DecomposedSteps, ProblemType, ReasoningStep
@@ -23,7 +23,7 @@ from ..schemas import DecomposedSteps, ProblemType, ReasoningStep
 # ──────────────────────────────────────────────────────────────
 
 # Each template is a list of (description, depends_on) tuples
-STEP_TEMPLATES: Dict[str, List[Dict[str, Any]]] = {
+STEP_TEMPLATES: dict[str, list[dict[str, Any]]] = {
     "api": [
         {"desc": "Identify API endpoints and resource models", "depends": []},
         {"desc": "Design request/response schemas for each endpoint", "depends": ["step_1"]},
@@ -94,7 +94,7 @@ STEP_TEMPLATES: Dict[str, List[Dict[str, Any]]] = {
 }
 
 # Default generic template when no type matches
-GENERIC_TEMPLATE: List[Dict[str, Any]] = [
+GENERIC_TEMPLATE: list[dict[str, Any]] = [
     {"desc": "Analyze requirements and define scope", "depends": []},
     {"desc": "Design data models and interfaces", "depends": ["step_1"]},
     {"desc": "Implement core logic with error handling", "depends": ["step_2"]},
@@ -115,7 +115,7 @@ class StepDecomposer(BaseAgent[DecomposedSteps]):
     Fallback: Return generic 3-step process.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A36_StepDecomposer", **kwargs)
 
     def execute(self, input_data: Any) -> DecomposedSteps:
@@ -178,10 +178,10 @@ class StepDecomposer(BaseAgent[DecomposedSteps]):
         return ""
 
     def _build_steps(
-        self, template: List[Dict[str, Any]], query: str
-    ) -> List[ReasoningStep]:
+        self, template: list[dict[str, Any]], query: str
+    ) -> list[ReasoningStep]:
         """Build ReasoningStep list from template."""
-        steps: List[ReasoningStep] = []
+        steps: list[ReasoningStep] = []
         for i, tmpl in enumerate(template[:MAX_STEPS]):
             # Enrich step description with query context if available
             desc = tmpl.get("desc", f"Step {i + 1}")
@@ -196,15 +196,15 @@ class StepDecomposer(BaseAgent[DecomposedSteps]):
             ))
         return steps
 
-    def _extract_dependencies(self, template: List[Dict[str, Any]]) -> List[str]:
+    def _extract_dependencies(self, template: list[dict[str, Any]]) -> list[str]:
         """Extract dependency strings from template."""
-        deps: List[str] = []
+        deps: list[str] = []
         for i, tmpl in enumerate(template[:MAX_STEPS]):
             for dep in tmpl.get("depends", []):
                 deps.append(f"step_{i + 1} depends on {dep}")
         return deps
 
-    def _compute_order(self, steps: List[ReasoningStep]) -> List[int]:
+    def _compute_order(self, steps: list[ReasoningStep]) -> list[int]:
         """Compute topological execution order (sequential by default)."""
         return [s.step_number for s in steps]
 

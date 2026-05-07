@@ -20,9 +20,12 @@ import re
 import os
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Any
 
 from ._imports import IntentResult
+
+# ── Import canonical constants (single source of truth) ──
+from ..shared.constants import VALID_INTENT_OPERATIONS, VALID_INTENT_GOALS, EXT_LANG_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +49,9 @@ class BoundedTasksMixin:
     #  BOUNDED TASK 1: classify_intent (deterministic keyword scoring)
     # ================================================================
 
-    VALID_OPERATIONS = {"CREATE", "REFACTOR", "DELETE", "SEARCH", "ANALYZE", "EXPLAIN", "DEBUG", "OPTIMIZE"}
-    VALID_GOALS = {"COMPLEXITY_REDUCTION", "MODERN_PATTERN", "BUG_FIX", "FEATURE_ADD",
-                   "SECURITY_HARDEN", "PERFORMANCE", "READABILITY"}
+    # ── Imported from canonical constants.py ──
+    VALID_OPERATIONS = VALID_INTENT_OPERATIONS
+    VALID_GOALS = VALID_INTENT_GOALS
 
     # Keyword maps with weighted scoring
     OP_KEYWORDS = {
@@ -118,15 +121,10 @@ class BoundedTasksMixin:
     #  BOUNDED TASK 2: extract_entities (regex + patterns)
     # ================================================================
 
-    # Extension-to-language map
-    EXT_LANG_MAP = {
-        ".py": "python", ".kt": "kotlin", ".go": "go",
-        ".js": "javascript", ".ts": "typescript", ".java": "java",
-        ".rs": "rust", ".rb": "ruby", ".cpp": "cpp", ".c": "c",
-        ".h": "c", ".hpp": "cpp", ".swift": "swift", ".scala": "scala",
-    }
+    # Extension-to-language map (imported from constants.py)
+    EXT_LANG_MAP = EXT_LANG_MAP
 
-    def extract_entities(self, text: str) -> Dict[str, Any]:
+    def extract_entities(self, text: str) -> dict[str, Any]:
         """
         Extrae entidades: archivo, lenguaje, función objetivo.
 
@@ -218,7 +216,7 @@ class BoundedTasksMixin:
     #  BOUNDED TASK 4: fill_template_gaps (context + defaults)
     # ================================================================
 
-    def fill_template_gaps(self, template: str, context: Dict[str, Any]) -> str:
+    def fill_template_gaps(self, template: str, context: dict[str, Any]) -> str:
         """
         Rellena los huecos __GAP_N__ en un template con información contextual.
 
@@ -365,7 +363,7 @@ class BoundedTasksMixin:
         "ctypes": "ctypes usage detected - FFI access can bypass safety guarantees.",
     }
 
-    def explain_violation(self, code: str, violations: List[str]) -> str:
+    def explain_violation(self, code: str, violations: list[str]) -> str:
         """
         Explica violaciones usando el catálogo de mensajes.
 

@@ -12,6 +12,7 @@ Fallback when Z3 is not available.
 import time
 import random
 import logging
+from collections import deque
 from typing import Any, Callable, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -170,8 +171,13 @@ class ConstraintSolver:
         return {"status": "LIKELY_PROVEN", "verified": True, "counterexamples": [], "checked": samples}
 
     def _ac3(self, domains, constraints):
-        """Algoritmo AC-3 para consistencia de arcos."""
-        queue = []
+        """Algoritmo AC-3 para consistencia de arcos.
+
+        FIX (Phase 5): Replaced list.pop(0) with deque.popleft() for O(1)
+        dequeue instead of O(n). AC-3 processes many arcs, so this
+        significantly reduces CPU overhead on large constraint systems.
+        """
+        queue = deque()
         for c in constraints:
             queue.append((c.var1, c.var2, c))
             queue.append((c.var2, c.var1, c))
@@ -180,7 +186,7 @@ class ConstraintSolver:
             if self._check_timeout():
                 return True
 
-            xi, xj, constraint = queue.pop(0)
+            xi, xj, constraint = queue.popleft()
             if self._revise(domains, xi, xj, constraint):
                 if not domains[xi]:
                     return False

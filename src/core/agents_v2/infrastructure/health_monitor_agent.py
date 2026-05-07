@@ -11,7 +11,7 @@ Ported from:
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent, GlobalHealthMonitor, AgentHealthSnapshot
 from ..schemas import HealthSnapshot, CircuitState
@@ -30,7 +30,7 @@ class HealthMonitorAgent(BaseAgent[HealthSnapshot]):
         self,
         health_monitor: Optional[GlobalHealthMonitor] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(name="A45_HealthMonitor", **kwargs)
         self._monitor = health_monitor or GlobalHealthMonitor()
 
@@ -87,6 +87,16 @@ class HealthMonitorAgent(BaseAgent[HealthSnapshot]):
     def _get_agent_snapshot(self, agent_name: str) -> HealthSnapshot:
         """Get per-agent health snapshot."""
         snap = self._monitor.get_snapshot(agent_name)
+        # Unknown agents have no data — report as unknown, not healthy
+        if snap.call_count == 0:
+            return HealthSnapshot(
+                healthy=False,
+                success_rates={agent_name: 0.0},
+                latencies={agent_name: 0.0},
+                circuit_breaker_states={},
+                timestamp=time.monotonic(),
+                source="deterministic",
+            )
 
         return HealthSnapshot(
             healthy=snap.healthy,

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 from .circuit_breaker import CircuitBreakerManager
 from .retry import AgentRetryConfig, with_retry
@@ -42,7 +42,7 @@ class BaseAgent(Generic[T]):
         health_monitor: Optional[GlobalHealthMonitor] = None,
         audit_logger: Optional[AuditLogger] = None,
         retry_config: Optional[AgentRetryConfig] = None,
-    ):
+    ) -> None:
         self.name = name
         self._cb_manager = circuit_breaker_manager or CircuitBreakerManager()
         self._bulkhead_manager = bulkhead_manager or BulkheadManager()
@@ -79,7 +79,7 @@ class BaseAgent(Generic[T]):
             f"Agent {self.name} must implement fallback()"
         )
 
-    def run(self, input_data: Any) -> Dict[str, Any]:
+    def run(self, input_data: Any) -> dict[str, Any]:
         """
         Run the agent with full resilience:
         1. Check circuit breaker
@@ -142,13 +142,23 @@ class BaseAgent(Generic[T]):
         finally:
             bulkhead.release()
 
-        # 5. Record success/failure
-        # A fallback means execute() failed — record as failure for circuit breaker
-        success = result is not None and source not in ("error", "fallback")
-        if success:
+        # 5. Record success/failure for circuit breaker
+        # Three categories:
+        #   - Success: execute() completed → CB success
+        #   - Degraded: fallback/circuit_open/bulkhead → NOT a CB failure
+        #     (fallback is a successful recovery; CB/bulkhead fallback is
+        #      caused by resilience itself, not agent failure)
+        #   - Hard failure: execute() raised after all retries → CB failure
+        if source == "deterministic":
             self._cb_manager.record_success(self.name)
-        else:
+            success = True
+        elif source in ("error",):
             self._cb_manager.record_failure(self.name)
+            success = False
+        else:
+            # Degraded success: fallback, circuit_open_fallback, bulkhead_fallback
+            # Do NOT record as CB failure — prevents death spiral
+            success = True  # Fallback is a successful recovery
 
         # 6. Audit + Health
         self._record_run(start_time, source, success, error, retry_count)
@@ -201,7 +211,7 @@ class BaseAgent(Generic[T]):
         source: str,
         start_time: float,
         retry_count: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Format result into standard envelope."""
         duration_ms = (time.monotonic() - start_time) * 1000
         return {
@@ -214,7 +224,7 @@ class BaseAgent(Generic[T]):
         }
 
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         with self._stats_lock:
             avg_duration = (
                 self._total_duration_ms / self._call_count

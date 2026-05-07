@@ -9,7 +9,7 @@ from natural language descriptions (EN + ES bilingual).
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import AutoDescription, TriggerSpec
@@ -18,7 +18,7 @@ from ..schemas import AutoDescription, TriggerSpec
 # TRIGGER KEYWORDS — EN + ES bilingual
 # ──────────────────────────────────────────────────────────────
 
-TRIGGER_KEYWORDS: Dict[str, List[str]] = {
+TRIGGER_KEYWORDS: dict[str, list[str]] = {
     "schedule": [
         "cada", "every", "diario", "daily", "semanal", "weekly",
         "mensual", "monthly", "hora", "hourly", "cron", "schedule",
@@ -50,7 +50,7 @@ class TriggerInferrer(BaseAgent[TriggerSpec]):
     Fallback: Return manual trigger (safest default).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A29_TriggerInferrer", **kwargs)
 
     def execute(self, input_data: Any) -> TriggerSpec:
@@ -104,7 +104,7 @@ class TriggerInferrer(BaseAgent[TriggerSpec]):
 
     def _build_trigger_config(
         self, trigger_type: str, description: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build configuration dict for the detected trigger type."""
         if trigger_type == "schedule":
             return self._build_schedule_config(description)
@@ -120,10 +120,10 @@ class TriggerInferrer(BaseAgent[TriggerSpec]):
             }
         return {}
 
-    def _build_schedule_config(self, description: str) -> Dict[str, Any]:
+    def _build_schedule_config(self, description: str) -> dict[str, Any]:
         """Build schedule-specific trigger configuration."""
         desc_lower = description.lower()
-        config: Dict[str, Any] = {"interval": "daily", "hour": 9, "minute": 0}
+        config: dict[str, Any] = {"interval": "daily", "hour": 9, "minute": 0}
 
         if "diario" in desc_lower or "daily" in desc_lower:
             config["interval"] = "daily"
@@ -148,15 +148,18 @@ class TriggerInferrer(BaseAgent[TriggerSpec]):
     @staticmethod
     def _extract_hour(description: str) -> int:
         """Extract hour from description (supports AM/PM and ES phrases)."""
+        desc_lower = description.lower()
         match = re.search(
-            r"(\d{1,2}):?(\d{2})?\s*(?:am|pm|de la mañana|de la tarde)?",
-            description.lower(),
+            r"(\d{1,2}):?(\d{2})?\s*(?:am|pm|de la mañana|de la tarde|de la noche)?",
+            desc_lower,
         )
         if match:
             hour = int(match.group(1))
-            if "pm" in description.lower() and hour < 12:
+            # Spanish PM indicators
+            if ("pm" in desc_lower or "de la tarde" in desc_lower or "de la noche" in desc_lower) and hour < 12:
                 hour += 12
-            elif "am" in description.lower() and hour == 12:
+            # Spanish AM indicators
+            elif ("am" in desc_lower or "de la mañana" in desc_lower) and hour == 12:
                 hour = 0
             return hour
         return 9

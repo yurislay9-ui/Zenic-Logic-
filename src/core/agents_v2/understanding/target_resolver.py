@@ -21,7 +21,7 @@ class TargetResolver(BaseAgent[TargetResult]):
     Fallback: Default to "untitled.py" / python.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A03_TargetResolver", **kwargs)
 
     def execute(self, input_data: Any) -> TargetResult:

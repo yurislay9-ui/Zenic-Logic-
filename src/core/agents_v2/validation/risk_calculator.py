@@ -18,10 +18,10 @@ class RiskCalculator(BaseAgent[RiskResult]):
 
     Single Responsibility: Risk calculation ONLY.
     Method: Weighted aggregation of security + syntax results.
-    Fallback: Return low risk.
+    Fallback: Return moderate risk (fail-safe).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A27_RiskCalculator", **kwargs)
 
     # Severity weights
@@ -47,12 +47,11 @@ class RiskCalculator(BaseAgent[RiskResult]):
         syntax: SyntaxResult = input_data.get("syntax_result", SyntaxResult())
 
         # Calculate security risk
+        # Use the pre-computed risk_score from SecurityScanner directly.
+        # It already accounts for threat weights and safe pattern reductions.
         security_risk = 0.0
         if security and isinstance(security, SecurityResult):
             security_risk = security.risk_score
-            # Security threats are weighted heavily
-            for threat in security.threats:
-                security_risk += self.SEVERITY_WEIGHTS.get(threat.severity, 0.1)
 
         # Calculate syntax risk
         syntax_risk = 0.0
@@ -92,4 +91,10 @@ class RiskCalculator(BaseAgent[RiskResult]):
         )
 
     def fallback(self, input_data: Any) -> RiskResult:
-        return RiskResult(score=0.0, level="low", source="fallback")
+        """Fallback: Return moderate risk when calculator is unavailable."""
+        return RiskResult(
+            score=0.4,
+            level="medium",
+            recommendations=["Risk calculation unavailable — assuming moderate risk"],
+            source="fallback",
+        )

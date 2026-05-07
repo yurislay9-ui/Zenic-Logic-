@@ -1,5 +1,8 @@
 """
 User management mixin for AuthService.
+
+PERFORMANCE (H-02 fix): Removed per-call connection close() since
+connections are now thread-local pooled in DbPasswordMixin._conn().
 """
 
 from ._imports import (
@@ -21,8 +24,8 @@ class UserMixin:
         pw_hash = self.hash_password(password)
         now = datetime.now(timezone.utc).isoformat()
         c = self._conn()
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 if c.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
                     return {"error": "Username already exists"}
                 if c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
@@ -32,21 +35,19 @@ class UserMixin:
                                 (username, email, pw_hash, role, now, now))
                 uid = cur.lastrowid
                 c.commit()
-            logger.info(f"AuthService: registered {username} (id={uid}, role={role})")
-            return {"user_id": uid, "username": username, "email": email, "role": role,
-                    "message": "User registered successfully"}
-        except sqlite3.IntegrityError:
-            return {"error": "Username or email already exists"}
-        except sqlite3.Error as e:
-            return {"error": f"Database error: {e}"}
-        finally:
-            c.close()
+            except sqlite3.IntegrityError:
+                return {"error": "Username or email already exists"}
+            except sqlite3.Error as e:
+                return {"error": f"Database error: {e}"}
+        logger.info(f"AuthService: registered {username} (id={uid}, role={role})")
+        return {"user_id": uid, "username": username, "email": email, "role": role,
+                "message": "User registered successfully"}
 
     def login_user(self, username: str, password: str) -> dict:
         """Authenticate user and return tokens, or error dict."""
         c = self._conn()
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 row = c.execute("SELECT id, username, email, password_hash, role, active "
                                 "FROM users WHERE username = ? OR email = ?",
                                 (username, username)).fetchone()
@@ -61,29 +62,24 @@ class UserMixin:
                 c.execute("UPDATE users SET last_login = ?, login_count = login_count + 1, "
                           "updated_at = ? WHERE id = ?", (now, now, uid))
                 c.commit()
-            logger.info(f"AuthService: login {row['username']}")
-            return {
-                "access_token": self.create_access_token(uid, role),
-                "refresh_token": self.create_refresh_token(uid),
-                "token_type": "bearer",
-                "user": {"id": uid, "username": row["username"], "email": row["email"], "role": role},
-            }
-        except sqlite3.Error as e:
-            return {"error": f"Database error: {e}"}
-        finally:
-            c.close()
+            except sqlite3.Error as e:
+                return {"error": f"Database error: {e}"}
+        logger.info(f"AuthService: login {row['username']}")
+        return {
+            "access_token": self.create_access_token(uid, role),
+            "refresh_token": self.create_refresh_token(uid),
+            "token_type": "bearer",
+            "user": {"id": uid, "username": row["username"], "email": row["email"], "role": role},
+        }
 
     def get_user(self, user_id: int):
         """Get user by ID (without password hash)."""
+        c = self._conn()
         with self._lock:
-            c = self._conn()
-            try:
-                row = c.execute("SELECT id, username, email, role, active, created_at, "
-                                "updated_at, last_login, login_count, tenant_id FROM users WHERE id = ?",
-                                (user_id,)).fetchone()
-                return dict(row) if row else None
-            finally:
-                c.close()
+            row = c.execute("SELECT id, username, email, role, active, created_at, "
+                            "updated_at, last_login, login_count, tenant_id FROM users WHERE id = ?",
+                            (user_id,)).fetchone()
+            return dict(row) if row else None
 
     def update_user(self, user_id: int, **fields) -> dict:
         """Update user fields."""
@@ -97,82 +93,71 @@ class UserMixin:
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [user_id]
         c = self._conn()
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 if c.execute(f"UPDATE users SET {set_clause} WHERE id = ?", vals).rowcount == 0:
                     return {"error": "User not found"}
                 c.commit()
-            return self.get_user(user_id) or {"error": "User not found after update"}
-        except sqlite3.IntegrityError:
-            return {"error": "Username or email already exists"}
-        except sqlite3.Error as e:
-            return {"error": f"Database error: {e}"}
-        finally:
-            c.close()
+            except sqlite3.IntegrityError:
+                return {"error": "Username or email already exists"}
+            except sqlite3.Error as e:
+                return {"error": f"Database error: {e}"}
+        return self.get_user(user_id) or {"error": "User not found after update"}
 
     def deactivate_user(self, user_id: int) -> bool:
         """Soft-delete user."""
         c = self._conn()
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 cur = c.execute("UPDATE users SET active = 0, updated_at = ? WHERE id = ?",
                                 (datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
                 return cur.rowcount > 0
-        except sqlite3.Error as e:
-            logger.error(f"AuthService: deactivate error: {e}")
-            return False
-        finally:
-            c.close()
+            except sqlite3.Error as e:
+                logger.error(f"AuthService: deactivate error: {e}")
+                return False
 
     def list_users(self, role: str = "", page: int = 1) -> list:
         """List users with optional role filter and pagination."""
         offset = (page - 1) * PAGE_SIZE
+        c = self._conn()
         with self._lock:
-            c = self._conn()
-            try:
-                if role:
-                    rows = c.execute("SELECT id, username, email, role, active, created_at, "
-                                     "last_login, login_count FROM users WHERE role = ? "
-                                     "ORDER BY id LIMIT ? OFFSET ?", (role, PAGE_SIZE, offset)).fetchall()
-                else:
-                    rows = c.execute("SELECT id, username, email, role, active, created_at, "
-                                     "last_login, login_count FROM users ORDER BY id LIMIT ? OFFSET ?",
-                                     (PAGE_SIZE, offset)).fetchall()
-                return [dict(r) for r in rows]
-            finally:
-                c.close()
+            if role:
+                rows = c.execute("SELECT id, username, email, role, active, created_at, "
+                                 "last_login, login_count FROM users WHERE role = ? "
+                                 "ORDER BY id LIMIT ? OFFSET ?", (role, PAGE_SIZE, offset)).fetchall()
+            else:
+                rows = c.execute("SELECT id, username, email, role, active, created_at, "
+                                 "last_login, login_count FROM users ORDER BY id LIMIT ? OFFSET ?",
+                                 (PAGE_SIZE, offset)).fetchall()
+            return [dict(r) for r in rows]
 
     def change_password(self, user_id: int, old_password: str, new_password: str) -> bool:
         """Change password (requires current password)."""
         c = self._conn()
-        try:
-            row = c.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
-            if not row or not self.verify_password(old_password, row["password_hash"]):
-                return False
-            with self._lock:
+        with self._lock:
+            try:
+                row = c.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+                if not row or not self.verify_password(old_password, row["password_hash"]):
+                    return False
                 c.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
                           (self.hash_password(new_password), datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
-            logger.info(f"AuthService: password changed for user {user_id}")
-            return True
-        except sqlite3.Error as e:
-            logger.error(f"AuthService: change_password error: {e}")
-            return False
-        finally:
-            c.close()
+                logger.info(f"AuthService: password changed for user {user_id}")
+                return True
+            except sqlite3.Error as e:
+                logger.error(f"AuthService: change_password error: {e}")
+                return False
 
     def reset_password(self, user_id: int, new_password: str) -> bool:
         """Reset password (admin op)."""
         c = self._conn()
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 cur = c.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
                                 (self.hash_password(new_password), datetime.now(timezone.utc).isoformat(), user_id))
                 c.commit()
                 return cur.rowcount > 0
-        except sqlite3.Error as e:
-            logger.error(f"AuthService: reset_password error: {e}")
-            return False
-        finally:
-            c.close()
+            except sqlite3.Error as e:
+                logger.error(f"AuthService: reset_password error: {e}")
+                return False

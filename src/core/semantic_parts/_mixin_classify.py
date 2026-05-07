@@ -1,8 +1,15 @@
 """
 Mixin: Intent classification (zero-shot via prototype similarity).
+
+FIX (Phase 2): Replaced static `np` import with _get_numpy() lazy loading.
+Now _build_prototypes actually works when numpy is available.
 """
 
-from ._imports import SemanticResult, np, logger
+from ._imports import SemanticResult, _get_numpy, HAS_NUMPY, logger
+
+# Named constants (previously magic numbers)
+_KEYWORD_CONFIDENCE_DIVISOR = 10.0
+_MAX_FALLBACK_CONFIDENCE = 0.5
 
 
 class ClassifyMixin:
@@ -53,8 +60,12 @@ class ClassifyMixin:
 
     def _build_prototypes(self):
         """Pre-computa embeddings promedio para cada intención."""
+        np = _get_numpy()
         if np is None:
-            logger.warning("SemanticEngine: numpy not available, skipping prototype building")
+            logger.warning(
+                "SemanticEngine: numpy not available, skipping prototype building. "
+                "Install numpy to enable prototype-based classification."
+            )
             return
 
         # Build operation prototypes
@@ -79,8 +90,9 @@ class ClassifyMixin:
                 self._goal_prototype_embeddings[goal] = mean_emb
 
         logger.info(
-            f"SemanticEngine: Built {len(self._prototype_embeddings)} op prototypes, "
-            f"{len(self._goal_prototype_embeddings)} goal prototypes"
+            "SemanticEngine: Built %d op prototypes, %d goal prototypes",
+            len(self._prototype_embeddings),
+            len(self._goal_prototype_embeddings),
         )
 
     def _fallback_classify(self, text: str) -> SemanticResult:
@@ -120,6 +132,6 @@ class ClassifyMixin:
         return SemanticResult(
             operation=best_op,
             goal=best_goal,
-            confidence=min(best_score / 10.0, 0.5),
+            confidence=min(best_score / _KEYWORD_CONFIDENCE_DIVISOR, _MAX_FALLBACK_CONFIDENCE),
             source="fallback",
         )

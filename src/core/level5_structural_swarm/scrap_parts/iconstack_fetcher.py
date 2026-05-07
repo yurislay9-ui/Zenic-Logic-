@@ -8,10 +8,14 @@ Espera que la clase contenedora tenga:
   - self._config (con "iconstack_url", "iconstack_style", "picsum_url", "picsum_width", "picsum_height")
   - self._timeout
   - self._max_chars
+  - self._max_retries
+
+FIX (Phase 2): Added retry with backoff for IconStack network failures.
 """
 
 import re
 import json
+import asyncio
 import logging
 import urllib.request
 import urllib.error
@@ -108,7 +112,46 @@ class IconStackFetcherMixin:
                         return output[:self._max_chars]
 
         except urllib.error.HTTPError as e:
+            if e.code >= 500:
+                # FIX (Phase 2): Retry server errors
+                max_retries = getattr(self, '_max_retries', 2)
+                for retry_attempt in range(max_retries):
+                    wait = (retry_attempt + 1) * 2
+                    logger.debug(
+                        "IconStack: Server error %d, retrying in %ds",
+                        e.code, wait
+                    )
+                    try:
+                        await asyncio.sleep(wait)
+                        req2 = urllib.request.Request(search_url, headers=headers)
+                        with urllib.request.urlopen(req2, timeout=self._timeout) as resp2:
+                            data = json.loads(resp2.read().decode())
+                            icons = data if isinstance(data, list) else data.get("icons", [])
+                            if icons:
+                                results = [{"name": i.get("name", ""), "svg_url": i.get("svg_url", i.get("url", "")), "png_url": i.get("png_url", ""), "style": style} for i in icons[:5]]
+                                return json.dumps({"source": "iconstack", "query": query, "icons": results}, ensure_ascii=False, indent=2)[:self._max_chars]
+                    except Exception:
+                        continue
+                    break
             logger.debug("IconStack: HTTP %d for '%s'", e.code, query[:30])
+        except (urllib.error.URLError, ConnectionError, OSError) as e:
+            # FIX (Phase 2): Retry connection errors
+            max_retries = getattr(self, '_max_retries', 2)
+            for retry_attempt in range(max_retries):
+                wait = (retry_attempt + 1) * 2
+                logger.debug("IconStack: Connection error: %s, retrying in %ds", str(e)[:50], wait)
+                try:
+                    await asyncio.sleep(wait)
+                    req3 = urllib.request.Request(search_url, headers=headers)
+                    with urllib.request.urlopen(req3, timeout=self._timeout) as resp3:
+                        data = json.loads(resp3.read().decode())
+                        icons = data if isinstance(data, list) else data.get("icons", [])
+                        if icons:
+                            results = [{"name": i.get("name", ""), "svg_url": i.get("svg_url", i.get("url", "")), "png_url": i.get("png_url", ""), "style": style} for i in icons[:5]]
+                            return json.dumps({"source": "iconstack", "query": query, "icons": results}, ensure_ascii=False, indent=2)[:self._max_chars]
+                except Exception:
+                    continue
+                break
         except Exception as e:
             logger.debug("IconStack: Error: %s", str(e)[:80])
 

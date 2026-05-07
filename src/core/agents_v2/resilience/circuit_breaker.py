@@ -15,7 +15,7 @@ from __future__ import annotations
 import threading
 import time
 from enum import Enum
-from typing import Dict, Optional
+from typing import Optional
 
 
 class CircuitState(str, Enum):
@@ -34,7 +34,7 @@ class AgentCircuitBreaker:
         recovery_timeout: float = 60.0,
         half_open_max_calls: int = 1,
         success_threshold: int = 2,
-    ):
+    ) -> None:
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -65,7 +65,7 @@ class AgentCircuitBreaker:
         return self.state == CircuitState.OPEN
 
     @property
-    def stats(self) -> Dict:
+    def stats(self) -> dict:
         with self._lock:
             return {
                 "name": self.name,
@@ -160,8 +160,8 @@ class CircuitBreakerManager:
         "infrastructure": {"failure_threshold": 5, "recovery_timeout": 30.0},
     }
 
-    def __init__(self):
-        self._breakers: Dict[str, AgentCircuitBreaker] = {}
+    def __init__(self) -> None:
+        self._breakers: dict[str, AgentCircuitBreaker] = {}
         self._lock = threading.Lock()
 
     def get_breaker(self, agent_name: str) -> AgentCircuitBreaker:
@@ -193,7 +193,7 @@ class CircuitBreakerManager:
             for breaker in self._breakers.values():
                 breaker.reset()
 
-    def all_stats(self) -> Dict[str, Dict]:
+    def all_stats(self) -> dict[str, dict]:
         with self._lock:
             return {name: b.stats for name, b in self._breakers.items()}
 

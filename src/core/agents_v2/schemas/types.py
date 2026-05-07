@@ -4,20 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
 # ────────────────────────────── Base Types ──────────────────────────────
 
 @dataclass
 class AgentResult:
-    """Universal result wrapper for all agents."""
-    success: bool
+    """Universal result wrapper for all agents.
+
+    Unified type — single source of truth for both legacy (agents/)
+    and v2 (agents_v2/) code paths.
+    """
+    success: bool = False
     data: Any = None
-    source: str = "deterministic"  # "deterministic", "cached", "fallback"
+    source: str = "deterministic"  # "deterministic", "cached", "fallback", "llm"
     duration_ms: float = 0.0
     confidence: float = 0.0
     error: str = ""
+    cache_hit: bool = False
 
 
 @dataclass
@@ -26,7 +31,7 @@ class AgentMessage:
     sender: str
     recipient: str
     message_type: str  # "request", "response", "error", "verdict_needed"
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     correlation_id: str = ""
     timestamp: float = 0.0
     trace_id: str = ""
@@ -50,18 +55,18 @@ class IntentResult:
     goal: str = "FEATURE_ADD"      # COMPLEXITY_REDUCTION|MODERN_PATTERN|BUG_FIX|FEATURE_ADD|SECURITY_HARDEN|PERFORMANCE|READABILITY
     confidence: float = 0.0
     source: str = "deterministic"
-    evidence: Dict[str, float] = field(default_factory=dict)
+    evidence: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
 class EntityResult:
     """A02 EntityExtractor output."""
-    files: List[str] = field(default_factory=list)
-    langs: List[str] = field(default_factory=list)
-    functions: List[str] = field(default_factory=list)
-    code_blocks: List[str] = field(default_factory=list)
-    frameworks: List[str] = field(default_factory=list)
-    domains: List[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)
+    langs: list[str] = field(default_factory=list)
+    functions: list[str] = field(default_factory=list)
+    code_blocks: list[str] = field(default_factory=list)
+    frameworks: list[str] = field(default_factory=list)
+    domains: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -81,7 +86,7 @@ class CriticalityResult:
     path: str = "fast_standard"
     reason: str = ""
     confidence: float = 0.0
-    adjustments: Dict[str, Any] = field(default_factory=dict)
+    adjustments: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -90,10 +95,10 @@ class CriticalityResult:
 @dataclass
 class MemoryEntries:
     """A05 MemoryCollector output."""
-    working: List[Dict[str, Any]] = field(default_factory=list)
-    long_term: List[Dict[str, Any]] = field(default_factory=list)
-    episodic: List[Dict[str, Any]] = field(default_factory=list)
-    procedural: List[Dict[str, Any]] = field(default_factory=list)
+    working: list[dict[str, Any]] = field(default_factory=list)
+    long_term: list[dict[str, Any]] = field(default_factory=list)
+    episodic: list[dict[str, Any]] = field(default_factory=list)
+    procedural: list[dict[str, Any]] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -111,7 +116,7 @@ class ScoredEntry:
 @dataclass
 class ScoredEntries:
     """A06 RelevanceScorer output."""
-    entries: List[ScoredEntry] = field(default_factory=list)
+    entries: list[ScoredEntry] = field(default_factory=list)
     deduplicated: bool = False
     source: str = "deterministic"
 
@@ -130,8 +135,8 @@ class CompressedContext:
 @dataclass
 class PrefetchResult:
     """A08 ContextPrefetcher output."""
-    prefetched: List[Dict[str, Any]] = field(default_factory=list)
-    hints: List[str] = field(default_factory=list)
+    prefetched: list[dict[str, Any]] = field(default_factory=list)
+    hints: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -141,15 +146,15 @@ class PrefetchResult:
 class BusinessData:
     """Input for business operation agents."""
     type: str = ""   # invoice|inventory|crm|task|report|notification|analytics|custom
-    data: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     description: str = ""
 
 
 @dataclass
 class InvoiceResult:
     """A09 InvoiceProcessor output."""
-    totals: Dict[str, float] = field(default_factory=dict)
+    totals: dict[str, float] = field(default_factory=dict)
     tax: float = 0.0
     discounts: float = 0.0
     valid: bool = True
@@ -159,27 +164,27 @@ class InvoiceResult:
 @dataclass
 class InventoryResult:
     """A10 InventoryManager output."""
-    levels: Dict[str, int] = field(default_factory=dict)
-    alerts: List[str] = field(default_factory=list)
-    reorder: List[str] = field(default_factory=list)
+    levels: dict[str, int] = field(default_factory=dict)
+    alerts: list[str] = field(default_factory=list)
+    reorder: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
 @dataclass
 class CRMResult:
     """A11 CRMPipeline output."""
-    stages: List[Dict[str, Any]] = field(default_factory=list)
-    conversions: Dict[str, float] = field(default_factory=dict)
-    forecasts: Dict[str, Any] = field(default_factory=dict)
+    stages: list[dict[str, Any]] = field(default_factory=list)
+    conversions: dict[str, float] = field(default_factory=dict)
+    forecasts: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
 @dataclass
 class TaskResult:
     """A12 TaskScheduler output."""
-    schedule: List[Dict[str, Any]] = field(default_factory=list)
-    conflicts: List[str] = field(default_factory=list)
-    priorities: Dict[str, int] = field(default_factory=dict)
+    schedule: list[dict[str, Any]] = field(default_factory=list)
+    conflicts: list[str] = field(default_factory=list)
+    priorities: dict[str, int] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -188,7 +193,7 @@ class ReportResult:
     """A13 ReportGenerator output."""
     content: str = ""
     format: str = "text"
-    charts: List[str] = field(default_factory=list)
+    charts: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -204,9 +209,9 @@ class NotificationResult:
 @dataclass
 class AnalyticsResult:
     """A15 DataAnalyzer output."""
-    metrics: Dict[str, float] = field(default_factory=dict)
-    trends: List[str] = field(default_factory=list)
-    insights: List[str] = field(default_factory=list)
+    metrics: dict[str, float] = field(default_factory=dict)
+    trends: list[str] = field(default_factory=list)
+    insights: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -214,7 +219,7 @@ class AnalyticsResult:
 class RoutedOperation:
     """A16 OperationRouter output."""
     target_agent: str = ""
-    transformed_input: Dict[str, Any] = field(default_factory=dict)
+    transformed_input: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -227,7 +232,7 @@ class CodeRequest:
     requirements: str = ""
     language: str = "python"
     existing_code: str = ""
-    constraints: Dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -235,21 +240,21 @@ class CodeResult:
     """A17-A22 code agents output."""
     code: str = ""
     language: str = "python"
-    files: List[Dict[str, str]] = field(default_factory=list)  # [{path, content}]
-    changes: List[str] = field(default_factory=list)
-    improvements: List[str] = field(default_factory=list)
-    fixes: List[str] = field(default_factory=list)
-    injected_patterns: List[str] = field(default_factory=list)
-    audit_entries: List[str] = field(default_factory=list)
+    files: list[dict[str, str]] = field(default_factory=list)  # [{path, content}]
+    changes: list[str] = field(default_factory=list)
+    improvements: list[str] = field(default_factory=list)
+    fixes: list[str] = field(default_factory=list)
+    injected_patterns: list[str] = field(default_factory=list)
+    audit_entries: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
 @dataclass
 class ScaffoldResult:
     """A21 ProjectScaffolder output."""
-    files: List[Dict[str, str]] = field(default_factory=list)
-    structure: Dict[str, Any] = field(default_factory=dict)
-    config: Dict[str, Any] = field(default_factory=dict)
+    files: list[dict[str, str]] = field(default_factory=list)
+    structure: dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -258,7 +263,7 @@ class ScaffoldResult:
 @dataclass
 class ValidationIssue:
     """A single validation finding."""
-    severity: str = "info"  # error|warning|info
+    severity: str = "warning"  # error|warning|info
     code: str = ""
     message: str = ""
     line: int = 0
@@ -269,7 +274,7 @@ class ValidationIssue:
 class SecurityResult:
     """A23 SecurityScanner output."""
     safe: bool = True
-    threats: List[ValidationIssue] = field(default_factory=list)
+    threats: list[ValidationIssue] = field(default_factory=list)
     risk_score: float = 0.0
     source: str = "deterministic"
 
@@ -278,8 +283,8 @@ class SecurityResult:
 class SyntaxResult:
     """A24 SyntaxValidator output."""
     valid: bool = True
-    errors: List[ValidationIssue] = field(default_factory=list)
-    line_numbers: List[int] = field(default_factory=list)
+    errors: list[ValidationIssue] = field(default_factory=list)
+    line_numbers: list[int] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -287,8 +292,8 @@ class SyntaxResult:
 class ChainResult:
     """A25 ChainValidator output."""
     valid: bool = True
-    incompatibilities: List[str] = field(default_factory=list)
-    missing: List[str] = field(default_factory=list)
+    incompatibilities: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -296,8 +301,8 @@ class ChainResult:
 class ConfigResult:
     """A26 ConfigValidator output."""
     valid: bool = True
-    issues: List[ValidationIssue] = field(default_factory=list)
-    defaults_applied: List[str] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
+    defaults_applied: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -306,16 +311,16 @@ class RiskResult:
     """A27 RiskCalculator output."""
     score: float = 0.0
     level: str = "low"  # low|medium|high|critical
-    recommendations: List[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
 @dataclass
 class FixSuggestions:
     """A28 FixSuggester output."""
-    suggestions: List[str] = field(default_factory=list)
-    priorities: List[str] = field(default_factory=list)
-    auto_fixable: List[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+    priorities: list[str] = field(default_factory=list)
+    auto_fixable: list[str] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -325,14 +330,14 @@ class FixSuggestions:
 class AutoDescription:
     """Input for automation agents."""
     description: str = ""
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class TriggerSpec:
     """A29 TriggerInferrer output."""
     type: str = "manual"  # manual|schedule|event|webhook
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     description: str = ""
     source: str = "deterministic"
 
@@ -341,26 +346,45 @@ class TriggerSpec:
 class ActionSpec:
     """A30 ActionInferrer output."""
     type: str = "log"  # email|http|db|file|webhook|notification|transform|schedule|log
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     description: str = ""
     source: str = "deterministic"
 
 
 @dataclass
 class ScheduleSpec:
-    """A31 ScheduleParser output."""
-    type: str = "manual"  # manual|interval|cron
+    """A31 ScheduleParser output.
+
+    Single source of truth — legacy agents/schemas.py re-exports this.
+    """
+    type: str = "manual"  # manual|interval|cron|once
     cron: str = ""
     interval_seconds: int = 0
     description: str = ""
     source: str = "deterministic"
 
+    def __init__(self, type: str = "manual", cron: str = "",
+                 interval_seconds: int = 0, description: str = "",
+                 source: str = "deterministic",
+                 cron_expression: str = "") -> None:
+        """Allow both `cron` and `cron_expression` for backward compatibility."""
+        self.type = type
+        self.cron = cron or cron_expression  # cron_expression is an alias
+        self.interval_seconds = interval_seconds
+        self.description = description
+        self.source = source
+
+    @property
+    def cron_expression(self) -> str:
+        """Backward-compatible alias for `cron` (legacy used `cron_expression`)."""
+        return self.cron
+
 
 @dataclass
 class ConditionResult:
     """A32 ConditionExtractor output."""
-    conditions: List[str] = field(default_factory=list)
-    logic_tree: Dict[str, Any] = field(default_factory=dict)
+    conditions: list[str] = field(default_factory=list)
+    logic_tree: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -377,7 +401,7 @@ class WorkflowSpec:
     """A34 WorkflowSerializer output."""
     yaml: str = ""
     json_spec: str = ""
-    executable: Dict[str, Any] = field(default_factory=dict)
+    executable: dict[str, Any] = field(default_factory=dict)
     source: str = "deterministic"
 
 
@@ -407,7 +431,7 @@ class ReasoningResult:
     answer: str = ""
     template_used: str = ""
     confidence: float = 0.0
-    steps: List[ReasoningStep] = field(default_factory=list)
+    steps: list[ReasoningStep] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -415,7 +439,7 @@ class ReasoningResult:
 class ConfidenceResult:
     """A38 ConfidenceEstimator output."""
     score: float = 0.0
-    factors: List[str] = field(default_factory=list)
+    factors: list[str] = field(default_factory=list)
     recommendation: str = "proceed"  # proceed|caution|reject
     source: str = "deterministic"
 
@@ -423,9 +447,9 @@ class ConfidenceResult:
 @dataclass
 class DecomposedSteps:
     """A36 StepDecomposer output."""
-    steps: List[ReasoningStep] = field(default_factory=list)
-    dependencies: List[str] = field(default_factory=list)
-    order: List[int] = field(default_factory=list)
+    steps: list[ReasoningStep] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    order: list[int] = field(default_factory=list)
     source: str = "deterministic"
 
 
@@ -433,7 +457,7 @@ class DecomposedSteps:
 class Conclusion:
     """A39 ConclusionExtractor output."""
     text: str = ""
-    supported_by: List[str] = field(default_factory=list)
+    supported_by: list[str] = field(default_factory=list)
     strength: float = 0.0  # 0.0-1.0
     source: str = "deterministic"
 
@@ -470,7 +494,7 @@ class Evidence:
     weight: float = 0.5
     source: str = ""
     detail: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -479,8 +503,8 @@ class ConsensusResult:
     verdict: Verdict = Verdict.NO
     confidence: float = 0.0
     score: float = 0.0
-    evidence_for: List[Evidence] = field(default_factory=list)
-    evidence_against: List[Evidence] = field(default_factory=list)
+    evidence_for: list[Evidence] = field(default_factory=list)
+    evidence_against: list[Evidence] = field(default_factory=list)
     needs_llm: bool = False
     signals_count: int = 0
     unanimous: bool = False
@@ -491,8 +515,8 @@ class ConsensusResult:
 class VerdictInput:
     """A43 VerdictEngine input."""
     question: str = ""
-    evidence_for: List[Evidence] = field(default_factory=list)
-    evidence_against: List[Evidence] = field(default_factory=list)
+    evidence_for: list[Evidence] = field(default_factory=list)
+    evidence_against: list[Evidence] = field(default_factory=list)
     consensus_score: float = 0.0
     context: str = ""
     max_retries: int = 3
@@ -534,9 +558,9 @@ class PipelineResult:
 class HealthSnapshot:
     """A45 HealthMonitor output."""
     healthy: bool = True
-    success_rates: Dict[str, float] = field(default_factory=dict)
-    latencies: Dict[str, float] = field(default_factory=dict)
-    circuit_breaker_states: Dict[str, str] = field(default_factory=dict)
+    success_rates: dict[str, float] = field(default_factory=dict)
+    latencies: dict[str, float] = field(default_factory=dict)
+    circuit_breaker_states: dict[str, str] = field(default_factory=dict)
     timestamp: float = 0.0
     source: str = "deterministic"
 

@@ -19,7 +19,7 @@ class TestInitCommonState:
         orch = BaseOrchestrator()
         with patch("src.core.orch_base_parts._imports.get_isolation_manager"):
             orch._init_common_state()
-        assert orch.request_count == 0
+        assert orch._request_count == 0
 
     def test_pending_resumptions_empty(self):
         """_pending_resumptions should start as empty dict."""

@@ -7,7 +7,7 @@ No AI. Pure data transformation and summarization.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import ReportResult
@@ -31,7 +31,7 @@ class ReportGenerator(BaseAgent[ReportResult]):
     Fallback: Empty ReportResult with no content.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A13_ReportGenerator", **kwargs)
 
     def execute(self, input_data: Any) -> ReportResult:
@@ -107,7 +107,7 @@ class ReportGenerator(BaseAgent[ReportResult]):
         content = "\n".join(lines)
 
         # ── Charts metadata (names of available charts, not actual charts) ──
-        charts: List[str] = []
+        charts: list[str] = []
         if numeric_stats:
             charts.append(f"{title}_distribution")
             if len(numeric_stats) > 1:
@@ -123,12 +123,12 @@ class ReportGenerator(BaseAgent[ReportResult]):
         )
 
     @staticmethod
-    def _compute_numeric_stats(data: list) -> Dict[str, Dict[str, Any]]:
+    def _compute_numeric_stats(data: list) -> dict[str, dict[str, Any]]:
         """Compute min/max/avg/count for numeric fields in a list of dicts."""
         if not data or not isinstance(data[0], dict):
             return {}
 
-        stats: Dict[str, Dict[str, Any]] = {}
+        stats: dict[str, dict[str, Any]] = {}
         for key in data[0]:
             values = [
                 item[key] for item in data

@@ -13,8 +13,12 @@ executes them, and reports results. Features:
 - Resource-aware task execution (respects ResourceGovernor)
 
 Designed for PostgreSQL (production) and MemoryBackend (dev/testing).
+
+PERFORMANCE (H-07 fix): Reuses a single asyncio event loop per thread
+instead of creating/destroying a new loop for every async operation.
 """
 
+import asyncio
 import enum
 import logging
 import platform
@@ -102,6 +106,33 @@ class WorkerConfig:
 # ============================================================
 
 TaskHandler = Callable[[Dict[str, Any]], Any]
+
+
+# ============================================================
+#  THREAD-LOCAL EVENT LOOP HELPER (H-07 fix)
+# ============================================================
+
+_local = threading.local()
+
+
+def _get_thread_loop() -> asyncio.AbstractEventLoop:
+    """Get or create a persistent event loop for the current thread.
+
+    PERFORMANCE (H-07 fix): Instead of creating a new asyncio event loop
+    for every async operation (which leaks resources and adds overhead),
+    each thread reuses a single loop for its entire lifetime.
+    """
+    loop = getattr(_local, "event_loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _local.event_loop = loop
+    return loop
+
+
+def _run_async(coro):
+    """Run an async coroutine on the current thread's persistent event loop."""
+    loop = _get_thread_loop()
+    return loop.run_until_complete(coro)
 
 
 # ============================================================
@@ -280,6 +311,12 @@ class DistributedWorker:
         # Deregister from topology
         self._deregister_from_topology()
 
+        # Close the thread-local event loop (H-07: cleanup)
+        loop = getattr(_local, "event_loop", None)
+        if loop is not None and not loop.is_closed():
+            loop.close()
+            _local.event_loop = None
+
         self._state = WorkerState.STOPPED
         logger.info("Worker %s: Stopped", self._config.worker_id)
 
@@ -347,24 +384,19 @@ class DistributedWorker:
                 self._stop_event.wait(timeout=1.0)
                 continue
 
-            # Try each configured queue
+            # Try each configured queue (H-07: reuse thread-local loop)
             task = None
             for queue_name in self._config.queue_names:
                 try:
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    try:
-                        task = loop.run_until_complete(
-                            self._queue.dequeue(
-                                queue_name=queue_name,
-                                worker_id=self._config.worker_id,
-                                lease_seconds=self._config.lease_seconds,
-                                task_types=self._config.task_types,
-                                tenant_id=self._config.tenant_id,
-                            )
+                    task = _run_async(
+                        self._queue.dequeue(
+                            queue_name=queue_name,
+                            worker_id=self._config.worker_id,
+                            lease_seconds=self._config.lease_seconds,
+                            task_types=self._config.task_types,
+                            tenant_id=self._config.tenant_id,
                         )
-                    finally:
-                        loop.close()
+                    )
                 except Exception as exc:
                     logger.error(
                         "Worker %s: Dequeue error from '%s': %s",
@@ -420,14 +452,9 @@ class DistributedWorker:
         try:
             result = handler(task)
 
-            # If handler returns a coroutine, run it
-            import asyncio
+            # If handler returns a coroutine, run it on the thread-local loop
             if asyncio.iscoroutine(result):
-                loop = asyncio.new_event_loop()
-                try:
-                    result = loop.run_until_complete(result)
-                finally:
-                    loop.close()
+                result = _run_async(result)
 
             # Report success
             self._report_success(task_id, result)
@@ -446,7 +473,6 @@ class DistributedWorker:
 
     def _report_success(self, task_id: str, result: Any) -> None:
         """Report a completed task."""
-        import asyncio
         result_dict = None
         if isinstance(result, dict):
             result_dict = result
@@ -454,13 +480,7 @@ class DistributedWorker:
             result_dict = {"value": result}
 
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    self._queue.complete(task_id, result_dict)
-                )
-            finally:
-                loop.close()
+            _run_async(self._queue.complete(task_id, result_dict))
         except Exception as exc:
             logger.error(
                 "Worker %s: Failed to report completion for %s: %s",
@@ -483,15 +503,8 @@ class DistributedWorker:
 
     def _report_failure(self, task_id: str, error: str) -> None:
         """Report a failed task."""
-        import asyncio
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    self._queue.fail(task_id, error, retryable=True)
-                )
-            finally:
-                loop.close()
+            _run_async(self._queue.fail(task_id, error, retryable=True))
         except Exception as exc:
             logger.error(
                 "Worker %s: Failed to report failure for %s: %s",
@@ -519,25 +532,20 @@ class DistributedWorker:
         """Send periodic heartbeats to the cluster topology."""
         while not self._stop_event.is_set():
             try:
-                import asyncio
-                loop = asyncio.new_event_loop()
-                try:
-                    status = {
-                        "state": self._state.value,
-                        "tasks_completed": self._tasks_completed,
-                        "tasks_failed": self._tasks_failed,
-                        "current_task_type": (
-                            self._current_task.get("task_type")
-                            if self._current_task else None
-                        ),
-                    }
-                    loop.run_until_complete(
-                        self._backend.heartbeat(
-                            self._config.worker_id, status
-                        )
+                status = {
+                    "state": self._state.value,
+                    "tasks_completed": self._tasks_completed,
+                    "tasks_failed": self._tasks_failed,
+                    "current_task_type": (
+                        self._current_task.get("task_type")
+                        if self._current_task else None
+                    ),
+                }
+                _run_async(
+                    self._backend.heartbeat(
+                        self._config.worker_id, status
                     )
-                finally:
-                    loop.close()
+                )
             except Exception as exc:
                 logger.debug(
                     "Worker %s: Heartbeat error: %s",
@@ -556,17 +564,12 @@ class DistributedWorker:
             if self._current_task is not None:
                 task_id = self._current_task.get("task_id", "")
                 try:
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    try:
-                        loop.run_until_complete(
-                            self._queue.renew_lease(
-                                task_id,
-                                self._config.lease_seconds * 0.5,
-                            )
+                    _run_async(
+                        self._queue.renew_lease(
+                            task_id,
+                            self._config.lease_seconds * 0.5,
                         )
-                    finally:
-                        loop.close()
+                    )
                 except Exception as exc:
                     logger.warning(
                         "Worker %s: Lease renewal failed for %s: %s",
@@ -584,24 +587,19 @@ class DistributedWorker:
     def _register_in_topology(self) -> None:
         """Register this worker in the cluster topology."""
         try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    self._backend.register_node({
-                        "node_id": self._config.worker_id,
-                        "hostname": socket.gethostname(),
-                        "ip_address": self._get_local_ip(),
-                        "capabilities": {
-                            "task_types": list(self._handlers.keys()),
-                            "queue_names": self._config.queue_names,
-                            "max_concurrent": self._config.max_concurrent_tasks,
-                            "platform": platform.platform(),
-                        },
-                    })
-                )
-            finally:
-                loop.close()
+            _run_async(
+                self._backend.register_node({
+                    "node_id": self._config.worker_id,
+                    "hostname": socket.gethostname(),
+                    "ip_address": self._get_local_ip(),
+                    "capabilities": {
+                        "task_types": list(self._handlers.keys()),
+                        "queue_names": self._config.queue_names,
+                        "max_concurrent": self._config.max_concurrent_tasks,
+                        "platform": platform.platform(),
+                    },
+                })
+            )
         except Exception as exc:
             logger.warning(
                 "Worker %s: Topology registration failed: %s",
@@ -611,14 +609,9 @@ class DistributedWorker:
     def _deregister_from_topology(self) -> None:
         """Remove this worker from the cluster topology."""
         try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    self._backend.deregister_node(self._config.worker_id)
-                )
-            finally:
-                loop.close()
+            _run_async(
+                self._backend.deregister_node(self._config.worker_id)
+            )
         except Exception as exc:
             logger.warning(
                 "Worker %s: Topology deregistration failed: %s",

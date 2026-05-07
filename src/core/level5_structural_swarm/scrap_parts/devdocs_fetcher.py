@@ -6,9 +6,14 @@ Espera que la clase contenedora tenga:
   - self._config (con "devdocs_url")
   - self._timeout
   - self._max_chars
+  - self._max_retries
+
+FIX (Phase 2): Added retry with backoff for network transient failures.
+DevDocs API can fail with 5xx or connection errors that resolve on retry.
 """
 
 import json
+import asyncio
 import logging
 import urllib.request
 import urllib.error
@@ -98,6 +103,9 @@ class DevDocsFetcherMixin:
 
         Usa la API de busqueda: /docs/{doc}/search.json?q={query}
         y la API de entradas: /docs/{doc}/index.json
+
+        FIX (Phase 2): Added retry with exponential backoff for transient
+        network failures (5xx errors, connection resets).
         """
         base_url = self._config.get("devdocs_url", "https://devdocs.io")
 
@@ -108,43 +116,67 @@ class DevDocsFetcherMixin:
             "Accept": "application/json",
         }
 
-        try:
-            req = urllib.request.Request(search_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                data = json.loads(resp.read().decode())
+        max_retries = getattr(self, '_max_retries', 2)
+        for attempt in range(max_retries + 1):
+            try:
+                req = urllib.request.Request(search_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                    data = json.loads(resp.read().decode())
 
-                if not data:
+                    if not data:
+                        return ""
+
+                    # DevDocs search.json retorna una lista de [name, path, signature?]
+                    # Formato: [["name", "path", "signature"], ...]
+                    results = []
+                    for entry in data[:5]:
+                        if isinstance(entry, list) and len(entry) >= 2:
+                            name = entry[0]
+                            path = entry[1]
+                            sig = entry[2] if len(entry) > 2 else ""
+                            results.append(f"**{name}**\n  Path: {path}\n  Signature: {sig}")
+                        elif isinstance(entry, dict):
+                            name = entry.get("name", "")
+                            path = entry.get("path", "")
+                            sig = entry.get("signature", entry.get("doc", ""))
+                            results.append(f"**{name}**\n  Path: {path}\n  Signature: {sig}")
+
+                    if results:
+                        doc_text = (
+                            f"[DevDocs: {doc_name}]\n\n"
+                            + "\n\n".join(results)
+                        )
+                        logger.info(
+                            "DevDocs: Found %d results for '%s' in %s",
+                            len(results), query[:30], doc_name
+                        )
+                        return doc_text[:self._max_chars]
                     return ""
 
-                # DevDocs search.json retorna una lista de [name, path, signature?]
-                # Formato: [["name", "path", "signature"], ...]
-                results = []
-                for entry in data[:5]:
-                    if isinstance(entry, list) and len(entry) >= 2:
-                        name = entry[0]
-                        path = entry[1]
-                        sig = entry[2] if len(entry) > 2 else ""
-                        results.append(f"**{name}**\n  Path: {path}\n  Signature: {sig}")
-                    elif isinstance(entry, dict):
-                        name = entry.get("name", "")
-                        path = entry.get("path", "")
-                        sig = entry.get("signature", entry.get("doc", ""))
-                        results.append(f"**{name}**\n  Path: {path}\n  Signature: {sig}")
-
-                if results:
-                    doc_text = (
-                        f"[DevDocs: {doc_name}]\n\n"
-                        + "\n\n".join(results)
+            except urllib.error.HTTPError as e:
+                if e.code >= 500 and attempt < max_retries:
+                    wait = (attempt + 1) * 2
+                    logger.debug(
+                        "DevDocs: Server error %d for %s search, retrying in %ds",
+                        e.code, doc_name, wait
                     )
-                    logger.info(
-                        "DevDocs: Found %d results for '%s' in %s",
-                        len(results), query[:30], doc_name
+                    await asyncio.sleep(wait)
+                    continue
+                logger.debug("DevDocs: HTTP %d for %s search", e.code, doc_name)
+                return ""
+            except (urllib.error.URLError, ConnectionError, OSError) as e:
+                if attempt < max_retries:
+                    wait = (attempt + 1) * 2
+                    logger.debug(
+                        "DevDocs: Connection error for %s search: %s, retrying in %ds",
+                        doc_name, str(e)[:50], wait
                     )
-                    return doc_text[:self._max_chars]
-
-        except urllib.error.HTTPError as e:
-            logger.debug("DevDocs: HTTP %d for %s search", e.code, doc_name)
-        except Exception as e:
-            logger.debug("DevDocs: Error searching %s: %s", doc_name, str(e)[:80])
+                    await asyncio.sleep(wait)
+                    continue
+                logger.debug("DevDocs: Error searching %s: %s", doc_name, str(e)[:80])
+                return ""
+            except Exception as e:
+                logger.debug("DevDocs: Error searching %s: %s", doc_name, str(e)[:80])
+                return ""
 
         return ""

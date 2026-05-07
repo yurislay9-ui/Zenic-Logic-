@@ -11,7 +11,7 @@ Ported from:
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent, CircuitBreakerManager, CircuitState
 from ..schemas import AgentResult
@@ -30,7 +30,7 @@ class CircuitBreakerManagerAgent(BaseAgent[AgentResult]):
         self,
         circuit_breaker_manager: Optional[CircuitBreakerManager] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             name="A47_CircuitBreakerManager",
             circuit_breaker_manager=circuit_breaker_manager,

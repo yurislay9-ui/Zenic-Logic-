@@ -8,7 +8,7 @@ Extracts: files, languages, functions, code blocks, frameworks, domains.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import EntityResult
@@ -17,7 +17,7 @@ from ..schemas import EntityResult
 # ENTITY EXTRACTION CONSTANTS
 # ──────────────────────────────────────────────────────────────
 
-EXT_LANG_MAP: Dict[str, str] = {
+EXT_LANG_MAP: dict[str, str] = {
     ".py": "python", ".kt": "kotlin", ".go": "go", ".js": "javascript",
     ".ts": "typescript", ".java": "java", ".rs": "rust", ".c": "c",
     ".cpp": "cpp", ".rb": "ruby", ".cs": "csharp", ".php": "php",
@@ -53,7 +53,7 @@ class EntityExtractor(BaseAgent[EntityResult]):
     Fallback: Return empty EntityResult.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A02_EntityExtractor", **kwargs)
 
     def execute(self, input_data: Any) -> EntityResult:
@@ -78,11 +78,11 @@ class EntityExtractor(BaseAgent[EntityResult]):
             source="deterministic",
         )
 
-    def _extract_files(self, text: str) -> List[str]:
+    def _extract_files(self, text: str) -> list[str]:
         """Extract file names from text."""
         return list(set(FILE_PATTERN.findall(text)))
 
-    def _infer_languages(self, files: List[str], text: str) -> List[str]:
+    def _infer_languages(self, files: list[str], text: str) -> list[str]:
         """Infer programming languages from file extensions + text."""
         langs = set()
         for f in files:
@@ -95,7 +95,7 @@ class EntityExtractor(BaseAgent[EntityResult]):
                 langs.add(lang)
         return list(langs)
 
-    def _extract_functions(self, text: str) -> List[str]:
+    def _extract_functions(self, text: str) -> list[str]:
         """Extract function/method/class names."""
         names = set()
         for pattern in [FUNCTION_PATTERN_EN, FUNCTION_PATTERN_ES, CLASS_PATTERN]:
@@ -103,19 +103,19 @@ class EntityExtractor(BaseAgent[EntityResult]):
                 names.add(match.group(1))
         return list(names)
 
-    def _extract_code_blocks(self, text: str) -> List[str]:
+    def _extract_code_blocks(self, text: str) -> list[str]:
         """Extract code blocks from markdown fences."""
         blocks = []
         for match in CODE_BLOCK_PATTERN.finditer(text):
             blocks.append(match.group(2))
         return blocks
 
-    def _extract_frameworks(self, text: str) -> List[str]:
+    def _extract_frameworks(self, text: str) -> list[str]:
         """Detect framework mentions."""
         text_lower = text.lower()
         return [fw for fw in FRAMEWORKS if fw in text_lower]
 
-    def _extract_domains(self, text: str) -> List[str]:
+    def _extract_domains(self, text: str) -> list[str]:
         """Detect domain mentions."""
         text_lower = text.lower()
         return [d for d in DOMAINS if d in text_lower]

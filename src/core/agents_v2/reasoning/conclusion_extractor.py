@@ -14,7 +14,7 @@ Ported from:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..resilience import BaseAgent
 from ..schemas import Conclusion, DecomposedSteps, ReasoningResult, ReasoningStep
@@ -59,7 +59,7 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
     Fallback: Return last step's conclusion or empty string.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A39_ConclusionExtractor", **kwargs)
 
     def execute(self, input_data: Any) -> Conclusion:
@@ -93,7 +93,7 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
             source="deterministic",
         )
 
-    def _extract_steps(self, input_data: Any) -> List[ReasoningStep]:
+    def _extract_steps(self, input_data: Any) -> list[ReasoningStep]:
         """Extract reasoning steps from input."""
         if isinstance(input_data, ReasoningResult):
             return input_data.steps
@@ -124,7 +124,7 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
         return ""
 
     def _extract_from_steps(
-        self, steps: List[ReasoningStep], answer: str
+        self, steps: list[ReasoningStep], answer: str
     ) -> Conclusion:
         """
         Extract conclusion from reasoning steps.
@@ -206,7 +206,7 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
             source="deterministic",
         )
 
-    def _find_marked_conclusion(self, conclusions: List[str]) -> Optional[str]:
+    def _find_marked_conclusion(self, conclusions: list[str]) -> Optional[str]:
         """Find a conclusion that has explicit conclusion markers."""
         for conclusion in reversed(conclusions):
             conclusion_lower = conclusion.lower()
@@ -244,10 +244,10 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
         return meaningful[-1] if meaningful else text[:200]
 
     def _get_supporting_steps(
-        self, steps: List[ReasoningStep], conclusion: str
-    ) -> List[str]:
+        self, steps: list[ReasoningStep], conclusion: str
+    ) -> list[str]:
         """Get list of step descriptions that support the conclusion."""
-        supporting: List[str] = []
+        supporting: list[str] = []
         for step in steps:
             if step.conclusion and step.conclusion != conclusion:
                 supporting.append(f"step_{step.step_number}: {step.conclusion[:80]}")
@@ -257,7 +257,7 @@ class ConclusionExtractor(BaseAgent[Conclusion]):
         return supporting[:10]
 
     def _estimate_strength(
-        self, steps: List[ReasoningStep], conclusion: str
+        self, steps: list[ReasoningStep], conclusion: str
     ) -> float:
         """
         Estimate the strength of a conclusion.

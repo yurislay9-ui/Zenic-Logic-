@@ -143,7 +143,8 @@ class TitanOrchestrator(BaseOrchestrator):
         determinístico, y solo puede decir SÍ o NO.
         """
         start_time = time.time()
-        self.request_count += 1
+        with self._request_count_lock:
+            self._request_count += 1
 
         # ============================================================
         #  CAPA 3: SmartMemory - Check semantic cache first

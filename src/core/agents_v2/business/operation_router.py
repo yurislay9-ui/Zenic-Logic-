@@ -7,7 +7,7 @@ No AI. Pure lookup-table routing.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import RoutedOperation
@@ -50,7 +50,7 @@ OPERATION_ALIASES = {
     "analysis": "analytics",
     "stats": "analytics",
     "statistics": "analytics",
-    "custom": "A15_DataAnalyzer",  # Custom → generic analyzer
+    "custom": "analytics",  # Custom → analytics (routed through OPERATION_ROUTES)
 }
 
 # Default route when operation type is unknown
@@ -66,7 +66,7 @@ class OperationRouter(BaseAgent[RoutedOperation]):
     Fallback: Route to DataAnalyzer (safest default).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A16_OperationRouter", **kwargs)
 
     def execute(self, input_data: Any) -> RoutedOperation:

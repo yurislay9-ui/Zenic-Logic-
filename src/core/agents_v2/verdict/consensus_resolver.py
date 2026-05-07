@@ -11,7 +11,7 @@ VETO RULES:
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import Evidence, EvidenceType, ConsensusResult, Verdict
@@ -52,9 +52,11 @@ class ConsensusResolverV18(BaseAgent[ConsensusResult]):
     Single Responsibility: Consensus resolution ONLY.
     Method: Weighted scoring with veto rules.
     Fallback: Return NO with low confidence.
+    Tie handling: Perfect ties produce provisional NO (precaution principle)
+    with needs_llm=True, pending AI arbitration.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A42_ConsensusResolver", **kwargs)
 
     def execute(self, input_data: Any) -> ConsensusResult:
@@ -64,7 +66,7 @@ class ConsensusResolverV18(BaseAgent[ConsensusResult]):
         input_data should be a list of Evidence objects,
         or a dict with 'evidence' key.
         """
-        evidence: List[Evidence] = []
+        evidence: list[Evidence] = []
 
         if isinstance(input_data, list):
             evidence = input_data
@@ -131,7 +133,15 @@ class ConsensusResolverV18(BaseAgent[ConsensusResult]):
             needs_llm = True  # Tie — AI REQUIRED
 
         # Step 5: Determine verdict
-        verdict = Verdict.YES if normalized > 0 else Verdict.NO
+        # Precaution principle: when in doubt, lean toward NO.
+        # If needs_llm is True, this verdict is PROVISIONAL pending AI arbitration.
+        if normalized > 0:
+            verdict = Verdict.YES
+        elif normalized < 0:
+            verdict = Verdict.NO
+        else:
+            # Perfect tie: provisional NO (precaution) pending LLM arbitration
+            verdict = Verdict.NO
 
         # Unanimous check
         all_same = all(e.favors == evidence[0].favors for e in evidence)

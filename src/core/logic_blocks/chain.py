@@ -9,7 +9,7 @@ import re
 import time
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 from copy import deepcopy
 
 logger = logging.getLogger(__name__)
@@ -37,11 +37,33 @@ class LogicBlock(ABC):
     name: str = ""
     category: str = ""  # business_logic, integrations, auth, data, flow, transform, validation, output
     description: str = ""
-    inputs: List[str] = []
-    outputs: List[str] = []
+    _inputs: list[str] | None = None
+    _outputs: list[str] | None = None
+
+    @property
+    def inputs(self) -> list[str]:
+        """Inputs list — always returns a list (never shared between instances)."""
+        if self._inputs is None:
+            self._inputs = []
+        return self._inputs
+
+    @inputs.setter
+    def inputs(self, value: list[str]) -> None:
+        self._inputs = value
+
+    @property
+    def outputs(self) -> list[str]:
+        """Outputs list — always returns a list (never shared between instances)."""
+        if self._outputs is None:
+            self._outputs = []
+        return self._outputs
+
+    @outputs.setter
+    def outputs(self, value: list[str]) -> None:
+        self._outputs = value
 
     @abstractmethod
-    def execute(self, data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         """Ejecuta la logica del bloque.
 
         Args:
@@ -70,12 +92,12 @@ class LogicChain:
     en cada paso de la cadena.
     """
 
-    def __init__(self, name: str = "unnamed"):
+    def __init__(self, name: str = "unnamed") -> None:
         self.name = name
-        self._blocks: List[Dict[str, Any]] = []
-        self._log: List[Dict[str, Any]] = []
+        self._blocks: list[dict[str, Any]] = []
+        self._log: list[dict[str, Any]] = []
 
-    def execute(self, initial_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def execute(self, initial_data: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         """Ejecuta la cadena completa de bloques secuencialmente.
 
         Args:
@@ -161,7 +183,7 @@ class LogicChain:
 
     def add_condition(
         self,
-        condition_func: Callable[[Dict, Dict], bool],
+        condition_func: Callable[[dict, dict], bool],
         true_branch: 'LogicChain',
         false_branch: 'LogicChain',
     ) -> 'LogicChain':
@@ -181,17 +203,17 @@ class LogicChain:
         return self
 
     @property
-    def blocks(self) -> List[LogicBlock]:
+    def blocks(self) -> list[LogicBlock]:
         """Lista de bloques en la cadena (solo bloques, no condiciones)."""
         return [s["block"] for s in self._blocks if s["type"] == "block"]
 
     @property
-    def block_names(self) -> List[str]:
+    def block_names(self) -> list[str]:
         """Nombres de los bloques en la cadena."""
         return [b.name for b in self.blocks]
 
     @property
-    def execution_log(self) -> List[Dict[str, Any]]:
+    def execution_log(self) -> list[dict[str, Any]]:
         """Log de la ultima ejecucion."""
         return self._log
 

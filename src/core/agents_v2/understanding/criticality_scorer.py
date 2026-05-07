@@ -8,7 +8,8 @@ Deterministic. No AI.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import IntentResult, TargetResult, CriticalityResult
@@ -72,9 +73,10 @@ class CriticalityScorer(BaseAgent[CriticalityResult]):
     Fallback: Default to Level 2 (DEEP_MODERATE) — errs on caution.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A04_CriticalityScorer", **kwargs)
-        self._history: List[Dict] = []
+        self._history: list[dict] = []
+        self._history_lock = threading.Lock()
 
     def execute(self, input_data: Any) -> CriticalityResult:
         """
@@ -200,11 +202,11 @@ class CriticalityScorer(BaseAgent[CriticalityResult]):
 
     def _history_signal(self, intent: Any, target: Any) -> float:
         """Signal 5: Historical patterns (0.10 weight)."""
-        if not self._history:
-            return 2.0  # Default moderate when no history
-
-        recent = self._history[-10:]
-        avg_level = sum(h.get("level", 2) for h in recent) / len(recent)
+        with self._history_lock:
+            if not self._history:
+                return 2.0  # Default moderate when no history
+            recent = self._history[-10:]
+            avg_level = sum(h.get("level", 2) for h in recent) / len(recent)
         return avg_level
 
     def _check_visual_bypass(self, text: str) -> bool:
@@ -215,7 +217,7 @@ class CriticalityScorer(BaseAgent[CriticalityResult]):
         count = sum(1 for kw in VISUAL_KEYWORDS if kw in text_lower)
         return count >= 2
 
-    def _compute_confidence(self, signals: List[float], final_level: int) -> float:
+    def _compute_confidence(self, signals: list[float], final_level: int) -> float:
         """Compute confidence from signal agreement."""
         if not signals:
             return 0.5
@@ -223,9 +225,9 @@ class CriticalityScorer(BaseAgent[CriticalityResult]):
         ratio = agree / len(signals)
         return max(0.2, min(0.2 + ratio * 0.8, 0.99))
 
-    def _build_adjustments(self, level: int) -> Dict:
+    def _build_adjustments(self, level: int) -> dict:
         """Build downstream adjustments based on level."""
-        adj: Dict[str, Any] = {}
+        adj: dict[str, Any] = {}
         if level >= 2:
             adj["audit_trail"] = True
             adj["extra_validation"] = True
@@ -240,9 +242,10 @@ class CriticalityScorer(BaseAgent[CriticalityResult]):
 
     def _record_history(self, intent: Any, target: Any, level: int) -> None:
         op = intent.operation if intent and isinstance(intent, IntentResult) else ""
-        self._history.append({"operation": op, "level": level})
-        if len(self._history) > 50:
-            self._history = self._history[-50:]
+        with self._history_lock:
+            self._history.append({"operation": op, "level": level})
+            if len(self._history) > 50:
+                self._history = self._history[-50:]
 
     def fallback(self, input_data: Any) -> CriticalityResult:
         """Safe default: Level 2 (DEEP_MODERATE) — errs on caution."""

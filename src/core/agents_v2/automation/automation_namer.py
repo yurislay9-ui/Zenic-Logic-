@@ -56,7 +56,7 @@ class AutomationNamer(BaseAgent[NameResult]):
     Fallback: Return "automation_{timestamp}".
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A33_AutomationNamer", **kwargs)
 
     def execute(self, input_data: Any) -> NameResult:

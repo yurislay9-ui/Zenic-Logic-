@@ -80,7 +80,8 @@ class APIMixin:
 
     def pre_request(self):
         """Llama antes de cada request para preparar el sistema."""
-        self._request_count += 1
+        with self._request_count_lock:
+            self._request_count += 1
         self.stats["requests_served"] += 1
 
         # GC ligero antes de cada request (gen 0 solo)

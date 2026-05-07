@@ -1,5 +1,10 @@
 """
 Database and password management mixin for AuthService.
+
+PERFORMANCE/SECURITY (H-01/H-02/H-03 fixes):
+- Uses thread-local connection pool instead of creating a new connection per call
+- Proper thread synchronization via threading.Lock for all DB operations
+- Connections are reused within the same thread, preventing connection storms
 """
 
 from ._imports import (
@@ -8,23 +13,75 @@ from ._imports import (
     PBKDF2_ITERATIONS, PASSLIB_AVAILABLE,
 )
 
+# Thread-local storage for connection pooling
+_local = threading.local()
+
 
 class DbPasswordMixin:
     """Database initialization and password management for AuthService."""
 
     def _conn(self) -> sqlite3.Connection:
-        c = sqlite3.connect(self._db_path, check_same_thread=False)
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA journal_mode=WAL")
-        c.execute("PRAGMA synchronous=NORMAL")
-        c.execute("PRAGMA busy_timeout=5000")
-        c.execute("PRAGMA foreign_keys=ON")
-        return c
+        """Get a thread-local SQLite connection (pooled per thread).
+
+        PERFORMANCE (H-02/H-03 fix): Instead of creating a new connection
+        on every call (which causes SQLITE_BUSY errors and connection storms
+        under load), we reuse a thread-local connection. Each thread gets
+        its own connection, avoiding cross-thread issues.
+
+        SECURITY (H-01 fix): Since each thread has its own connection,
+        we no longer need check_same_thread=False. SQLite's built-in
+        thread safety is preserved.
+        """
+        # Check if we have a usable cached connection for this thread
+        conn = getattr(_local, "db_conn", None)
+        cached_path = getattr(_local, "db_path", None)
+
+        # If the db_path changed (e.g. in tests with tmp_path), discard the old connection
+        if conn is not None and cached_path == self._db_path:
+            try:
+                # Quick liveness check
+                conn.execute("SELECT 1")
+                return conn
+            except sqlite3.Error:
+                # Connection is stale, close and recreate
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = None
+
+        # Close old connection if path changed
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Create new connection for this thread
+        conn = sqlite3.connect(self._db_path, check_same_thread=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        _local.db_conn = conn
+        _local.db_path = self._db_path
+        return conn
+
+    def _close_conn(self) -> None:
+        """Close the thread-local connection (call during shutdown)."""
+        conn = getattr(_local, "db_conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.db_conn = None
 
     def init_db(self):
         """Create users, revoked_tokens, and api_keys tables if not exists."""
         c = self._conn()
-        try:
+        with self._lock:
             c.execute("""CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
@@ -63,8 +120,6 @@ class DbPasswordMixin:
             ]:
                 c.execute(idx)
             c.commit()
-        finally:
-            c.close()
 
     @staticmethod
     def hash_password(password: str) -> str:

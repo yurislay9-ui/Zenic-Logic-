@@ -2,13 +2,19 @@
 SandboxIsolationManager — central manager for sandbox isolation.
 """
 
+import os
 import time
 import threading
-import logging
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 
 from ._imports import logger
 from ._workspace import SandboxWorkspace
+
+# Named constants (previously magic numbers)
+_DEFAULT_TTL_SECONDS = 3600
+_CLEANUP_INTERVAL_SECONDS = 60
+_CLEANUP_OLDEST_COUNT = 2
 
 
 class SandboxIsolationManager:
@@ -21,6 +27,10 @@ class SandboxIsolationManager:
     3. Verificar que el sandbox NUNCA escribe fuera de su workspace
     4. Proveer builtins restringidos para ejecucion segura
     5. Monitorear uso de recursos del sandbox
+
+    FIX (Phase 3): __init__ previously created a full SandboxWorkspace
+    object just to get the root path, which leaked directories and a
+    workspace object. Now computes the path directly.
     """
 
     # Maximo de workspaces simultaneos para evitar consumir toda la RAM
@@ -29,8 +39,11 @@ class SandboxIsolationManager:
     MAX_TOTAL_SIZE_MB = 500
 
     def __init__(self):
-        self.sandbox_root = SandboxWorkspace(sandbox_id="init",
-                                              auto_cleanup=False).sandbox_root
+        # FIX (Phase 3): Compute sandbox root directly instead of creating
+        # a full SandboxWorkspace object just to get the path.
+        # The old code: SandboxWorkspace(sandbox_id="init", auto_cleanup=False).sandbox_root
+        # created leaked directories (workspace_init_*) that were never cleaned up.
+        self.sandbox_root = self._compute_sandbox_root()
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         self._active_workspaces: Dict[str, SandboxWorkspace] = {}
         self._lock = threading.Lock()
@@ -45,6 +58,23 @@ class SandboxIsolationManager:
 
         logger.info("SandboxIsolationManager iniciado (root=%s)", self.sandbox_root)
 
+    @staticmethod
+    def _compute_sandbox_root() -> Path:
+        """Compute the sandbox root directory without creating a workspace.
+
+        FIX (Phase 3): Previously, __init__ created a SandboxWorkspace
+        with auto_cleanup=False just to get sandbox_root, which leaked
+        a workspace directory on disk forever. Now we compute the same
+        path directly, matching SandboxWorkspace._get_sandbox_root().
+        """
+        if 'ANDROID_ARGUMENT' in os.environ:
+            try:
+                from android.storage import app_storage_path
+                return Path(app_storage_path()) / "titan_sandbox"
+            except Exception as e:
+                logger.debug(f"SandboxIsolationManager: Android storage path detection failed: {e}")
+        return Path.home() / ".titan_omniscale" / "sandbox"
+
     def _ensure_base_env(self):
         """Crea el entorno base que se copia a cada workspace nuevo."""
         base_dir = self.sandbox_root / "base_env"
@@ -57,7 +87,7 @@ class SandboxIsolationManager:
         (base_dir / "logs").mkdir(exist_ok=True)
         (base_dir / "tmp").mkdir(exist_ok=True)
 
-    def create_workspace(self, sandbox_id=None, ttl_seconds=3600, client_id='default') -> SandboxWorkspace:
+    def create_workspace(self, sandbox_id=None, ttl_seconds=_DEFAULT_TTL_SECONDS, client_id='default') -> SandboxWorkspace:
         """
         Crea un nuevo workspace aislado para ejecucion de sandbox.
 
@@ -87,7 +117,7 @@ class SandboxIsolationManager:
             total_size = self._get_total_size_mb()
             if total_size >= self.MAX_TOTAL_SIZE_MB:
                 self._cleanup_expired()
-                self._cleanup_oldest(count=2)
+                self._cleanup_oldest(count=_CLEANUP_OLDEST_COUNT)
                 total_size = self._get_total_size_mb()
                 if total_size >= self.MAX_TOTAL_SIZE_MB:
                     raise RuntimeError(
@@ -222,7 +252,7 @@ class SandboxIsolationManager:
         def _cleanup_loop():
             while self._running:
                 try:
-                    time.sleep(60)  # Check cada minuto
+                    time.sleep(_CLEANUP_INTERVAL_SECONDS)  # Check periodically
                     with self._lock:
                         self._cleanup_expired()
                 except Exception as e:

@@ -7,7 +7,7 @@ No AI. Pure sorting and assignment algorithms.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import TaskResult
@@ -39,7 +39,7 @@ class TaskScheduler(BaseAgent[TaskResult]):
     Fallback: Empty TaskResult with no schedule.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A12_TaskScheduler", **kwargs)
 
     def execute(self, input_data: Any) -> TaskResult:
@@ -119,9 +119,9 @@ class TaskScheduler(BaseAgent[TaskResult]):
                 assignments[task_name] = resource_name
 
         # ── Detect conflicts (tasks with same priority + same resource) ──
-        conflicts: List[str] = []
+        conflicts: list[str] = []
         if resources:
-            resource_tasks: Dict[str, List[str]] = {}
+            resource_tasks: dict[str, list[str]] = {}
             for task_name, resource_name in assignments.items():
                 resource_tasks.setdefault(resource_name, []).append(task_name)
             for resource_name, task_names in resource_tasks.items():
@@ -131,7 +131,7 @@ class TaskScheduler(BaseAgent[TaskResult]):
                     )
 
         # ── Priority summary ──
-        priorities: Dict[str, int] = {}
+        priorities: dict[str, int] = {}
         for task in scored:
             p = task.get("priority", DEFAULT_PRIORITY)
             priorities[p] = priorities.get(p, 0) + 1

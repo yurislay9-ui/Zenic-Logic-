@@ -22,6 +22,13 @@ from ..constraint_solver import ConstraintSolver
 
 logger = logging.getLogger(__name__)
 
+# Named constants (previously magic numbers)
+_INV_ENUM_THRESHOLD = 5000
+_MAX_VIOLATION_CONSTRAINTS = 50
+_NUMERIC_DOMAIN_INT_THRESHOLD = 50
+_BOUNDED_SAMPLE_COUNT = 200
+_BOUNDED_TIMEOUT_DIVISOR = 50
+
 
 class Z3InvariantMixin:
     """Mixin for invariant verification methods using Z3."""
@@ -39,9 +46,7 @@ class Z3InvariantMixin:
         """
         try:
             # Reset encoding for this proof
-            self._encode_map = {}
-            self._decode_map = {}
-            self._next_encode_id = 0
+            self._reset_encoding()
 
             # Compute total state space size
             total_states = 1
@@ -51,7 +56,7 @@ class Z3InvariantMixin:
 
             # For small domains, enumerate and build Z3 constraints directly
             # that capture the invariant function
-            if total_states <= 5000:
+            if total_states <= _INV_ENUM_THRESHOLD:
                 result = self._z3_invariant_enumerated(
                     invariant_func, variables, domains
                 )
@@ -89,9 +94,7 @@ class Z3InvariantMixin:
         solver.set("timeout", self.timeout_ms)
 
         # Reset encoding for this proof
-        self._encode_map = {}
-        self._decode_map = {}
-        self._next_encode_id = 0
+        self._reset_encoding()
 
         # Build Z3 Int variables and domain constraints
         z3_vars = {}
@@ -112,7 +115,7 @@ class Z3InvariantMixin:
         # Build Z3 constraints encoding these violation patterns
         violation_constraints = []
         checked = 0
-        max_violations = 50
+        max_violations = _MAX_VIOLATION_CONSTRAINTS
 
         def enumerate_states(idx, assignment, z3_conds):
             nonlocal checked
@@ -209,7 +212,7 @@ class Z3InvariantMixin:
                 continue
             vals = domains[var_name]
             # For very large numeric domains, use Int with bounds
-            if len(vals) > 50 and all(isinstance(v, (int, float)) for v in vals):
+            if len(vals) > _NUMERIC_DOMAIN_INT_THRESHOLD and all(isinstance(v, (int, float)) for v in vals):
                 z3_vars[var_name] = z3_module.Int(var_name)
                 min_val = int(min(vals))
                 max_val = int(max(vals))
@@ -233,7 +236,7 @@ class Z3InvariantMixin:
         import random as _rng
 
         violations_found = []
-        samples = min(200, self.timeout_ms // 50)  # Scale with timeout
+        samples = min(_BOUNDED_SAMPLE_COUNT, self.timeout_ms // _BOUNDED_TIMEOUT_DIVISOR)  # Scale with timeout
         checked = 0
 
         for _ in range(samples):

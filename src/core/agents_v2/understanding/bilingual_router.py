@@ -33,7 +33,7 @@ class BilingualRouter(BaseAgent[LanguageResult]):
     Fallback: Default to English.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A48_BilingualRouter", **kwargs)
         self._es_pattern = re.compile(
             r'\b(' + '|'.join(re.escape(w) for w in ES_INDICATORS) + r')\b',
@@ -55,10 +55,19 @@ class BilingualRouter(BaseAgent[LanguageResult]):
         # If >20% of words match Spanish indicators, classify as Spanish
         if word_count > 0 and es_matches / word_count > 0.15:
             lang = "es"
-            confidence = min(es_matches / max(word_count * 0.3, 1), 1.0)
+            raw_confidence = min(es_matches / max(word_count * 0.3, 1), 1.0)
+            # Cap confidence for short inputs — a single word match is not 100% certain
+            if word_count < 5:
+                confidence = min(raw_confidence, 0.85)
+            else:
+                confidence = raw_confidence
         else:
             lang = "en"
-            confidence = 1.0 - min(es_matches / max(word_count * 0.3, 1), 0.5)
+            raw_confidence = 1.0 - min(es_matches / max(word_count * 0.3, 1), 0.5)
+            if word_count < 3:
+                confidence = min(raw_confidence, 0.8)
+            else:
+                confidence = raw_confidence
 
         return LanguageResult(
             lang=lang,

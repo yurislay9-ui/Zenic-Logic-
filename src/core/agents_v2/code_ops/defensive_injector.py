@@ -8,7 +8,7 @@ No AI. AST + regex-based injection driven by criticality adjustments.
 from __future__ import annotations
 
 import ast
-from typing import Any, Dict, List
+from typing import Any
 
 from ..resilience import BaseAgent
 from ..schemas import CodeResult
@@ -37,7 +37,7 @@ class DefensiveInjector(BaseAgent[CodeResult]):
     Fallback: Return code unchanged.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(name="A22_DefensiveInjector", **kwargs)
 
     def execute(self, input_data: Any) -> CodeResult:
@@ -70,8 +70,8 @@ class DefensiveInjector(BaseAgent[CodeResult]):
                 source="deterministic",
             )
 
-        injected: List[str] = []
-        audit: List[str] = []
+        injected: list[str] = []
+        audit: list[str] = []
 
         # ── Level 3: SURGICAL_CRITICAL ──
         if crit_level >= 3:
