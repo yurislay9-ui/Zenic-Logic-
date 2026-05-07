@@ -23,7 +23,7 @@ class TitanHTTPHandler(GetMixin, PostMixin, HelpersMixin, BaseHTTPRequestHandler
         orchestrator: TitanOrchestrator instance
         governor: ResourceGovernor instance (opcional, solo headless)
         start_time: float - timestamp de inicio del servidor (opcional)
-        platform_tag: str - "kivy" o "termux-proot"
+        platform_tag: str - "tui" o "termux-proot"
     """
 
     orchestrator = None

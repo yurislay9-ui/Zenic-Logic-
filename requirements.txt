@@ -64,8 +64,8 @@ gunicorn>=21.2.0
 # Semantic Embeddings (SemanticEngine)
 # pip install fastembed>=0.2.0
 
-# Kivy GUI
-# kivy>=2.3.0
+# Textual TUI (Terminal UI — reemplazo de Kivy)
+# textual>=2.0.0
 
 # Stripe Payments
 # stripe>=7.0.0

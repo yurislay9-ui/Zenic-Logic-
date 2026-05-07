@@ -7,6 +7,9 @@ MCTS real, Ejecucion Simbolica real, Timeout enforcement real,
 Cache de Teoremas con Skeleton Hash, Protocolo Abortivo,
 y Razonamiento Parcial con tool_calls.
 
+Interfaz TUI (Terminal UI) con Textual — funciona en Termux,
+proot-distro, VPS y cualquier terminal sin dependencias graficas.
+
 Modo de uso:
   1. Pulsa INICIAR MOTOR
   2. Conecta Cline/Aide a: http://TU_IP:5000/v1
@@ -37,12 +40,11 @@ from src.server import (
     get_local_ip, configure_handler, RateLimiter,
 )
 
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.textinput import TextInput
-from kivy.uix.scrollview import ScrollView
+from textual.app import App, ComposeResult
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Button, Input, Label, Static
+from textual.reactive import reactive
+from textual import work
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TITAN")
@@ -51,164 +53,255 @@ IS_ANDROID = 'ANDROID_ARGUMENT' in os.environ
 
 
 # ============================================================
-#  INTERFAZ KIVY
+#  INTERFAZ TEXTUAL (TUI)
 # ============================================================
 
-class TitanApp(App):
-    """TITAN OMNISCALE X con servidor OpenAI-compatible."""
+class TitanTUIApp(App):
+    """TITAN OMNISCALE X con servidor OpenAI-compatible — Interfaz TUI."""
 
-    def build(self):
+    CSS = """
+    Screen {
+        layout: vertical;
+        background: $surface;
+    }
+
+    #title-label {
+        text-align: center;
+        padding: 1 2;
+        text-style: bold;
+        color: $text;
+        background: $primary;
+    }
+
+    #ip-label {
+        text-align: center;
+        padding: 0 2;
+        color: $warning;
+        background: $surface;
+    }
+
+    #status-label {
+        text-align: center;
+        padding: 0 2;
+        color: $error;
+        background: $surface;
+    }
+
+    #start-btn {
+        margin: 1 2;
+        height: 3;
+    }
+
+    #start-btn.running {
+        background: $error;
+    }
+
+    #start-btn.stopped {
+        background: $primary;
+    }
+
+    #test-input {
+        margin: 0 2;
+    }
+
+    #test-btn {
+        margin: 0 2;
+        height: 3;
+        background: $success;
+    }
+
+    #log-area {
+        margin: 1 2;
+        border: round $primary;
+        padding: 0 1;
+        height: 1fr;
+        background: $surface;
+    }
+
+    .log-content {
+        color: $text-muted;
+    }
+    """
+
+    BINDINGS = [
+        ("q", "quit", "Salir"),
+        ("i", "toggle_engine", "Iniciar/Detener"),
+        ("t", "focus_input", "Probar"),
+    ]
+
+    server_running: reactive[bool] = reactive(False)
+
+    def compose(self) -> ComposeResult:
         self.engine = _Orchestrator()
         self.server = None
-        self.server_running = False
-        self.log_lines = []
-
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        self._log_lines: list[str] = []
 
         solver_name = "Z3" if HAS_Z3 else "AC-3"
 
-        self.title_label = Label(
-            text=f"[b]TITAN OMNISCALE X {TITAN_VERSION_STR}[/b]\nMotor de IA Quirurgico Local ({solver_name})",
-            font_size='22sp', markup=True, size_hint=(1, 0.12),
-            color=(0.2, 0.8, 1, 1))
+        # Title
+        yield Label(
+            f"TITAN OMNISCALE X {TITAN_VERSION_STR}\n"
+            f"Motor de IA Quirurgico Local ({solver_name})",
+            id="title-label",
+        )
 
-        self.ip_label = Label(
-            text="Conecta Cline/Aide/OpenCode a:\nhttp://0.0.0.0:5000/v1",
-            font_size='16sp', size_hint=(1, 0.1),
-            color=(1, 1, 0.5, 1))
+        # IP Info
+        yield Label(
+            "Conecta Cline/Aide/OpenCode a:\nhttp://0.0.0.0:5000/v1",
+            id="ip-label",
+        )
 
-        self.status_label = Label(
-            text="Motor Apagado", font_size='16sp', size_hint=(1, 0.06),
-            color=(1, 0.5, 0.5, 1))
+        # Status
+        yield Label("Motor Apagado", id="status-label")
 
-        self.btn = Button(
-            text=f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}", font_size='20sp', size_hint=(1, 0.1),
-            background_color=(0.1, 0.5, 0.9, 1))
-        self.btn.bind(on_press=self.toggle_engine)
+        # Start/Stop Button
+        btn = Button(f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}", id="start-btn", variant="primary")
+        yield btn
 
-        self.input_field = TextInput(
-            hint_text="Prueba local: 'crear modulo auth.py'",
-            multiline=False, font_size='14sp', size_hint=(1, 0.08))
-        self.input_field.bind(on_text_validate=self.test_local)
+        # Test Input
+        yield Input(
+            placeholder="Prueba local: 'crear modulo auth.py'",
+            id="test-input",
+        )
 
-        self.test_btn = Button(
-            text="PROBAR LOCALMENTE", font_size='14sp', size_hint=(1, 0.06),
-            background_color=(0.3, 0.7, 0.3, 1))
-        self.test_btn.bind(on_press=self.test_local)
+        # Test Button
+        yield Button("PROBAR LOCALMENTE", id="test-btn", variant="success")
 
-        scroll = ScrollView(size_hint=(1, 0.48))
-        self.log_label = Label(
-            text=f"Motor {TITAN_VERSION_STR} listo. Pulsa INICIAR MOTOR para activar el servidor.\n\n"
-                 f"NOVEDADES {TITAN_VERSION_STR}:\n"
-                 f"- {solver_name} SMT Solver (Z3 si disponible, AC-3 fallback)\n"
-                 f"- MCTS real (UCB1, 100 simulaciones, depth 5)\n"
-                 f"- Ejecucion Simbolica Acotada real\n"
-                 f"- Timeout enforcement real (15s quirurgico, 5s moderado)\n"
-                 f"- K-Paths basado en grafo de dependencias\n"
-                 f"- Protocolo Abortivo (auto-subdivision en timeout)\n"
-                 f"- Razonamiento Parcial con tool_calls\n"
-                 f"- Cache de Teoremas con Skeleton Hash\n"
-                 f"- Configuracion YAML conectada\n"
-                 f"- MacroRouter con firmas topologicas del AST\n"
-                 f"- Generacion de codigo contextual\n\n"
-                 f"COMO CONECTAR CLINE:\n"
-                 f"1. Inicia el motor en esta app\n"
-                 f"2. En VS Code, configura Cline:\n"
-                 f"   - API Provider: OpenAI Compatible\n"
-                 f"   - Base URL: http://TU_IP:5000/v1\n"
-                 f"   - Model: titan-omniscale-x\n"
-                 f"3. Cline enviara peticiones a tu telefono",
-            font_size='12sp', size_hint_y=None, valign='top')
-        self.log_label.bind(
-            width=lambda *x: setattr(self.log_label, 'text_size', (self.log_label.width, None)))
-        self.log_label.bind(texture_size=self.log_label.setter('size'))
-        scroll.add_widget(self.log_label)
+        # Log Area
+        with VerticalScroll(id="log-area"):
+            yield Static(self._initial_log_text(solver_name), classes="log-content")
 
-        layout.add_widget(self.title_label)
-        layout.add_widget(self.ip_label)
-        layout.add_widget(self.status_label)
-        layout.add_widget(self.btn)
-        layout.add_widget(self.input_field)
-        layout.add_widget(self.test_btn)
-        layout.add_widget(scroll)
-        return layout
+    def _initial_log_text(self, solver_name: str) -> str:
+        return (
+            f"Motor {TITAN_VERSION_STR} listo. Pulsa INICIAR MOTOR para activar el servidor.\n\n"
+            f"NOVEDADES {TITAN_VERSION_STR}:\n"
+            f"- {solver_name} SMT Solver (Z3 si disponible, AC-3 fallback)\n"
+            f"- MCTS real (UCB1, 100 simulaciones, depth 5)\n"
+            f"- Ejecucion Simbolica Acotada real\n"
+            f"- Timeout enforcement real (15s quirurgico, 5s moderado)\n"
+            f"- K-Paths basado en grafo de dependencias\n"
+            f"- Protocolo Abortivo (auto-subdivision en timeout)\n"
+            f"- Razonamiento Parcial con tool_calls\n"
+            f"- Cache de Teoremas con Skeleton Hash\n"
+            f"- Configuracion YAML conectada\n"
+            f"- MacroRouter con firmas topologicas del AST\n"
+            f"- Generacion de codigo contextual\n\n"
+            f"COMO CONECTAR CLINE:\n"
+            f"1. Inicia el motor en esta app\n"
+            f"2. En VS Code, configura Cline:\n"
+            f"   - API Provider: OpenAI Compatible\n"
+            f"   - Base URL: http://TU_IP:5000/v1\n"
+            f"   - Model: titan-omniscale-x\n"
+            f"3. Cline enviara peticiones a tu telefono\n\n"
+            f"ATAJOS DE TECLADO:\n"
+            f"  [i] Iniciar/Detener motor  [t] Probar  [q] Salir"
+        )
 
-    def toggle_engine(self, instance):
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "start-btn":
+            self.toggle_engine()
+        elif event.button.id == "test-btn":
+            self._test_local()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "test-input":
+            self._test_local()
+
+    def action_toggle_engine(self) -> None:
+        self.toggle_engine()
+
+    def action_focus_input(self) -> None:
+        self.query_one("#test-input", Input).focus()
+
+    def toggle_engine(self) -> None:
         if self.server_running:
             self._stop_engine()
         else:
             self._start_engine()
 
-    def _start_engine(self):
+    def _start_engine(self) -> None:
         ip = get_local_ip()
-        self.ip_label.text = f"Conecta Cline/Aide/OpenCode a:\nhttp://{ip}:5000/v1"
-        self.status_label.text = f"Iniciando motor {TITAN_VERSION_STR}..."
-        self.status_label.color = (1, 1, 0.5, 1)
-        self.btn.disabled = True
+        self._update_status(f"Iniciando motor {TITAN_VERSION_STR}...", "warning")
+        start_btn = self.query_one("#start-btn", Button)
+        start_btn.disabled = True
 
-        # Configurar handler compartido con rate limiter básico para Kivy
+        # Configurar handler compartido con rate limiter basico para TUI
         rate_limiter = RateLimiter(
             max_requests_per_minute=30,
             burst_size=5,
             global_max_concurrent=10,
         )
-        configure_handler(self.engine, governor=None, platform_tag="kivy",
+        configure_handler(self.engine, governor=None, platform_tag="tui",
                           rate_limiter=rate_limiter)
+
         def run_server():
             try:
                 self.server = ThreadedHTTPServer(('0.0.0.0', 5000), TitanHTTPHandler)
                 self.server_running = True
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_running(ip))
+                self.call_from_thread(self._update_status_running, ip)
                 self.server.serve_forever()
             except OSError as e:
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_error(str(e)))
+                self.call_from_thread(self._update_status_error, str(e))
             except Exception as e:
-                from kivy.clock import Clock
-                Clock.schedule_once(lambda dt: self._update_status_error(str(e)))
+                self.call_from_thread(self._update_status_error, str(e))
 
         threading.Thread(target=run_server, daemon=True).start()
 
-    def _stop_engine(self):
+    def _stop_engine(self) -> None:
         if self.server:
             self.server.shutdown()
             self.server = None
         self.server_running = False
-        self.status_label.text = "Motor Apagado"
-        self.status_label.color = (1, 0.5, 0.5, 1)
-        self.btn.text = f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}"
-        self.btn.background_color = (0.1, 0.5, 0.9, 1)
-        self.btn.disabled = False
+        self._update_status("Motor Apagado", "error")
+        start_btn = self.query_one("#start-btn", Button)
+        start_btn.label = f"INICIAR MOTOR TITAN {TITAN_VERSION_STR}"
+        start_btn.variant = "primary"
+        start_btn.disabled = False
         self._add_log("Motor detenido.")
 
-    def _update_status_running(self, ip):
+    def _update_status(self, text: str, style: str = "error") -> None:
+        status_label = self.query_one("#status-label", Label)
+        status_label.update(text)
+        # Update color based on status
+        if style == "success":
+            status_label.styles.color = "green"
+        elif style == "warning":
+            status_label.styles.color = "yellow"
+        else:
+            status_label.styles.color = "red"
+
+    def _update_status_running(self, ip: str) -> None:
         solver_name = "Z3" if HAS_Z3 else "AC-3"
-        self.status_label.text = f"Motor {TITAN_VERSION_STR} ACTIVO ({solver_name}) - {ip}:5000"
-        self.status_label.color = (0.3, 1, 0.3, 1)
-        self.btn.text = "DETENER MOTOR"
-        self.btn.background_color = (0.9, 0.3, 0.1, 1)
-        self.btn.disabled = False
+        self._update_status(
+            f"Motor {TITAN_VERSION_STR} ACTIVO ({solver_name}) - {ip}:5000",
+            "success",
+        )
+        start_btn = self.query_one("#start-btn", Button)
+        start_btn.label = "DETENER MOTOR"
+        start_btn.variant = "error"
+        start_btn.disabled = False
         self._add_log(f"Motor {TITAN_VERSION_STR} activo. {solver_name} + MCTS + SymbolicExec reales.")
 
-    def _update_status_error(self, error):
-        self.status_label.text = f"Error: {error}"
-        self.status_label.color = (1, 0.3, 0.3, 1)
-        self.btn.text = "REINTENTAR"
-        self.btn.background_color = (0.1, 0.5, 0.9, 1)
-        self.btn.disabled = False
+    def _update_status_error(self, error: str) -> None:
+        self._update_status(f"Error: {error}", "error")
+        start_btn = self.query_one("#start-btn", Button)
+        start_btn.label = "REINTENTAR"
+        start_btn.variant = "primary"
+        start_btn.disabled = False
         self._add_log(f"Error: {error}")
 
-    def test_local(self, instance):
-        msg = self.input_field.text.strip()
+    def _test_local(self) -> None:
+        test_input = self.query_one("#test-input", Input)
+        msg = test_input.value.strip()
         if not msg:
             return
         self._add_log(f"\n>> Local: {msg}")
-        self.test_btn.disabled = True
-        self.input_field.text = ""
+        test_btn = self.query_one("#test-btn", Button)
+        test_btn.disabled = True
+        test_input.value = ""
         threading.Thread(target=self._run_local_test, args=(msg,), daemon=True).start()
 
-    def _run_local_test(self, msg):
+    def _run_local_test(self, msg: str) -> None:
         try:
             import asyncio
             loop = asyncio.new_event_loop()
@@ -232,31 +325,41 @@ class TitanApp(App):
                 output += f"\nError: {result['error']}\n"
         except Exception as e:
             output = f"Error: {str(e)}"
-        from kivy.clock import Clock
-        Clock.schedule_once(lambda dt: self._update_test_result(output))
+        self.call_from_thread(self._update_test_result, output)
 
-    def _update_test_result(self, text):
+    def _update_test_result(self, text: str) -> None:
         self._add_log(text)
-        self.test_btn.disabled = False
+        test_btn = self.query_one("#test-btn", Button)
+        test_btn.disabled = False
 
-    def _add_log(self, text):
-        self.log_lines.append(text)
-        if len(self.log_lines) > 200:
-            self.log_lines = self.log_lines[-200:]
-        self.log_label.text = "\n".join(self.log_lines)
+    def _add_log(self, text: str) -> None:
+        self._log_lines.append(text)
+        if len(self._log_lines) > 200:
+            self._log_lines = self._log_lines[-200:]
+        try:
+            log_content = self.query_one(".log-content", Static)
+            log_content.update("\n".join(self._log_lines))
+            # Auto-scroll to bottom
+            scroll = self.query_one("#log-area", VerticalScroll)
+            scroll.scroll_end(animate=False)
+        except Exception:
+            pass
 
 
 # ============================================================
 #  PUNTO DE ENTRADA
 # ============================================================
 
+_titan_app: TitanTUIApp | None = None
+
+
 def _cleanup():
     """Graceful shutdown: stop server, close DB connections."""
+    global _titan_app
     try:
-        app = App.get_running_app()
-        if app is not None:
-            if app.server:
-                app.server.shutdown()
+        if _titan_app is not None:
+            if _titan_app.server:
+                _titan_app.server.shutdown()
     except Exception:
         pass
     try:
@@ -270,7 +373,9 @@ atexit.register(_cleanup)
 if __name__ == '__main__':
     initialize_databases()
     solver_name = "Z3" if HAS_Z3 else "AC-3"
-    logger.info(f"{TITAN_FULL_NAME} - Local Surgical AI Engine")
+    logger.info(f"{TITAN_FULL_NAME} - Local Surgical AI Engine (TUI)")
     logger.info(f"Solver: {solver_name} | MCTS Real | Symbolic Exec Real | Timeout Real | Skeleton Hash")
     logger.info("OpenAI-compatible server for Cline, Aide, OpenCode")
-    TitanApp().run()
+
+    _titan_app = TitanTUIApp()
+    _titan_app.run()

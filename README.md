@@ -433,7 +433,7 @@ Tiempo: 0ms
 - **Python**: 3.10+
 - **RAM**: Minimo 4GB (8GB+ recomendado)
 - **Disco**: ~500MB para modelo + dependencias
-- **Opcional**: Z3 Solver, fastembed, Kivy
+- **Opcional**: Z3 Solver, fastembed, Textual (TUI)
 
 ### Instalacion Rapida
 
@@ -452,7 +452,7 @@ pip install z3-solver
 pip install fastembed
 
 # Opcional: Interfaz grafica
-pip install kivy
+pip install textual
 
 # Descargar modelo IA
 mkdir -p models
@@ -487,9 +487,13 @@ python main_headless.py --server fastapi --auth
 python main_headless.py --daemon
 ```
 
-### Interfaz Kivy (GUI)
+### Interfaz Textual (TUI)
 
 ```bash
+# Instalar Textual (interfaz de terminal interactiva)
+pip install textual
+
+# Ejecutar la interfaz TUI
 python main.py
 ```
 
@@ -579,7 +583,7 @@ Content-Type: application/json
 
 ```
 Zenic-Logic-/
-├── main.py                          # Interfaz Kivy (GUI)
+├── main.py                          # Interfaz Textual (TUI)
 ├── main_headless.py                 # Servidor CLI
 ├── pyproject.toml                   # Configuracion del proyecto
 ├── requirements.txt                 # Dependencias
@@ -766,7 +770,7 @@ El sistema incluye un bridge completo para Open Design como motor de IA backend:
 |---------|-----|
 | z3-solver | Verificacion formal SMT |
 | fastembed | Embeddings semanticos densos |
-| kivy | Interfaz grafica |
+| textual | Interfaz de terminal (TUI) |
 | llama-cpp-python | Motor de inferencia Qwen3 |
 | stripe | Pagos con Stripe |
 

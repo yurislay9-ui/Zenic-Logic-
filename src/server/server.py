@@ -2,7 +2,7 @@
 TITAN OMNISCALE X v16 - Server Utilities
 
 ThreadedHTTPServer, utilidades de red, rate limiter y funciones auxiliares
-compartidas entre main.py (Kivy) y main_headless.py (Termux).
+compartidas entre main.py (TUI/Textual) y main_headless.py (Termux).
 """
 
 import socket

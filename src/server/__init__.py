@@ -1,7 +1,7 @@
 """
 TITAN OMNISCALE X v16 - Server Package
 
-Servidor HTTP OpenAI-compatible compartido entre Kivy y Termux.
+Servidor HTTP OpenAI-compatible compartido entre TUI (Textual) y Termux.
 Elimina la duplicacion de ~300 lineas entre main.py y main_headless.py.
 
 SaaS Phase 1: FastAPI server with auth, tenants, rate limiting.

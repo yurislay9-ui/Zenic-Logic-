@@ -2,7 +2,7 @@
 """
 TITAN OMNISCALE X - Headless Server for Termux/proot-distro
 
-Servidor OpenAI-Compatible SIN Kivy. Disenado para correr en
+Servidor OpenAI-Compatible SIN interfaz grafica. Disenado para correr en
 Termux + proot-distro (Debian) en tu Redmi 12R Pro.
 
 Uso:

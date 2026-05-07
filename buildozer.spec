@@ -5,7 +5,7 @@ package.domain = org.titan
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,yaml,json
 source.exclude_patterns = tests/*,docs/*,*.md,.git/*,.github/*
-requirements = python3,kivy==2.3.0,Cython<3.0
+requirements = python3,textual>=2.0.0
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE
 android.api = 33
 android.minapi = 24

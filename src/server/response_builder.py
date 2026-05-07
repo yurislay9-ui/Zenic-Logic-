@@ -3,7 +3,7 @@ TITAN OMNISCALE X v16 - Response Builder
 
 Construye respuestas OpenAI-compatible para el servidor HTTP.
 Centraliza el formateo de respuestas normales, partial reasoning y errores,
-eliminando la duplicacion entre main.py (Kivy) y main_headless.py (Termux).
+eliminando la duplicacion entre main.py (TUI/Textual) y main_headless.py (Termux).
 
 Open Design: Supports <artifact> wrapping when visual requests are detected.
 """

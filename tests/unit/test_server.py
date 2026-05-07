@@ -87,7 +87,7 @@ class TestBuildNormalResponse:
         assert resp["titan_metadata"]["platform"] == "termux-proot"
 
     def test_without_governor(self, sample_data, sample_result):
-        """Should work without governor (Kivy mode)."""
+        """Should work without governor (TUI mode)."""
         resp = build_normal_response(sample_data, sample_result, "test")
         assert "platform" not in resp["titan_metadata"]
 
