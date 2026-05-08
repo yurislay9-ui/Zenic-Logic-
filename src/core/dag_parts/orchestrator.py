@@ -7,6 +7,7 @@ un grafo dirigido donde cada nodo es un paso del pipeline y las
 transiciones son condicionales.
 """
 
+import os
 import time
 import logging
 from typing import Dict, Any, Optional
@@ -87,9 +88,9 @@ class DAGOrchestrator(
 
         # 3. 3-Layer AI Architecture (Hybrid Lazy Loading via ModelManager)
         self._model_mgr = init_model_manager(
-            lazy_load=True,
-            idle_timeout_s=300,
-            ram_budget_mb=768,
+            lazy_load=os.environ.get("TITAN_LAZY_LOAD", "1") == "1",
+            idle_timeout_s=int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")),
+            ram_budget_mb=int(os.environ.get("TITAN_RAM_BUDGET_MB", "1536")),
         )
         self._semantic = self._model_mgr.semantic_engine
         self._ai = self._model_mgr.mini_ai_engine

@@ -82,11 +82,14 @@ def _get_shared_loop():
     return _shared_loop
 
 
+_REQUEST_TIMEOUT = int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300"))
+
+
 def _run_async(coro):
     """Run an async coroutine on the shared event loop (thread-safe)."""
     loop = _get_shared_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=120)
+    return future.result(timeout=_REQUEST_TIMEOUT)
 
 
 # Register atexit handler

@@ -1486,7 +1486,7 @@ def _run_orchestrator(orchestrator: Any, user_msg: str) -> Dict[str, Any]:
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(asyncio.run, result)
-                    return future.result(timeout=120)
+                    return future.result(timeout=int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300")))
             return loop.run_until_complete(result)
         except RuntimeError:
             return asyncio.run(result)
