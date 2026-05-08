@@ -1,9 +1,10 @@
 -- ============================================================
---  TITAN OMNISCALE X v16 - PostgreSQL Init Script
---  Phase 3: VPS Deploy
+--  TITAN OMNISCALE X v18 - PostgreSQL Init Script
+--  Compatible with: Docker, VPS, Termux/proot-distro
 --
 --  This script runs automatically when the PostgreSQL container
---  starts for the first time (via docker-entrypoint-initdb.d).
+--  starts for the first time (via docker-entrypoint-initdb.d),
+--  or manually via: psql -U titan -d titan -f deploy/sql/init.sql
 --
 --  It creates extensions, roles, and initial data.
 -- ============================================================
@@ -14,11 +15,16 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Enable pgcrypto for hashing
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Determine the current database name dynamically
+-- (works for both 'titan' and 'titan_db')
+-- \gset cannot be used inside DO blocks, so we use a different approach
+
 -- Create a read-only user for monitoring/health checks (optional)
 -- Password is sourced from POSTGRES_READONLY_PASSWORD env var, with a random fallback
 DO $$
 DECLARE
     readonly_pwd text;
+    db_name text;
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'titan_readonly') THEN
         -- Use environment variable if set, otherwise generate a random password
@@ -27,7 +33,10 @@ BEGIN
             encode(gen_random_bytes(24), 'base64')
         ) INTO readonly_pwd;
         EXECUTE format('CREATE ROLE titan_readonly WITH LOGIN PASSWORD %L', readonly_pwd);
-        GRANT CONNECT ON DATABASE titan_db TO titan_readonly;
+
+        -- Get current database name dynamically
+        SELECT current_database() INTO db_name;
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO titan_readonly', db_name);
     END IF;
 END
 $$;
@@ -37,10 +46,13 @@ DO $$
 DECLARE
     tbl text;
 BEGIN
-    FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('GRANT SELECT ON %I TO titan_readonly', tbl);
-    END LOOP;
+    -- Only grant if titan_readonly role exists
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'titan_readonly') THEN
+        FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+        LOOP
+            EXECUTE format('GRANT SELECT ON %I TO titan_readonly', tbl);
+        END LOOP;
+    END IF;
 END
 $$;
 
@@ -58,8 +70,14 @@ CREATE TABLE IF NOT EXISTS tenants (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- Grant read-only access to tenants table
-GRANT SELECT ON tenants TO titan_readonly;
+-- Grant read-only access to tenants table (only if role exists)
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'titan_readonly') THEN
+        GRANT SELECT ON tenants TO titan_readonly;
+    END IF;
+END
+$$;
 
 -- Create default tenant for testing
 INSERT INTO tenants (id, name, plan, active, config)
