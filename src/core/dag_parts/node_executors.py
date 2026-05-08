@@ -400,10 +400,10 @@ class NodeExecutorsMixin:
         if not plan or not intent:
             return "*"
 
-        code = ctx["code"]
+        code = ctx.get("code", "")
         result_code = ""
-        explanations = ctx["explanations"]
-        lang = ctx["lang"]
+        explanations = ctx.get("explanations", [])
+        lang = ctx.get("lang", "python")
 
         # F3: Inyectar contexto comprimido en explanations
         compressed_ctx = ctx.get("compressed_context", "")

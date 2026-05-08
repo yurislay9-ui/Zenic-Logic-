@@ -220,9 +220,15 @@ class TenantRateLimiter(RateLimiter):
         return base
 
     def _cleanup(self, now: float) -> None:
-        """Clean up stale user and tenant entries, plus parent IP entries."""
-        super()._cleanup(now)
+        """Clean up stale user and tenant entries, plus parent IP entries.
+
+        The parent RateLimiter exposes ``_cleanup_locked()`` (not ``_cleanup()``),
+        so we call that while holding the lock ourselves.
+        """
         with self._lock:
+            # Clean up parent's stale IP entries (method requires lock held)
+            super()._cleanup_locked(now)
+
             # Stale users (5 min inactive)
             stale_threshold = now - STALE_THRESHOLD_S
             stale_users = [

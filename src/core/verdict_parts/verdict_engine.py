@@ -163,6 +163,24 @@ class VerdictEngine:
         else:
             self._resilience = None
 
+    def shutdown(self):
+        """Shut down the internal ThreadPoolExecutor to prevent resource leaks.
+
+        Call this when the VerdictEngine is no longer needed (e.g. on server
+        shutdown).  Without this the executor's worker thread keeps running.
+        """
+        executor = getattr(self, '_executor', None)
+        if executor is not None:
+            executor.shutdown(wait=False)
+            self._executor = None
+
+    def __del__(self):
+        """Ensure executor is cleaned up on garbage collection."""
+        try:
+            self.shutdown()
+        except Exception:
+            pass
+
         logger.info(
             f"VerdictEngine v17.1 initialized: "
             f"LLM={'available' if mini_ai and mini_ai.is_loaded else 'not available'}, "

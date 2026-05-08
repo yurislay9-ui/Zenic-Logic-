@@ -94,17 +94,14 @@ class PostMixin:
         gov = self.governor
         if gov:
             gov.pre_request()
-            if gov.is_ram_critical():
-                self._send_json(build_overloaded_response(), status=503)
-                if self.rate_limiter:
-                    self.rate_limiter.release()
-                if gov:
-                    gov.post_request()
-                return
 
-        # Wrap everything in try/finally so rate_limiter.release() is ALWAYS called,
-        # even if OpenDesignDetector.detect() or JSON parsing crashes.
+        # Wrap everything in try/finally so rate_limiter.release() and
+        # gov.post_request() are ALWAYS called exactly once, even on
+        # early returns (RAM critical) or crashes.
         try:
+            if gov and gov.is_ram_critical():
+                self._send_json(build_overloaded_response(), status=503)
+                return  # finally block will release resources
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(content_length).decode('utf-8')

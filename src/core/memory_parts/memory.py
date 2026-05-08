@@ -152,11 +152,12 @@ class SmartMemory(DatabaseMixin, CacheMixin, LongTermMixin, EpisodesMixin):
                     f'DELETE FROM "{table}" WHERE client_id=? AND tenant_id=?',
                     (client_id, tid)
                 )
-        # Also remove from working memory
-        self._working_memory = [
-            e for e in self._working_memory
-            if not (e.client_id == client_id and e.tenant_id == tid)
-        ]
+        # Also remove from working memory (thread-safe)
+        with self._working_lock:
+            self._working_memory = [
+                e for e in self._working_memory
+                if not (e.client_id == client_id and e.tenant_id == tid)
+            ]
         logger.info(
             f"SmartMemory: Cleared all data for client_id='{client_id}', "
             f"tenant_id='{tid}'"
@@ -194,10 +195,11 @@ class SmartMemory(DatabaseMixin, CacheMixin, LongTermMixin, EpisodesMixin):
                     (tid,)
                 )
                 total_deleted += cursor.rowcount
-        # Also remove from working memory
-        self._working_memory = [
-            e for e in self._working_memory if e.tenant_id != tid
-        ]
+        # Also remove from working memory (thread-safe)
+        with self._working_lock:
+            self._working_memory = [
+                e for e in self._working_memory if e.tenant_id != tid
+            ]
         logger.info(
             f"SmartMemory: Purged all data for tenant_id='{tid}' "
             f"({total_deleted} rows deleted)"

@@ -40,13 +40,19 @@ class CorrectionsMixin:
                     corrected = 'import ast\n' + corrected
 
             elif issue_code == 'command_injection':
+                # Replace os.system(CMD) with subprocess.run(shlex.split(CMD), ...)
+                # os.system takes a single string; subprocess.run with shell=False
+                # requires a list. Using shlex.split() to parse the command string
+                # into a proper argument list.
                 corrected = _re.sub(
                     r'os\.system\s*\(\s*([^)]+)\s*\)',
-                    r'subprocess.run(\1, shell=False, capture_output=True)',
+                    r'subprocess.run(shlex.split(\1), shell=False, capture_output=True)',
                     corrected
                 )
                 if 'subprocess.run' in corrected and 'import subprocess' not in corrected:
-                    corrected = 'import subprocess\n' + corrected
+                    corrected = 'import subprocess\nimport shlex\n' + corrected
+                elif 'shlex.split' in corrected and 'import shlex' not in corrected:
+                    corrected = 'import shlex\n' + corrected
 
             elif issue_code == 'shell_injection':
                 corrected = _re.sub(
@@ -56,11 +62,30 @@ class CorrectionsMixin:
                 )
 
             elif issue_code == 'pickle_deserialization':
+                # pickle and json are NOT interchangeable — pickle handles binary
+                # data, json handles text.  Instead of silently replacing (which
+                # breaks at runtime), we wrap the call with a safety check that
+                # logs a warning and returns None for non-JSON-safe data.
                 corrected = _re.sub(
                     r'pickle\.loads?\s*\(',
-                    'json.loads(  # F5: Replaced unsafe pickle\n        ',
+                    '_safe_deserialize(',
                     corrected
                 )
+                if '_safe_deserialize' in corrected and 'def _safe_deserialize' not in corrected:
+                    safe_func = (
+                        'import json\n'
+                        'def _safe_deserialize(data):\n'
+                        '    """F5: Safe replacement for pickle.loads — tries JSON first."""\n'
+                        '    try:\n'
+                        '        if isinstance(data, bytes):\n'
+                        '            data = data.decode("utf-8")\n'
+                        '        return json.loads(data)\n'
+                        '    except (json.JSONDecodeError, UnicodeDecodeError):\n'
+                        '        import logging; logging.warning("F5: Cannot safely deserialize pickle data")\n'
+                        '        return None\n'
+                        '\n'
+                    )
+                    corrected = safe_func + corrected
 
             elif issue_code == 'bare_except':
                 corrected = _re.sub(

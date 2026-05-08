@@ -73,12 +73,28 @@ def _shutdown_loop():
 
 
 def _get_shared_loop():
-    """Get or create the shared asyncio event loop (thread-safe)."""
+    """Get or create the shared asyncio event loop (thread-safe).
+
+    The loop runs in a daemon thread so that async coroutines submitted
+    via ``run_coroutine_threadsafe`` are actually executed.  Without a
+    running loop the orchestrator's ``execute()`` coroutine would never
+    be processed and every request would time out.
+    """
     global _shared_loop
     if _shared_loop is None or _shared_loop.is_closed():
         with _loop_lock:
             if _shared_loop is None or _shared_loop.is_closed():
                 _shared_loop = asyncio.new_event_loop()
+                # Start the loop in a daemon thread so it actually processes
+                # queued coroutines.  Without this, run_coroutine_threadsafe
+                # enqueues work that is never executed → every request hangs
+                # until TITAN_REQUEST_TIMEOUT and then raises TimeoutError.
+                _loop_thread = threading.Thread(
+                    target=_shared_loop.run_forever,
+                    daemon=True,
+                    name="titan-async-loop",
+                )
+                _loop_thread.start()
     return _shared_loop
 
 

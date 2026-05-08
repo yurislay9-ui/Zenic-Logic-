@@ -97,7 +97,9 @@ TITAN_SCRIPT
     sleep 2
 
     # Copiar el script al home de Debian y ejecutarlo ahi
-    cp "$0" /data/data/com.termux/files/usr/debian/root/install_termux.sh 2>/dev/null || true
+    # proot-distro Debian filesystem is at the installed-rootfs path
+    DEBIAN_ROOT="/data/data/com.termux/files/usr/var/proot-distro/installed-rootfs/debian"
+    cp "$0" "$DEBIAN_ROOT/root/install_termux.sh" 2>/dev/null || true
     proot-distro login debian -- bash -c "cd /root && bash install_termux.sh --inside-proot"
     exit 0
 fi
@@ -170,8 +172,27 @@ echo -e "${GREEN}Repositorio listo en /root/Zenic-Logic-/${NC}"
 
 echo -e "${YELLOW}[PASO 5] Instalando dependencias Python...${NC}"
 
+# Create virtual environment for isolation (avoids breaking system Python)
+echo -e "${CYAN}Creando entorno virtual...${NC}"
+python3 -m venv /root/Zenic-Logic-/venv 2>/dev/null || true
+if [ -d "/root/Zenic-Logic-/venv" ]; then
+    source /root/Zenic-Logic-/venv/bin/activate
+    echo -e "${GREEN}Entorno virtual creado y activado${NC}"
+fi
+
 # Actualizar pip
 python3 -m pip install --upgrade pip 2>/dev/null || true
+
+# Install ALL project dependencies from requirements.txt
+echo -e "${CYAN}Instalando requirements.txt... (puede tardar 3-10 minutos)${NC}"
+cd /root/Zenic-Logic-
+pip3 install -r requirements.txt 2>/dev/null && echo -e "${GREEN}requirements.txt instalado${NC}" || {
+    echo -e "${YELLOW}Algunas dependencias de requirements.txt fallaron. Instalando las criticas...${NC}"
+    # Install core deps individually with error tolerance
+    for pkg in fastapi uvicorn jinja2 python-multipart pydantic aiosqlite numpy pyyaml apscheduler aiohttp aiofiles python-jose passlib gunicorn; do
+        pip3 install "$pkg" 2>/dev/null && echo -e "  ${GREEN}✓ $pkg${NC}" || echo -e "  ${YELLOW}⚠ $pkg (skipped)${NC}"
+    done
+}
 
 # Instalar Z3 solver (la pieza clave - funciona en proot-distro Debian ARM)
 echo -e "${CYAN}Instalando Z3 SMT Solver... (puede tardar 1-3 minutos)${NC}"
@@ -180,8 +201,9 @@ pip3 install z3-solver 2>/dev/null && echo -e "${GREEN}Z3 instalado correctament
     echo -e "${YELLOW}Para intentar instalar Z3 manualmente luego: pip3 install z3-solver${NC}"
 }
 
-# Instalar pyyaml (para leer configuracion YAML)
-pip3 install pyyaml 2>/dev/null && echo -e "${GREEN}PyYAML instalado${NC}" || echo -e "${YELLOW}PyYAML no se instalo, usando defaults hardcoded${NC}"
+# Install optional but useful packages for Termux
+echo -e "${CYAN}Instalando paquetes opcionales...${NC}"
+pip3 install textual 2>/dev/null && echo -e "${GREEN}Textual TUI instalado${NC}" || echo -e "${YELLOW}Textual no disponible (solo modo headless)${NC}"
 
 echo -e "${GREEN}Dependencias Python instaladas${NC}"
 
