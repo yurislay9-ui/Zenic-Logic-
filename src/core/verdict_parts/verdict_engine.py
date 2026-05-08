@@ -181,12 +181,10 @@ class VerdictEngine:
         except Exception:
             pass
 
-        logger.info(
-            f"VerdictEngine v17.1 initialized: "
-            f"LLM={'available' if mini_ai and mini_ai.is_loaded else 'not available'}, "
-            f"Semantic={'available' if semantic_engine and semantic_engine.is_loaded else 'not available'}, "
-            f"Resilience={'enabled' if _RESILIENCE_AVAILABLE else 'basic'}"
-        )
+        # NOTE: Do NOT log here — __del__ runs during garbage collection and
+        # referencing self._mini_ai / self._semantic may already be invalid.
+        # The original code used bare names (mini_ai, semantic_engine) which
+        # caused NameError at GC time.
 
     # ================================================================
     #  MAIN API: Full verdict pipeline
