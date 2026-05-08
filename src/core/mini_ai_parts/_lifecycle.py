@@ -53,11 +53,17 @@ class ModelLifecycleMixin:
                 model_path=self._model_path,
                 n_ctx=N_CTX,
                 n_threads=N_THREADS,
+                n_batch=int(os.environ.get("TITAN_LLM_BATCH", "512")),
+                use_mmap=True,
+                use_mlock=False,
                 verbose=False,
             )
             self._load_time = time.time() - start
             self._loaded = True
-            logger.info(f"MiniAI: Qwen3-0.6B loaded in {self._load_time:.1f}s from {self._model_path}")
+            logger.info(f"MiniAI: Qwen3-0.6B loaded in {self._load_time:.1f}s (n_ctx={N_CTX}, n_threads={N_THREADS}, n_batch={os.environ.get('TITAN_LLM_BATCH', '512')})")
+            # Warm-up inference: first call is 2-5x slower (KV cache init, buffer allocation).
+            # Doing it here means the first real request won't timeout.
+            self._warm_up()
             return True
         except ImportError:
             logger.warning("MiniAI: llama-cpp-python not installed. Using fallbacks only.")
@@ -66,6 +72,33 @@ class ModelLifecycleMixin:
             logger.warning(f"MiniAI: Failed to load model: {e}. Using fallbacks only.")
             self._llm = None
             return False
+
+    def _warm_up(self) -> None:
+        """Run a dummy inference after model load to initialize KV cache and buffers.
+
+        The first llama_cpp create_chat_completion() call is 2-5x slower because:
+        - KV cache allocation and initialization
+        - Batch processing buffer allocation
+        - CPU cache warming for model weights
+        Without warm-up, the first real request often exceeds LLM_TIMEOUT_S.
+        """
+        if not self._loaded or self._llm is None:
+            return
+        try:
+            import time as _t
+            t0 = _t.time()
+            _ = self._llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": "You are helpful."},
+                    {"role": "user", "content": "Say OK."},
+                ],
+                max_tokens=5,
+                temperature=0.0,
+            )
+            elapsed = _t.time() - t0
+            logger.info(f"MiniAI: Warm-up inference completed in {elapsed:.1f}s")
+        except Exception as e:
+            logger.warning(f"MiniAI: Warm-up inference failed (non-critical): {e}")
 
     def unload_model(self) -> None:
         """Libera el modelo de memoria (thread-safe)."""

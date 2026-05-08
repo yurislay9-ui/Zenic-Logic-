@@ -927,6 +927,24 @@ def create_app(
                      or detection_result.get("is_visual_request"))):
             return build_artifact_response(body, result, user_msg, governor=governor)
 
+        # Detect fallback-only responses (all LLM calls timed out or failed).
+        # This happens when the model is too slow on ARM or hasn't warmed up yet.
+        # Return a clear error instead of garbage fallback code.
+        mini_ai_stats = result.get("mini_ai_stats", {})
+        fallback_rate = mini_ai_stats.get("fallback_rate", 0.0)
+        total_calls = mini_ai_stats.get("total_calls", 0)
+        if total_calls > 0 and fallback_rate >= 1.0:
+            # 100% of LLM calls used fallback — model is not responding
+            logger.warning(
+                "chat_completions: 100%% fallback rate (%d calls) — model not responding",
+                total_calls,
+            )
+            return build_error_response(
+                "Model inference timed out — the AI model is not responding in time. "
+                "This is common on first request after startup (warm-up). "
+                "Please try again — subsequent requests will be faster."
+            )
+
         return build_normal_response(body, result, user_msg, governor=governor)
 
     @app.post("/v1/generate/app")
