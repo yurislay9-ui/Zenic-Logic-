@@ -19,6 +19,7 @@ Endpoints:
 """
 
 import sys
+import os
 import time
 import logging
 import argparse
@@ -75,7 +76,6 @@ logger = logging.getLogger("TITAN")
 
 def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
     """Imprime el banner de inicio en la terminal."""
-    import os
     res = governor.get_status() if governor else {}
     idle_min = int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")) // 60
     ram_budget = os.environ.get("TITAN_RAM_BUDGET_MB", "1536")
