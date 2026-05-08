@@ -82,7 +82,7 @@ def _get_shared_loop():
     return _shared_loop
 
 
-_REQUEST_TIMEOUT = int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300"))
+_REQUEST_TIMEOUT = int(os.environ.get("TITAN_REQUEST_TIMEOUT", "600"))
 
 
 def _run_async(coro):

@@ -3,7 +3,7 @@ POST endpoint mixin for TitanHTTPHandler.
 """
 
 from ._imports import (
-    logger, json, _run_async,
+    logger, json, _run_async, _REQUEST_TIMEOUT,
     build_normal_response, build_partial_reasoning_response,
     build_error_response, build_overloaded_response,
     build_artifact_response,
@@ -178,6 +178,19 @@ class PostMixin:
 
             response = build_normal_response(data, result, user_msg, governor=gov)
             self._send_json(response)
+        except TimeoutError:
+            logger.error(
+                "Request TIMEOUT after %ds — orchestrator took too long. "
+                "Increase TITAN_REQUEST_TIMEOUT or check model loading.",
+                _REQUEST_TIMEOUT,
+            )
+            self._send_json({
+                "error": {
+                    "message": f"Request timed out after {_REQUEST_TIMEOUT}s. "
+                               "The model may still be loading. Try again in a moment.",
+                    "type": "timeout_error",
+                }
+            }, status=504)
         except Exception as e:
             logger.error("Error processing request: %s", e, exc_info=True)
             self._send_json(build_error_response(str(e)))

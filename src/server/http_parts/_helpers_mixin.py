@@ -29,10 +29,18 @@ class HelpersMixin:
             self.send_header('Access-Control-Allow-Credentials', 'true')
 
     def _send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self._set_cors_headers()
-        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
-        self.send_header('Content-Length', len(body))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self._set_cors_headers()
+            body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            self.send_header('Content-Length', len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            # Client closed the connection before we could respond (e.g. timeout on their end).
+            # This is normal and not an error we need to log loudly.
+            pass
+        except ConnectionResetError:
+            # Similar to BrokenPipe — client reset the connection.
+            pass

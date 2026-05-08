@@ -174,6 +174,28 @@ def main():
     if hasattr(orchestrator, '_model_mgr'):
         governor.set_model_manager(orchestrator._model_mgr)
 
+    # ── Precarga de modelos ──
+    # Cargar modelos ANTES de empezar a servir requests para evitar
+    # TimeoutError en el primer request (Qwen ~400MB + SemanticEngine ~150MB)
+    preload = os.environ.get("TITAN_PRELOAD_MODELS", "1") == "1"
+    if preload and hasattr(orchestrator, '_model_mgr'):
+        logger.info("Preloading AI models (avoid first-request timeout)...")
+        try:
+            _mgr = orchestrator._model_mgr
+            # Trigger lazy-load for both models
+            t0 = time.time()
+            _ = _mgr.semantic_engine   # loads ~150MB
+            t1 = time.time()
+            logger.info(f"  SemanticEngine loaded in {t1-t0:.1f}s")
+            _ = _mgr.mini_ai_engine    # loads ~400MB (Qwen)
+            t2 = time.time()
+            logger.info(f"  MiniAIEngine loaded in {t2-t1:.1f}s")
+            logger.info(f"All models ready ({t2-t0:.1f}s total)")
+        except Exception as e:
+            logger.warning(f"Model preload failed (will lazy-load on first request): {e}")
+    else:
+        logger.info("Model preload disabled (TITAN_PRELOAD_MODELS=0)")
+
     # Crear AuthService si --auth o --server fastapi
     auth_service = None
     if args.auth or args.server == 'fastapi':
