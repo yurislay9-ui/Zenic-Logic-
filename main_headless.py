@@ -75,7 +75,11 @@ logger = logging.getLogger("TITAN")
 
 def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
     """Imprime el banner de inicio en la terminal."""
+    import os
     res = governor.get_status() if governor else {}
+    idle_min = int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")) // 60
+    ram_budget = os.environ.get("TITAN_RAM_BUDGET_MB", "1536")
+    auto_unload = "ON" if os.environ.get("TITAN_AUTO_UNLOAD", "1") == "1" else "OFF"
     banner = f"""
 +==============================================================+
 |  TITAN OMNISCALE X {TITAN_VERSION_STR} - HEADLESS SERVER [{server_type}]    
@@ -94,7 +98,7 @@ def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
 |    Solver: {solver_name} | MCTS: ARM-optimized                  |
 |    RAM: {res.get('ram_usage_mb', 0):.0f}MB / {res.get('ram_limit_mb', '?')}MB limite           |
 |    Models: Lazy (se cargan al primer request)               |
-|    Auto-unload: 5 min idle | Budget: 768MB                  |
+|    Auto-unload: {auto_unload} ({idle_min} min idle) | Budget: {ram_budget}MB           |
 |    GC tuned for ARM | Priority: low                          |
 |                                                              |
 |  Ctrl+C para detener                                         |

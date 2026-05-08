@@ -150,7 +150,7 @@ class DAGOrchestrator(
             f"ContextAgent(F3)=ready | CriticalityAgent(F4)=ready | "
             f"ValidationAgent(F5)=ready | "
             f"DAG={len(self._pipeline_dag)} nodes | "
-            f"ModelManager=lazy(idle=300s, budget=768MB)"
+            f"ModelManager=lazy(idle={self._model_mgr._idle_timeout_s}s, budget={self._model_mgr._ram_budget_mb}MB)"
         )
 
         # 10. Scan project
