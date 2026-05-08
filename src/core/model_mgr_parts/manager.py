@@ -4,7 +4,8 @@ import time
 import threading
 
 from ._imports import (
-    logger, IDLE_TIMEOUT_S, RAM_BUDGET_MB, ENABLE_LAZY_LOAD
+    logger, IDLE_TIMEOUT_S, RAM_BUDGET_MB, ENABLE_LAZY_LOAD,
+    ENABLE_AUTO_UNLOAD,
 )
 from .semantic_access import SemanticAccessMixin
 from .ai_access import AIAccessMixin
@@ -70,5 +71,5 @@ class ModelManager(
             f"ModelManager: lazy_load={self._lazy_load}, "
             f"idle_timeout={self._idle_timeout_s}s, "
             f"ram_budget={self._ram_budget_mb}MB, "
-            f"auto_unload={ENABLE_LAZY_LOAD}"
+            f"auto_unload={ENABLE_AUTO_UNLOAD}"
         )
