@@ -15,6 +15,7 @@ class MonitorMixin:
         if self._monitor_thread and self._monitor_thread.is_alive():
             return
         self._stop_event.clear()
+        self._cpu_lock = threading.Lock()
         self._monitor_thread = threading.Thread(
             target=self._monitor_loop, daemon=True
         )
@@ -42,7 +43,11 @@ class MonitorMixin:
             self._stop_event.wait(timeout=self.DEFAULT_CPU_SAMPLE_INTERVAL)
 
     def _update_cpu_usage(self):
-        """Estima el uso de CPU leyendo /proc/stat (Linux/proot)."""
+        """Estima el uso de CPU leyendo /proc/stat (Linux/proot).
+
+        Uses self._stop_event.wait() instead of time.sleep() so the
+        monitor thread can respond to stop_monitoring() immediately.
+        """
         try:
             # Metodo 1: Leer /proc/stat (disponible en proot-distro Debian)
             with open('/proc/stat', 'r') as f:
@@ -51,7 +56,11 @@ class MonitorMixin:
             idle = values[3]
             total = sum(values)
 
-            time.sleep(0.1)
+            # Use stop_event.wait() instead of time.sleep() so we can
+            # respond to stop_monitoring() without a 100ms delay.
+            self._stop_event.wait(timeout=0.1)
+            if self._stop_event.is_set():
+                return  # Early exit if monitoring was stopped
 
             with open('/proc/stat', 'r') as f:
                 line = f.readline()
@@ -62,7 +71,8 @@ class MonitorMixin:
             delta_idle = idle2 - idle
             delta_total = total2 - total
             if delta_total > 0:
-                self._cpu_usage = 1.0 - (delta_idle / delta_total)
+                with self._cpu_lock:
+                    self._cpu_usage = 1.0 - (delta_idle / delta_total)
         except (FileNotFoundError, PermissionError, ValueError):
             # Fallback: estimar basado en tiempo de proceso
             if resource is not None:
@@ -71,13 +81,16 @@ class MonitorMixin:
                     user_time = usage.ru_utime
                     wall_time = time.time() - self._last_cpu_check
                     if wall_time > 0:
-                        self._cpu_usage = min(user_time / wall_time, 1.0)
+                        with self._cpu_lock:
+                            self._cpu_usage = min(user_time / wall_time, 1.0)
                     self._last_cpu_check = time.time()
                 except Exception as e:
-                    self._cpu_usage = 0.3  # Asumir uso moderado
+                    with self._cpu_lock:
+                        self._cpu_usage = 0.3  # Asumir uso moderado
                     logger.debug("ResourceGovernor: CPU usage estimation failed: %s", e)
             else:
-                self._cpu_usage = 0.3  # resource module unavailable
+                with self._cpu_lock:
+                    self._cpu_usage = 0.3  # resource module unavailable
 
     def _update_ram_usage(self):
         """Mide el uso de RAM del proceso actual."""

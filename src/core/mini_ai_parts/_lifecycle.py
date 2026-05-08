@@ -68,14 +68,16 @@ class ModelLifecycleMixin:
             return False
 
     def unload_model(self) -> None:
-        """Libera el modelo de memoria."""
-        if self._llm is not None:
-            del self._llm
-            self._llm = None
-            self._loaded = False
-            self._executor.shutdown(wait=False)
-            self._executor = None  # Lazy re-creation on next use
-            logger.info("MiniAI: Model unloaded from memory")
+        """Libera el modelo de memoria (thread-safe)."""
+        with self._lock:
+            if self._llm is not None:
+                del self._llm
+                self._llm = None
+                self._loaded = False
+                if self._executor is not None:
+                    self._executor.shutdown(wait=False)
+                    self._executor = None  # Lazy re-creation on next use
+                logger.info("MiniAI: Model unloaded from memory")
 
     @property
     def is_loaded(self) -> bool:

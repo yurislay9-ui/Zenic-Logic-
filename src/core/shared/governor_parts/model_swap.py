@@ -55,7 +55,7 @@ class ModelSwapMixin:
     def get_status(self) -> Dict[str, Any]:
         """Retorna el estado actual del governor para el endpoint /health."""
         return {
-            "cpu_usage_pct": round(self._cpu_usage * 100, 1),
+            "cpu_usage_pct": round(self._get_cpu_usage() * 100, 1),
             "ram_usage_mb": round(self._ram_usage_mb, 1),
             "ram_limit_mb": self.ram_limit_mb,
             "thermal_throttle": round(self._thermal_throttle, 2),

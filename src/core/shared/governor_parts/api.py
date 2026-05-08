@@ -16,9 +16,10 @@ class APIMixin:
 
         El sleep es adaptativo: si la CPU esta alta, duerme mas.
         """
-        if self._cpu_usage > 0.8:
+        cpu_usage = self._get_cpu_usage()
+        if cpu_usage > 0.8:
             sleep_ms = self.DEFAULT_CPU_SLEEP_MS * 3  # 150ms
-        elif self._cpu_usage > 0.6:
+        elif cpu_usage > 0.6:
             sleep_ms = self.DEFAULT_CPU_SLEEP_MS * 2  # 100ms
         else:
             sleep_ms = self.DEFAULT_CPU_SLEEP_MS       # 50ms
@@ -28,6 +29,14 @@ class APIMixin:
 
         time.sleep(sleep_ms / 1000.0)
 
+    def _get_cpu_usage(self) -> float:
+        """Thread-safe read of CPU usage."""
+        cpu_lock = getattr(self, '_cpu_lock', None)
+        if cpu_lock:
+            with cpu_lock:
+                return self._cpu_usage
+        return self._cpu_usage
+
     def get_adaptive_mcts_simulations(self, base_simulations: int = 100) -> int:
         """
         Ajusta las simulaciones MCTS segun la carga del sistema.
@@ -36,11 +45,12 @@ class APIMixin:
         Si la CPU esta alta: reduce proporcionalmente
         Si hay throttle termico: reduce aun mas
         """
-        if self._cpu_usage > 0.8:
+        cpu_usage = self._get_cpu_usage()
+        if cpu_usage > 0.8:
             scale = 0.3
-        elif self._cpu_usage > 0.6:
+        elif cpu_usage > 0.6:
             scale = 0.5
-        elif self._cpu_usage > 0.4:
+        elif cpu_usage > 0.4:
             scale = 0.7
         else:
             scale = 1.0
@@ -55,7 +65,7 @@ class APIMixin:
             logger.info(
                 "MCTS adaptive: %d -> %d sims (CPU=%.0f%%, throttle=%.0f%%)",
                 base_simulations, adaptive,
-                self._cpu_usage * 100, self._thermal_throttle * 100
+                cpu_usage * 100, self._thermal_throttle * 100
             )
 
         return adaptive

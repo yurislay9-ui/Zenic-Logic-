@@ -86,7 +86,7 @@ if [ "$INSIDE_PROOT" = false ]; then
     cat > $PREFIX/bin/titan << 'TITAN_SCRIPT'
 #!/bin/bash
 # Script para iniciar TITAN OMNISCALE X rapidamente
-proot-distro login debian -- bash -c "cd /root/Zenic-Logic- && python3 main_headless.py --port 5000 --ram-limit 2048"
+proot-distro login debian -- bash -c "cd /root/Zenic-Logic- && python3 main_headless.py --port 5000 --ram-limit 4096"
 TITAN_SCRIPT
     chmod +x $PREFIX/bin/titan
 
@@ -306,7 +306,7 @@ fi
 python3 main_headless.py \
     --port 5000 \
     --host 0.0.0.0 \
-    --ram-limit 2048 \
+    --ram-limit 4096 \
     "$@"
 STARTSCRIPT
 
@@ -340,7 +340,7 @@ echo -e "${YELLOW}║    http://TU_IP:5000/v1                                   
 echo -e "${CYAN}║                                                              ║${NC}"
 echo -e "${CYAN}║  OPCIONES:                                                   ║${NC}"
 echo -e "${CYAN}║    --port 5001         Cambiar puerto                       ║${NC}"
-echo -e "${CYAN}║    --ram-limit 3072    Subir limite RAM a 3GB               ║${NC}"
+echo -e "${CYAN}║    --ram-limit 4096    Subir limite RAM a 4GB               ║${NC}"
 echo -e "${CYAN}║    --daemon            Correr en background                 ║${NC}"
 echo -e "${CYAN}║    --debug             Logs verbose                         ║${NC}"
 echo -e "${CYAN}║                                                              ║${NC}"

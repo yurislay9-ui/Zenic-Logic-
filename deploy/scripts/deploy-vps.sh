@@ -116,7 +116,7 @@ TITAN_AUTH_ENABLED=true
 DATABASE_URL=postgresql+asyncpg://titan:${DB_PASSWORD}@localhost:5432/titan_db
 DATABASE_URL_SYNC=postgresql+psycopg2://titan:${DB_PASSWORD}@localhost:5432/titan_db
 TITAN_AUTH_SECRET=${SECRET}
-TITAN_RAM_LIMIT_MB=2048
+TITAN_RAM_LIMIT_MB=4096
 TITAN_WORKERS=4
 LOG_LEVEL=info
 EOF

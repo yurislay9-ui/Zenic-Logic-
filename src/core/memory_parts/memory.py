@@ -336,10 +336,12 @@ class SmartMemory(DatabaseMixin, CacheMixin, LongTermMixin, EpisodesMixin):
         if not sid:
             return ""
         
-        # From working memory if current session
-        if sid == self._session_id and self._working_memory:
-            ops = [f"{e.operation}/{e.goal}: {e.query[:50]}" for e in self._working_memory[-10:]]
-            return f"Session {sid}: {' | '.join(ops)}"
+        # From working memory if current session (thread-safe read)
+        if sid == self._session_id:
+            with self._working_lock:
+                if self._working_memory:
+                    ops = [f"{e.operation}/{e.goal}: {e.query[:50]}" for e in self._working_memory[-10:]]
+                    return f"Session {sid}: {' | '.join(ops)}"
         
         # From database for past sessions (tenant-scoped)
         with sqlite3.connect(DB_PATH) as conn:
@@ -436,5 +438,6 @@ class SmartMemory(DatabaseMixin, CacheMixin, LongTermMixin, EpisodesMixin):
         return {"promoted_to_long_term": promoted, "episodes_consolidated": consolidated_episodes}
 
     def get_recent_entries(self, limit: int = 30):
-        """Public accessor for recent working memory entries."""
-        return self._working_memory[:limit]
+        """Public accessor for recent working memory entries (thread-safe)."""
+        with self._working_lock:
+            return self._working_memory[:limit]

@@ -20,15 +20,15 @@ class ResourceGovernor(
     Tu Redmi 12R Pro tiene 12+8GB RAM (20GB total con virtual).
     Esto no significa que debamos usarlo todo. El governor mantiene:
 
-    - RAM limit: 2GB max para el engine (deja 18GB para Android)
+    - RAM limit: 4GB max para el engine (deja 16GB para Android)
     - CPU throttle: 70% max (deja 30% para el SO)
     - Thermal: si el proceso lleva >30s a >60% CPU, reduce agresividad
-    - GC agresivo: cada 60s o cuando RAM > 1.5GB
+    - GC agresivo: cada 60s o cuando RAM > 3GB
     """
 
     # Limites conservadores para un telefono
-    DEFAULT_RAM_LIMIT_MB = 2048       # 2GB max para el engine
-    DEFAULT_GC_THRESHOLD_MB = 1536    # Forzar GC a 1.5GB
+    DEFAULT_RAM_LIMIT_MB = 4096       # 4GB max para el engine
+    DEFAULT_GC_THRESHOLD_MB = 3072    # Forzar GC a 3GB
     DEFAULT_CPU_SLEEP_MS = 50         # 50ms sleep entre ops pesadas
     DEFAULT_CPU_SAMPLE_INTERVAL = 5   # Muestrear cada 5s
     THERMAL_SCALE_BACK_THRESHOLD = 30  # Si >30s a alta CPU, reducir

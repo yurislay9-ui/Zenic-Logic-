@@ -90,7 +90,7 @@ class DAGOrchestrator(
         self._model_mgr = init_model_manager(
             lazy_load=os.environ.get("TITAN_LAZY_LOAD", "1") == "1",
             idle_timeout_s=int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")),
-            ram_budget_mb=int(os.environ.get("TITAN_RAM_BUDGET_MB", "1536")),
+            ram_budget_mb=int(os.environ.get("TITAN_RAM_BUDGET_MB", "3072")),
         )
         self._semantic = self._model_mgr.semantic_engine
         self._ai = self._model_mgr.mini_ai_engine

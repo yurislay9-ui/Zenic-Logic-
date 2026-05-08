@@ -1528,7 +1528,7 @@ def create_app_from_env() -> Any:
         TITAN_ENV: 'production' or 'development' (default: development)
         TITAN_AUTH_ENABLED: 'true' to enable auth (default: false in dev)
         TITAN_AUTH_SECRET: JWT secret (required if auth enabled)
-        TITAN_RAM_LIMIT_MB: RAM limit in MB (default: 2048)
+        TITAN_RAM_LIMIT_MB: RAM limit in MB (default: 4096)
         DATABASE_URL: PostgreSQL or SQLite connection string
     """
     import os
@@ -1541,7 +1541,7 @@ def create_app_from_env() -> Any:
         pass
 
     # Initialize ResourceGovernor
-    ram_limit = int(os.environ.get("TITAN_RAM_LIMIT_MB", "2048"))
+    ram_limit = int(os.environ.get("TITAN_RAM_LIMIT_MB", "4096"))
     try:
         from src.core.shared.resource_governor import (
             tune_gc_for_arm, set_process_priority_low, limit_open_files, init_governor,

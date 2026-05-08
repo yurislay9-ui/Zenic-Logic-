@@ -8,7 +8,7 @@ Termux + proot-distro (Debian) en tu Redmi 12R Pro.
 Uso:
   python3 main_headless.py                    # Modo interactivo
   python3 main_headless.py --port 5000        # Puerto custom
-  python3 main_headless.py --ram-limit 2048   # Limite RAM en MB
+  python3 main_headless.py --ram-limit 4096   # Limite RAM en MB
   python3 main_headless.py --daemon           # Modo daemon (background)
 
 Endpoints:
@@ -78,7 +78,7 @@ def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
     """Imprime el banner de inicio en la terminal."""
     res = governor.get_status() if governor else {}
     idle_min = int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")) // 60
-    ram_budget = os.environ.get("TITAN_RAM_BUDGET_MB", "1536")
+    ram_budget = os.environ.get("TITAN_RAM_BUDGET_MB", "3072")
     auto_unload = "ON" if os.environ.get("TITAN_AUTO_UNLOAD", "1") == "1" else "OFF"
     rl_concurrent = os.environ.get("TITAN_RATE_LIMIT_CONCURRENT", "60")
     banner = f"""
@@ -129,8 +129,8 @@ def main():
         help='Host para bind (default: 0.0.0.0)'
     )
     parser.add_argument(
-        '--ram-limit', type=int, default=2048,
-        help='Limite RAM en MB (default: 2048)'
+        '--ram-limit', type=int, default=4096,
+        help='Limite RAM en MB (default: 4096)'
     )
     parser.add_argument(
         '--daemon', action='store_true',

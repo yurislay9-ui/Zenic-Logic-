@@ -142,6 +142,21 @@ class TenantIsolation:
         return None, new_columns, new_values
 
     @staticmethod
+    def _validate_table_name(table: str) -> str:
+        """Validate that a table name is safe for SQL interpolation.
+
+        Only allows alphanumeric characters and underscores to prevent
+        SQL injection through f-string table name interpolation.
+        Raises ValueError if the name contains suspicious characters.
+        """
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+            raise ValueError(
+                f"Invalid table name '{table}': must match [a-zA-Z_][a-zA-Z0-9_]*"
+            )
+        return table
+
+    @staticmethod
     def validate_schema(conn: Any) -> List[str]:
         """Validate that all required tables have a tenant_id column.
 
@@ -158,9 +173,12 @@ class TenantIsolation:
 
         for table in TenantIsolation.REQUIRED_TENANT_TABLES:
             try:
-                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                safe_table = TenantIsolation._validate_table_name(table)
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({safe_table})").fetchall()]
                 if "tenant_id" not in cols:
                     errors.append(f"Table '{table}' is missing 'tenant_id' column (has: {cols})")
+            except ValueError as e:
+                errors.append(str(e))
             except Exception as e:
                 errors.append(f"Cannot check table '{table}': {e}")
 
@@ -171,10 +189,11 @@ class TenantIsolation:
         """Add tenant_id column to a table if it doesn't exist.
 
         Safe to call multiple times — checks first.
+        Validates table name against injection before interpolation.
 
         Args:
             conn: sqlite3.Connection.
-            table: Table name.
+            table: Table name (must match [a-zA-Z_][a-zA-Z0-9_]*).
             default_value: Default value for existing rows.
 
         Returns:
@@ -183,22 +202,29 @@ class TenantIsolation:
         import sqlite3
 
         try:
-            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            safe_table = TenantIsolation._validate_table_name(table)
+        except ValueError:
+            logger.error("TenantIsolation: refusing to migrate table with unsafe name: '%s'", table)
+            return False
+
+        try:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({safe_table})").fetchall()]
             if "tenant_id" in cols:
                 return False  # Already exists
             conn.execute(
-                f'ALTER TABLE "{table}" ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ?',
+                f'ALTER TABLE "{safe_table}" ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ?',
                 (default_value,),
             )
             # Create index for fast tenant-scoped queries
+            idx_name = f"idx_{safe_table}_tenant"
             conn.execute(
-                f'CREATE INDEX IF NOT EXISTS "idx_{table}_tenant" ON "{table}"(tenant_id)'
+                f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON "{safe_table}"(tenant_id)'
             )
             conn.commit()
-            logger.info("TenantIsolation: added tenant_id column to '%s' (default='%s')", table, default_value)
+            logger.info("TenantIsolation: added tenant_id column to '%s' (default='%s')", safe_table, default_value)
             return True
         except sqlite3.Error as e:
-            logger.error("TenantIsolation: migration failed for '%s': %s", table, e)
+            logger.error("TenantIsolation: migration failed for '%s': %s", safe_table, e)
             return False
 
     @staticmethod
@@ -206,12 +232,13 @@ class TenantIsolation:
         """Delete all data for a specific tenant from a table.
 
         Used for GDPR compliance (right to be forgotten) or
-        tenant deprovisioning.
+        tenant deprovisioning. Table name is validated against the
+        REQUIRED_TENANT_TABLES whitelist and sanitized before interpolation.
 
         Args:
             conn: sqlite3.Connection.
             tenant_id: Tenant to purge.
-            table: Table to purge from.
+            table: Table to purge from (must be in REQUIRED_TENANT_TABLES).
 
         Returns:
             Number of rows deleted.
@@ -221,12 +248,18 @@ class TenantIsolation:
             return 0
 
         try:
-            cursor = conn.execute(f'DELETE FROM "{table}" WHERE tenant_id = ?', (tenant_id,))
+            safe_table = TenantIsolation._validate_table_name(table)
+        except ValueError:
+            logger.error("TenantIsolation: refusing to purge table with unsafe name: '%s'", table)
+            return 0
+
+        try:
+            cursor = conn.execute(f'DELETE FROM "{safe_table}" WHERE tenant_id = ?', (tenant_id,))
             conn.commit()
             count = cursor.rowcount
             if count > 0:
-                logger.info("TenantIsolation: purged %d rows from '%s' for tenant '%s'", count, table, tenant_id)
+                logger.info("TenantIsolation: purged %d rows from '%s' for tenant '%s'", count, safe_table, tenant_id)
             return count
         except Exception as e:
-            logger.error("TenantIsolation: purge failed for '%s': %s", table, e)
+            logger.error("TenantIsolation: purge failed for '%s': %s", safe_table, e)
             return 0

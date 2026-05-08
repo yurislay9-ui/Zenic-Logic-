@@ -23,7 +23,7 @@ class HardwareState:
     """Estado del hardware en un momento dado."""
     cpu_usage: float = 0.0       # 0.0 - 1.0
     ram_usage_mb: float = 0.0
-    ram_limit_mb: float = 2048
+    ram_limit_mb: float = 4096
     temperature_c: float = 45.0  # Estimada
     battery_level: float = 100.0  # 0-100%
     battery_charging: bool = True

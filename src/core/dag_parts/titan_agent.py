@@ -114,7 +114,10 @@ class TitanAgent(BaseAgent):
 
         # Nodo INTENT: decidir path según operation
         if node == "INTENT":
-            return self.INTENT_TRANSITIONS.get(op, "AST_ANALYZE")
+            # All operations go to CONTEXT_PREPARE for context enrichment
+            # before AST analysis — this matches the DAG definition where
+            # INTENT transitions to CONTEXT_PREPARE for all results.
+            return self.INTENT_TRANSITIONS.get(op, "CONTEXT_PREPARE")
 
         # Nodo PLAN: decidir path según criticalidad
         if node == "PLAN":

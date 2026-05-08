@@ -214,7 +214,7 @@ class LongTermMixin:
             "session_id": self._session_id,
             "client_id": self._client_id,
             "tenant_id": self._tenant_id,
-            "working_memory_size": len(self._working_memory) if self._working_lock else 0,
+            "working_memory_size": len(self._working_memory) if hasattr(self, '_working_lock') and self._working_lock else 0,
             "semantic_cache_size": cache_count,
             "long_term_memory_size": ltm_count,
             "semantic_engine_available": self._semantic is not None and self._semantic.is_loaded,
