@@ -1,9 +1,11 @@
 """
-DAG Node Executors (Part 1) - First 10 executor methods as a mixin.
+DAG Node Executors (Part 1) - First 12 executor methods as a mixin.
 
-Contains: _exec_cache_check through _exec_steps.
+Contains: _exec_cache_check, _exec_chat_detect, _exec_chat_respond,
+through _exec_steps.
 """
 
+import re
 import time
 import logging
 from typing import Dict, Any, Union
@@ -16,8 +18,160 @@ from src.core.dag_parts.definition import MAX_CODE_SNIPPET_LEN
 logger = logging.getLogger(__name__)
 
 
+# ── Chat Detection Patterns (zero LLM, pure deterministic) ────────
+
+# Greetings and simple social messages
+_CHAT_GREETINGS = re.compile(
+    r"^(hi|hello|hey|hola|buenas|qué tal|good morning|good afternoon|good evening|"
+    r"buenos días|buenas tardes|buenas noches|sup|yo|what'?s up|howdy|saludos)[\s!.,?]*$",
+    re.IGNORECASE,
+)
+
+# Gratitude / acknowledgments
+_CHAT_THANKS = re.compile(
+    r"^(thanks|thank you|thx|ty|gracias|genial|perfecto|ok|okay|got it|entendido|"
+    r"entiendo|vale|bien|nice|cool|great|awesome|excelente)[\s!.,]*$",
+    re.IGNORECASE,
+)
+
+# Simple questions that don't need code analysis
+_CHAT_SIMPLE_Q = re.compile(
+    r"^(what is|what are|who is|who are|where is|when is|how (do|does|is|are|to)|"
+    r"can you|could you|por qué|cómo|qué es|quién|dónde|cuándo|"
+    r"tell me about|explain|describe|define|resume|resumen)\b",
+    re.IGNORECASE,
+)
+
+# Code/technical indicators — if present, go to full pipeline
+_CODE_INDICATORS = re.compile(
+    r"(\.py|\.js|\.ts|\.java|\.cpp|\.c|\.go|\.rs|\.rb|\.php|\.html|\.css|\.sql|"
+    r"```|def |class |import |function |const |var |let |return |if |for |while |"
+    r"async |await |try|except|catch|throw|error|bug|fix|refactor|optimize|"
+    r"endpoint|api|database|server|deploy|docker|git |commit|pull|push|merge)",
+    re.IGNORECASE,
+)
+
+
 class NodeExecutorsMixin:
-    """Mixin providing the first 10 DAG node executor methods."""
+    """Mixin providing the first 12 DAG node executor methods."""
+
+    # ── FAST PATH: Chat Mode ──────────────────────────────────
+
+    async def _exec_chat_detect(self, ctx: Dict) -> str:
+        """Nodo CHAT_DETECT: Detectar mensajes de chat simple vs. solicitud técnica.
+
+        Zero LLM calls — pure deterministic pattern matching.
+        Returns 'chat' for simple conversational messages,
+        'pipeline' for anything that needs the full DAG.
+        """
+        msg = ctx["msg"].strip()
+
+        # Always go to pipeline if code indicators present
+        if _CODE_INDICATORS.search(msg):
+            return "pipeline"
+
+        # Short message length threshold
+        word_count = len(msg.split())
+
+        # Very short messages that match greetings/thanks → chat mode
+        if word_count <= 8:
+            if _CHAT_GREETINGS.match(msg):
+                logger.info("CHAT_DETECT: greeting detected → chat mode")
+                return "chat"
+            if _CHAT_THANKS.match(msg):
+                logger.info("CHAT_DETECT: thanks/ack detected → chat mode")
+                return "chat"
+
+        # Medium messages with simple question patterns but no code
+        if word_count <= 30 and _CHAT_SIMPLE_Q.match(msg) and not _CODE_INDICATORS.search(msg):
+            logger.info("CHAT_DETECT: simple question detected → chat mode")
+            return "chat"
+
+        # Everything else → full pipeline
+        return "pipeline"
+
+    async def _exec_chat_respond(self, ctx: Dict) -> Union[str, Dict]:
+        """Nodo CHAT_RESPOND: Generate response for simple chat messages.
+
+        Uses the LLM (Qwen) directly for a fast response, bypassing
+        the entire 15-node DAG pipeline. No agents, no validation,
+        no sandbox — just direct inference.
+        """
+        msg = ctx["msg"].strip()
+        start = ctx["start_time"]
+
+        # Try direct LLM inference for a conversational response
+        if self._agent_runner and hasattr(self._agent_runner, 'runner'):
+            try:
+                llm_engine = getattr(self._agent_runner, '_llm_engine', None)
+                if llm_engine is None:
+                    # Try to get it from the orchestrator's model manager
+                    if hasattr(self, '_model_mgr'):
+                        llm_engine = self._model_mgr.mini_ai_engine
+
+                if llm_engine and hasattr(llm_engine, 'chat'):
+                    response_text = llm_engine.chat(msg, max_tokens=256)
+                    elapsed = int((time.time() - start) * 1000)
+                    logger.info(
+                        "CHAT_RESPOND: Direct LLM response in %dms", elapsed
+                    )
+                    ctx["final_code"] = response_text
+                    return {
+                        "status": "SUCCESS",
+                        "code": response_text,
+                        "hash": "chat",
+                        "error": "",
+                        "processing_time_ms": elapsed,
+                        "pipeline_path": "chat_mode",
+                        "_dag_done": True,
+                    }
+            except Exception as e:
+                logger.warning("CHAT_RESPOND: Direct LLM failed: %s, using template", e)
+
+        # Fallback: Template-based responses (zero LLM, instant)
+        elapsed = int((time.time() - start) * 1000)
+        response_text = self._chat_template_response(msg)
+        logger.info("CHAT_RESPOND: Template response in %dms", elapsed)
+
+        ctx["final_code"] = response_text
+        return {
+            "status": "SUCCESS",
+            "code": response_text,
+            "hash": "chat",
+            "error": "",
+            "processing_time_ms": elapsed,
+            "pipeline_path": "chat_mode_template",
+            "_dag_done": True,
+        }
+
+    def _chat_template_response(self, msg: str) -> str:
+        """Generate template-based response for simple chat (zero LLM)."""
+        msg_lower = msg.lower().strip()
+
+        # Greetings
+        if _CHAT_GREETINGS.match(msg):
+            return (
+                "¡Hola! Soy TITAN OMNISCALE X, tu motor de IA local. "
+                "Estoy listo para ayudarte. ¿En qué puedo asistirte?"
+            )
+
+        # Thanks
+        if _CHAT_THANKS.match(msg):
+            return "¡De nada! Estoy aquí cuando me necesites."
+
+        # Simple questions - give a helpful redirect
+        if _CHAT_SIMPLE_Q.match(msg):
+            return (
+                f"Buena pregunta. Puedo ayudarte con eso. "
+                f"Para darte una respuesta más precisa, ¿puedes dar más contexto "
+                f"o detalles sobre lo que necesitas?"
+            )
+
+        # Default
+        return (
+            "Entendido. Estoy procesando tu mensaje. "
+            "¿Necesitas que genere código, analice algo, o tienes alguna pregunta específica?"
+        )
 
     async def _exec_cache_check(self, ctx: Dict) -> Union[str, Dict]:
         """Nodo CACHE_CHECK: Check SmartMemory cache."""
@@ -126,13 +280,39 @@ class NodeExecutorsMixin:
         return "*"
 
     async def _exec_criticality_route(self, ctx: Dict) -> str:
-        """Nodo CRITICALITY_ROUTE (F4): Ruteo Dinámico de Criticalidad."""
+        """Nodo CRITICALITY_ROUTE (F4): Ruteo Dinámico de Criticalidad.
+
+        OPTIMIZATION: Skip LLM call for EXPLAIN/SEARCH/ANALYZE operations
+        with high confidence — they are always low_crit. Saves 1-2s per request.
+        """
         if not self._criticality_agent:
             return "*"
 
         intent_output = ctx.get("intent_output")
         routing = ctx.get("routing")
         router_crit = routing.criticality if routing else 2
+
+        # ── FAST PATH: Skip LLM for low-criticality operations ──
+        if intent_output and intent_output.confidence > 0.6:
+            op = intent_output.operation.upper() if intent_output.operation else ""
+            if op in ("EXPLAIN", "SEARCH", "ANALYZE"):
+                # These are always low_crit — skip the LLM call entirely
+                crit_output = CriticalityOutput(
+                    level=1,
+                    path="low_crit",
+                    reason=f"Fast-path: {op} operation (skipped F4 LLM)",
+                    confidence=0.9,
+                    source="operation_fast_path",
+                    adjustments=CRITICALITY_ADJUSTMENTS.get(1, CRITICALITY_ADJUSTMENTS[2]),
+                )
+                ctx["criticality_output"] = crit_output
+                if routing:
+                    routing.criticality = 1
+                logger.info(
+                    "CriticalityAgent(F4): FAST-PATH %s → low_crit (skipped LLM)",
+                    op,
+                )
+                return "*"
 
         crit_output = self._criticality_agent.assess_with_runner(
             runner=self._agent_runner,

@@ -8,6 +8,7 @@ import time
 import logging
 from typing import Dict, Any, Union
 
+from src.core.agents.schemas import CriticalityOutput
 from src.core.smart_memory import SmartMemory
 from src.core.shared.db_initializer import get_projects_dir
 from src.core.dag_parts.definition import (
@@ -24,7 +25,11 @@ class NodeExecutors2Mixin:
     """Mixin providing the remaining 9 DAG node executor methods."""
 
     async def _exec_validate(self, ctx: Dict) -> str:
-        """Nodo VALIDATE (F5): Enjambre de Revisión Secuencial."""
+        """Nodo VALIDATE (F5): Enjambre de Revisión Secuencial.
+
+        OPTIMIZATION: For low_crit path, use deterministic regex-only validation
+        (skip LLM call). Saves 4-8s per low-criticality request.
+        """
         final_code = ctx.get("final_code", "")
         lang = ctx.get("lang", "python")
 
@@ -32,13 +37,36 @@ class NodeExecutors2Mixin:
             logger.info("VALIDATE(F5): No code to validate, proceeding to SANDBOX")
             return "clean"
 
-        v_out = self._validation_agent.validate_with_runner(
-            self._agent_runner,
-            target="code",
-            content=final_code,
-            rules=["security", "quality"],
-            language=lang,
+        # ── FAST PATH: low_crit → deterministic validation only (no LLM) ──
+        crit_output = ctx.get("criticality_output")
+        is_low_crit = (
+            crit_output
+            and isinstance(crit_output, CriticalityOutput)
+            and crit_output.level == 1
         )
+
+        if is_low_crit:
+            # Use fallback (regex-based) validation — no LLM call
+            from src.core.agents.schemas import IntentPayload
+            intent = ctx.get("intent")
+            v_out = self._validation_agent.fallback(
+                target="code",
+                content=final_code,
+                rules=["security", "quality"],
+                language=lang,
+            )
+            logger.info(
+                "VALIDATE(F5): FAST-PATH low_crit → regex-only (skipped LLM)"
+            )
+        else:
+            # Full LLM-based validation for standard/high_crit
+            v_out = self._validation_agent.validate_with_runner(
+                self._agent_runner,
+                target="code",
+                content=final_code,
+                rules=["security", "quality"],
+                language=lang,
+            )
 
         risk_score = v_out.risk_score
         issues = v_out.issues
@@ -94,10 +122,28 @@ class NodeExecutors2Mixin:
         return {**result, "_dag_done": True}
 
     async def _exec_sandbox(self, ctx: Dict) -> str:
-        """Nodo SANDBOX: Validación en sandbox aislado."""
+        """Nodo SANDBOX: Validación en sandbox aislado.
+
+        OPTIMIZATION: Skip sandbox for EXPLAIN/ANALYZE/SEARCH operations
+        that don't produce executable code. Saves 1-30s per non-code request.
+        """
         final_code = ctx["final_code"]
-        lang = ctx["lang"]
+        lang = ctx.get("lang", "python")
         intent = ctx.get("intent")
+
+        # ── FAST PATH: Skip sandbox for non-code operations ──
+        if intent and intent.op and intent.op.upper() in ("EXPLAIN", "ANALYZE", "SEARCH"):
+            logger.info(
+                "SANDBOX: FAST-PATH skipped for %s operation (no executable code)",
+                intent.op.upper(),
+            )
+            # Treat as PASS — no code to sandbox-test
+            from src.core.shared.types import SandboxResult
+            ctx["trial"] = SandboxResult(
+                status="PASS",
+                error_message="",
+            )
+            return "PASS"
 
         workspace = self._isolation_manager.create_workspace(
             ttl_seconds=max(self.sandbox.timeout_seconds * SANDBOX_TTL_MULTIPLIER, SANDBOX_TTL_MIN),

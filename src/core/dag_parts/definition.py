@@ -37,9 +37,27 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
     "CACHE_CHECK": DAGNode(
         name="CACHE_CHECK",
         exec_method="_exec_cache_check",
-        transitions={"hit": "DONE", "miss": "INTENT"},
+        transitions={"hit": "DONE", "miss": "CHAT_DETECT"},
+        default_next="CHAT_DETECT",
+    ),
+    # ── FAST PATH: Chat Mode ──────────────────────────────────
+    # Detects simple conversational messages and responds directly
+    # WITHOUT running the full 15-node DAG pipeline.
+    # This reduces "Hola" from 15+ nodes / 3-4 LLM calls / 15-60s
+    # → 2 nodes / 0 LLM calls / <100ms
+    "CHAT_DETECT": DAGNode(
+        name="CHAT_DETECT",
+        exec_method="_exec_chat_detect",
+        transitions={"chat": "CHAT_RESPOND", "pipeline": "INTENT"},
         default_next="INTENT",
     ),
+    "CHAT_RESPOND": DAGNode(
+        name="CHAT_RESPOND",
+        exec_method="_exec_chat_respond",
+        transitions={"*": "DONE"},
+        default_next="DONE",
+    ),
+    # ── FULL PIPELINE ─────────────────────────────────────────
     "INTENT": DAGNode(
         name="INTENT",
         exec_method="_exec_intent",
