@@ -37,11 +37,16 @@ try:
         bcrypt__rounds=12,
         bcrypt__ident="2b",
     )
+    # Verify the bcrypt backend actually works (bcrypt 4.1+ / 5.x
+    # changed the API and passlib may not be fully compatible)
+    _pwd_context.hash("test")
 except ImportError:
     PASSLIB_AVAILABLE = False; _pwd_context = None
 except Exception:
     # Fallback if bcrypt backend has compatibility issues
+    # (e.g. bcrypt.__about__ removed in 4.1+, 72-byte enforcement, etc.)
     PASSLIB_AVAILABLE = False; _pwd_context = None
+    logger.debug("passlib/bcrypt unavailable, using PBKDF2-SHA256 fallback")
 
 try:
     from fastapi import Depends, HTTPException, status
