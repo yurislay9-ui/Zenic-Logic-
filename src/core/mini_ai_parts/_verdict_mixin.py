@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # === Configuración estricta para veredictos ===
 VERDICT_MAX_TOKENS = 10          # Solo necesita 1 token
 VERDICT_TEMPERATURE = 0.0        # Determinismo absoluto
-VERDICT_TIMEOUT_S = 5.0          # Timeout estricto por intento
+VERDICT_TIMEOUT_S = 15.0         # Timeout por intento (was 5s, too short for ARM)
 VERDICT_MAX_RETRIES = 3          # Reintentos con exponential backoff
 VERDICT_BASE_DELAY = 1.0         # Delay base entre reintentos (segundos)
 VERDICT_MAX_DELAY = 10.0         # Delay máximo entre reintentos

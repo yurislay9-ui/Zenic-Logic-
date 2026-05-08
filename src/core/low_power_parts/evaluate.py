@@ -103,11 +103,15 @@ class EvaluateMixin:
         """Lee el estado actual del hardware."""
         hw = HardwareState()
 
-        # From governor if available
+        # From governor if available — use public API when possible
         if self._governor:
-            hw.cpu_usage = getattr(self._governor, '_cpu_usage', 0.0)
+            # Use _get_cpu_usage() if available (thread-safe), fallback to direct attr
+            if hasattr(self._governor, '_get_cpu_usage'):
+                hw.cpu_usage = self._governor._get_cpu_usage()
+            else:
+                hw.cpu_usage = getattr(self._governor, '_cpu_usage', 0.0)
             hw.ram_usage_mb = getattr(self._governor, '_ram_usage_mb', 0.0)
-            hw.ram_limit_mb = getattr(self._governor, 'ram_limit_mb', 2048)
+            hw.ram_limit_mb = getattr(self._governor, 'ram_limit_mb', 4096)
             hw.thermal_throttle = getattr(self._governor, '_thermal_throttle', 1.0)
 
         # Read temperature from thermal zone (Android/Linux)

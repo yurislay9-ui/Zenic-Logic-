@@ -20,6 +20,7 @@ Start with: python main_headless.py --server fastapi
 import time
 import logging
 import uuid
+import threading
 from typing import Any, Dict, List, Optional
 
 from src.core.shared._version import TITAN_VERSION, TITAN_VERSION_STR, TITAN_FULL_NAME
@@ -161,6 +162,15 @@ def create_app(
     cors_origins = os.getenv("TITAN_CORS_ORIGINS", "*")
     cors_origins_list = [o.strip() for o in cors_origins.split(",") if o.strip()] if cors_origins != "*" else ["*"]
     cors_credentials_env = os.getenv("TITAN_CORS_CREDENTIALS", "true").lower() == "true"
+
+    # Merge Open Design origins BEFORE adding middleware (FastAPI captures values at registration time)
+    if _OPEN_DESIGN_AVAILABLE:
+        od_config = get_open_design_config()
+        if od_config.open_design_origins and cors_origins_list != ["*"]:
+            for origin in od_config.open_design_origins:
+                if origin not in cors_origins_list:
+                    cors_origins_list.append(origin)
+
     # CORS spec: credentials=true with origin=* is invalid — force false for wildcard
     cors_credentials = cors_credentials_env if cors_origins_list != ["*"] else False
     app.add_middleware(
@@ -171,16 +181,6 @@ def create_app(
         allow_headers=["*"],
     )
     logger.info("CORS: origins=%s, credentials=%s", cors_origins_list, cors_credentials)
-
-    # Merge Open Design origins if available
-    if _OPEN_DESIGN_AVAILABLE:
-        od_config = get_open_design_config()
-        if od_config.open_design_origins and cors_origins_list != ["*"]:
-            for origin in od_config.open_design_origins:
-                if origin not in cors_origins_list:
-                    cors_origins_list.append(origin)
-            # Re-evaluate credentials
-            cors_credentials = cors_credentials_env if cors_origins_list != ["*"] else False
 
     # ── Phase 5: Security middleware (headers, auth rate limit, input sanitization) ─
     if _SECURITY_AVAILABLE:
@@ -285,6 +285,7 @@ def create_app(
     app.state.platform_tag = platform_tag
     app.state.start_time = start_time
     app.state.request_count = 0
+    app.state._request_count_lock = threading.Lock()
 
     # ── Auth dependency ────────────────────────────────────
     async def get_auth_context(request: Request) -> Optional[AuthContext]:
@@ -453,7 +454,8 @@ def create_app(
             # Process request and measure time
             request_start = time.time()
             try:
-                app.state.request_count += 1
+                with app.state._request_count_lock:
+                    app.state.request_count += 1
                 response = await call_next(request)
             finally:
                 # Record usage with compute_seconds and tokens
@@ -1498,14 +1500,14 @@ def _run_orchestrator(orchestrator: Any, user_msg: str) -> Dict[str, Any]:
     # Handle coroutine
     if asyncio.iscoroutine(result):
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, result)
-                    return future.result(timeout=int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300")))
-            return loop.run_until_complete(result)
+            loop = asyncio.get_running_loop()
+            # Already inside a running loop — use ThreadPoolExecutor
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, result)
+                return future.result(timeout=int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300")))
         except RuntimeError:
+            # No running loop — safe to use asyncio.run()
             return asyncio.run(result)
     return result
 

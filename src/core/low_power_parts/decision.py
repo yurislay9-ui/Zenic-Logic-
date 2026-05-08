@@ -13,7 +13,11 @@ class DecisionMixin:
         Returns:
             True si paralelo, False si secuencial
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._should_run_parallel_layer4(mode)
+
+    def _should_run_parallel_layer4(self, mode: PowerMode) -> bool:
+        """Internal: decision based on pre-evaluated mode."""
         return mode == PowerMode.NORMAL
 
     def should_run_parallel_agents(self) -> bool:
@@ -23,7 +27,11 @@ class DecisionMixin:
         Returns:
             True si paralelo, False si secuencial
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._should_run_parallel_agents(mode)
+
+    def _should_run_parallel_agents(self, mode: PowerMode) -> bool:
+        """Internal: decision based on pre-evaluated mode."""
         return mode != PowerMode.EMERGENCY
 
     def get_mcts_scale(self) -> float:
@@ -33,7 +41,11 @@ class DecisionMixin:
         Returns:
             1.0 (normal), 0.5 (conservative), 0.25 (emergency)
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._get_mcts_scale(mode)
+
+    def _get_mcts_scale(self, mode: PowerMode) -> float:
+        """Internal: scale based on pre-evaluated mode."""
         scales = {
             PowerMode.NORMAL: 1.0,
             PowerMode.CONSERVATIVE: 0.5,
@@ -48,7 +60,11 @@ class DecisionMixin:
         Returns:
             1.0 (normal), 0.7 (conservative), 0.4 (emergency)
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._get_solver_timeout_scale(mode)
+
+    def _get_solver_timeout_scale(self, mode: PowerMode) -> float:
+        """Internal: scale based on pre-evaluated mode."""
         scales = {
             PowerMode.NORMAL: 1.0,
             PowerMode.CONSERVATIVE: 0.7,
@@ -63,7 +79,11 @@ class DecisionMixin:
         Returns:
             True si se debe postponer
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._should_postpone_non_critical(mode)
+
+    def _should_postpone_non_critical(self, mode: PowerMode) -> bool:
+        """Internal: decision based on pre-evaluated mode."""
         return mode != PowerMode.NORMAL
 
     def get_active_agents(self) -> list:
@@ -72,8 +92,11 @@ class DecisionMixin:
 
         En EMERGENCY, solo los agentes criticos del pipeline principal.
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
+        return self._get_active_agents(mode)
 
+    def _get_active_agents(self, mode: PowerMode) -> list:
+        """Internal: agents based on pre-evaluated mode."""
         # All agents (normal mode)
         all_agents = [
             "INTENT", "DECOMPOSER", "EXTRACTOR",
@@ -101,7 +124,7 @@ class DecisionMixin:
         En NORMAL: todos en paralelo
         En CONSERVATIVE/EMERGENCY: uno a uno, ordenados por prioridad
         """
-        mode = self.evaluate()
+        mode = self._evaluate_cached()
 
         if mode == PowerMode.NORMAL:
             return ["parallel"]

@@ -167,8 +167,11 @@ class TenantContext:
 
     def has_role(self, minimum_role: str) -> bool:
         """Check if the user has at least the minimum role."""
-        from src.core.auth_parts._imports import ROLE_HIERARCHY
-        return ROLE_HIERARCHY.get(self.role, -1) >= ROLE_HIERARCHY.get(minimum_role, -1)
+        try:
+            from src.core.auth_parts._imports import ROLE_HIERARCHY
+            return ROLE_HIERARCHY.get(self.role, -1) >= ROLE_HIERARCHY.get(minimum_role, -1)
+        except ImportError:
+            return False
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize context for logging/debugging."""

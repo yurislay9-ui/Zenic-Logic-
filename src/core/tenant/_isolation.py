@@ -89,6 +89,9 @@ class TenantIsolation:
         if table in TenantIsolation.EXEMPT_TABLES:
             return base_query, params or ()
 
+        # Validate table name to prevent injection
+        TenantIsolation._validate_table_name(table)
+
         tid = tenant_id or TenantIsolation.current_tenant_id()
         new_params = list(params or [])
 

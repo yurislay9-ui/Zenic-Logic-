@@ -3,10 +3,19 @@ Mixin: Model lifecycle methods (load, unload, stats).
 
 FIX (Phase 2): Replaced static `np` import with _get_numpy() lazy loading.
 Added retry logic for model loading with exponential backoff.
+FIX (v18): Disable ONNX Runtime thread affinity on ARM/Termux to prevent
+pthread_setaffinity_np errors and potential crashes.
 """
 
+import os
 import time
 import logging
+
+# Disable ONNX Runtime thread affinity BEFORE any onnxruntime import.
+# On ARM/Termux/proot-distro, thread affinity causes:
+#   "pthread_setaffinity_np failed ... error code: 22 Invalid argument"
+# Setting this env var must happen before onnxruntime is first loaded.
+os.environ.setdefault("ORT_DISABLE_THREAD_AFFINITY", "1")
 
 from ._imports import EMBEDDING_MODEL, EMBEDDING_DIM, INTENT_PROTOTYPES, GOAL_PROTOTYPES, _get_numpy, HAS_NUMPY, logger
 

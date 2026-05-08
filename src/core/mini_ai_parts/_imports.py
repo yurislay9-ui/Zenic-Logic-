@@ -23,9 +23,9 @@ MAX_TOKENS_GENERATE = 400
 MAX_TOKENS_EXPLAIN = 200
 MAX_TOKENS_SUBTASK = 200
 
-LLM_TIMEOUT_S = 8.0            # Max seconds per LLM call (enforced via ThreadPoolExecutor)
+LLM_TIMEOUT_S = float(os.environ.get("TITAN_LLM_TIMEOUT_S", "30.0"))  # Max seconds per LLM call (was 8s, too short for ARM warm-up)
 N_CTX = 2048                    # Context window
-N_THREADS = 4                   # CPU threads (good for ARM)
+N_THREADS = int(os.environ.get("TITAN_LLM_THREADS", "4"))  # CPU threads (configurable for ARM/low-power)
 TEMPERATURE = 0.1               # Low temperature = more deterministic
 
 

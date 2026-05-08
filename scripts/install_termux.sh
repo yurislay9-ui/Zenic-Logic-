@@ -19,6 +19,9 @@
 
 set -e
 
+# Configurable install path (override with: ZENIC_HOME=/path/to/repo ./install_termux.sh)
+ZENIC_HOME="${ZENIC_HOME:-/root/Zenic-Logic-}"
+
 # Colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -82,11 +85,11 @@ if [ "$INSIDE_PROOT" = false ]; then
         echo -e "${GREEN}Debian ya instalado${NC}"
     fi
 
-    # Crear script de inicio rapido
-    cat > $PREFIX/bin/titan << 'TITAN_SCRIPT'
+    # Crear script de inicio rapido (ZENIC_HOME expanded at install time)
+    cat > $PREFIX/bin/titan << TITAN_SCRIPT
 #!/bin/bash
 # Script para iniciar TITAN OMNISCALE X rapidamente
-proot-distro login debian -- bash -c "cd /root/Zenic-Logic- && python3 main_headless.py --port 5000 --ram-limit 4096"
+proot-distro login debian -- bash -c "cd ${ZENIC_HOME} && source venv/bin/activate && python3 main_headless.py --port 5000 --ram-limit 4096"
 TITAN_SCRIPT
     chmod +x $PREFIX/bin/titan
 
@@ -155,16 +158,16 @@ fi
 
 echo -e "${YELLOW}[PASO 4] Clonando repositorio...${NC}"
 
-if [ -d "/root/Zenic-Logic-" ]; then
+if [ -d "$ZENIC_HOME" ]; then
     echo -e "${GREEN}Repositorio ya existe. Actualizando...${NC}"
-    cd /root/Zenic-Logic-
+    cd "$ZENIC_HOME"
     git pull 2>/dev/null || true
 else
-    git clone https://github.com/yurislay9-ui/Zenic-Logic-.git /root/Zenic-Logic-
-    cd /root/Zenic-Logic-
+    git clone https://github.com/yurislay9-ui/Zenic-Logic-.git "$ZENIC_HOME"
+    cd "$ZENIC_HOME"
 fi
 
-echo -e "${GREEN}Repositorio listo en /root/Zenic-Logic-/${NC}"
+echo -e "${GREEN}Repositorio listo en $ZENIC_HOME/${NC}"
 
 # ============================================================
 #  PASO 5: Instalar dependencias Python
@@ -174,9 +177,9 @@ echo -e "${YELLOW}[PASO 5] Instalando dependencias Python...${NC}"
 
 # Create virtual environment for isolation (avoids breaking system Python)
 echo -e "${CYAN}Creando entorno virtual...${NC}"
-python3 -m venv /root/Zenic-Logic-/venv 2>/dev/null || true
-if [ -d "/root/Zenic-Logic-/venv" ]; then
-    source /root/Zenic-Logic-/venv/bin/activate
+python3 -m venv "$ZENIC_HOME/venv" 2>/dev/null || true
+if [ -d "$ZENIC_HOME/venv" ]; then
+    source "$ZENIC_HOME/venv/bin/activate"
     echo -e "${GREEN}Entorno virtual creado y activado${NC}"
 fi
 
@@ -185,7 +188,7 @@ python3 -m pip install --upgrade pip 2>/dev/null || true
 
 # Install ALL project dependencies from requirements.txt
 echo -e "${CYAN}Instalando requirements.txt... (puede tardar 3-10 minutos)${NC}"
-cd /root/Zenic-Logic-
+cd "$ZENIC_HOME"
 pip3 install -r requirements.txt 2>/dev/null && echo -e "${GREEN}requirements.txt instalado${NC}" || {
     echo -e "${YELLOW}Algunas dependencias de requirements.txt fallaron. Instalando las criticas...${NC}"
     # Install core deps individually with error tolerance
@@ -266,7 +269,7 @@ fi
 # Test 7: Import del engine
 if python3 -c "
 import sys
-sys.path.insert(0, '/root/Zenic-Logic-')
+sys.path.insert(0, '$ZENIC_HOME')
 from src.core.shared.contracts import HAS_Z3
 from src.core.shared.resource_governor import get_governor
 print('Engine imports OK')
@@ -290,12 +293,12 @@ fi
 
 echo -e "${YELLOW}[PASO 7] Creando script de inicio...${NC}"
 
-cat > /root/start_titan.sh << 'STARTSCRIPT'
+cat > /root/start_titan.sh << STARTSCRIPT
 #!/bin/bash
 # TITAN OMNISCALE X v18 - Script de inicio
 # Uso: bash /root/start_titan.sh [opciones]
 
-cd /root/Zenic-Logic-
+cd ${ZENIC_HOME}
 
 # Activar entorno virtual si existe
 if [ -d "venv" ]; then

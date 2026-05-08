@@ -77,6 +77,10 @@ class ModelLifecycleMixin:
                 if self._executor is not None:
                     self._executor.shutdown(wait=False)
                     self._executor = None  # Lazy re-creation on next use
+                # Also shut down the verdict executor to prevent thread leak
+                if hasattr(self, '_verdict_executor') and self._verdict_executor is not None:
+                    self._verdict_executor.shutdown(wait=False)
+                    self._verdict_executor = None
                 logger.info("MiniAI: Model unloaded from memory")
 
     @property
