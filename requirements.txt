@@ -28,6 +28,7 @@ aiosmtplib>=3.0.0
 # Auth & Security
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0,<4.1.0  # passlib 1.7.4 breaks with bcrypt 4.1+ (no __about__)
 
 # SSH / Remote Access (scripts/git_push.py, scripts/ssh_wrapper.py)
 # paramiko>=3.4.0  # Only needed for scripts/git_push.py
@@ -71,7 +72,7 @@ gunicorn>=21.2.0
 # stripe>=7.0.0
 
 # Phase 5: Security
-# bcrypt>=4.0.0  # Already pulled in by passlib
+# bcrypt pinned above (4.0.x) for passlib compatibility
 
 # Google Sheets Integration
 # gspread>=5.0.0

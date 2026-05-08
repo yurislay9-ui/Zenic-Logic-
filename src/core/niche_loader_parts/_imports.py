@@ -18,9 +18,9 @@ from src.core.template_engine import CompositionPlan, TemplateBlock
 logger = logging.getLogger(__name__)
 
 # === Niche Root ===
-# Path: src/core/niche_loader_parts/_imports.py → up 4 dirs to project root → templates/niches
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-NICHE_ROOT = os.path.join(_PROJECT_ROOT, "templates", "niches")
+# Path: src/core/niche_loader_parts/_imports.py → up 3 dirs to src/ → templates/niches
+_SRC_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+NICHE_ROOT = os.path.join(_SRC_ROOT, "templates", "niches")
 
 
 @dataclass

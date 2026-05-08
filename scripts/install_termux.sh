@@ -192,7 +192,7 @@ cd "$ZENIC_HOME"
 pip3 install -r requirements.txt 2>/dev/null && echo -e "${GREEN}requirements.txt instalado${NC}" || {
     echo -e "${YELLOW}Algunas dependencias de requirements.txt fallaron. Instalando las criticas...${NC}"
     # Install core deps individually with error tolerance
-    for pkg in fastapi uvicorn jinja2 python-multipart pydantic aiosqlite numpy pyyaml apscheduler aiohttp aiofiles python-jose passlib gunicorn; do
+    for pkg in fastapi uvicorn jinja2 python-multipart pydantic aiosqlite numpy pyyaml apscheduler aiohttp aiofiles python-jose "passlib[bcrypt]" gunicorn; do
         pip3 install "$pkg" 2>/dev/null && echo -e "  ${GREEN}✓ $pkg${NC}" || echo -e "  ${YELLOW}⚠ $pkg (skipped)${NC}"
     done
 }

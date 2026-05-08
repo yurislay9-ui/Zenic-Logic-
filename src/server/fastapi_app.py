@@ -21,6 +21,7 @@ import time
 import logging
 import uuid
 import threading
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from src.core.shared._version import TITAN_VERSION, TITAN_VERSION_STR, TITAN_FULL_NAME
@@ -884,9 +885,12 @@ def create_app(
                 logger.warning("OpenDesign detection failed (skipping): %s", e)
                 detection_result = None
 
-        # Execute with retry + circuit breaker
+        # Execute with retry + circuit breaker (non-blocking via run_in_executor)
         try:
-            result = _orch_breaker.call(
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,  # default ThreadPoolExecutor
+                _orch_breaker.call,
                 with_retry,
                 _run_orchestrator,
                 _ORCH_RETRY,
@@ -1494,21 +1498,13 @@ def _run_orchestrator(orchestrator: Any, user_msg: str) -> Dict[str, Any]:
     """Synchronous orchestrator execution (for retry/circuit breaker).
 
     Handles both sync and async execute() methods.
+    Called from run_in_executor so it runs in a worker thread, NOT the event loop.
     """
     import asyncio
     result = orchestrator.execute(user_msg)
-    # Handle coroutine
+    # Handle coroutine — since we're in a worker thread, asyncio.run() is safe
     if asyncio.iscoroutine(result):
-        try:
-            loop = asyncio.get_running_loop()
-            # Already inside a running loop — use ThreadPoolExecutor
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, result)
-                return future.result(timeout=int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300")))
-        except RuntimeError:
-            # No running loop — safe to use asyncio.run()
-            return asyncio.run(result)
+        return asyncio.run(result)
     return result
 
 

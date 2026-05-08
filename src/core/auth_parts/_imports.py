@@ -46,7 +46,16 @@ except Exception:
     # Fallback if bcrypt backend has compatibility issues
     # (e.g. bcrypt.__about__ removed in 4.1+, 72-byte enforcement, etc.)
     PASSLIB_AVAILABLE = False; _pwd_context = None
-    logger.debug("passlib/bcrypt unavailable, using PBKDF2-SHA256 fallback")
+    try:
+        import bcrypt as _bc
+        _bv = getattr(_bc, '__version__', '?')
+    except ImportError:
+        _bv = 'not installed'
+    logger.warning(
+        "passlib/bcrypt unavailable (bcrypt %s incompatible with passlib 1.7.4), "
+        "using PBKDF2-SHA256 fallback. Fix: pip install 'bcrypt>=4.0.0,<4.1.0'",
+        _bv,
+    )
 
 try:
     from fastapi import Depends, HTTPException, status
