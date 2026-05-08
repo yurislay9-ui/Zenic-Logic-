@@ -29,8 +29,18 @@ except ImportError:
 try:
     from passlib.context import CryptContext
     PASSLIB_AVAILABLE = True
-    _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    # Truncate passwords to 72 bytes (bcrypt limit) to avoid ValueError
+    # on newer passlib/bcrypt versions that enforce this strictly
+    _pwd_context = CryptContext(
+        schemes=["bcrypt"],
+        deprecated="auto",
+        bcrypt__rounds=12,
+        bcrypt__ident="2b",
+    )
 except ImportError:
+    PASSLIB_AVAILABLE = False; _pwd_context = None
+except Exception:
+    # Fallback if bcrypt backend has compatibility issues
     PASSLIB_AVAILABLE = False; _pwd_context = None
 
 try:

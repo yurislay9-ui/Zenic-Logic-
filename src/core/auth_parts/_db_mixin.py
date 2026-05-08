@@ -125,7 +125,8 @@ class DbPasswordMixin:
     def hash_password(password: str) -> str:
         """Hash password using bcrypt (preferred) or PBKDF2-SHA256 (fallback)."""
         if _pwd_context:
-            return _pwd_context.hash(password)
+            # bcrypt has a 72-byte limit — truncate to avoid ValueError
+            return _pwd_context.hash(password[:72])
         salt = secrets.token_hex(16)
         dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ITERATIONS)
         return f"pbkdf2${PBKDF2_ITERATIONS}${salt}${dk.hex()}"
@@ -137,7 +138,8 @@ class DbPasswordMixin:
             return False
         if _pwd_context:
             try:
-                return _pwd_context.verify(password, hashed)
+                # bcrypt has a 72-byte limit — truncate to match hash_password
+                return _pwd_context.verify(password[:72], hashed)
             except Exception:
                 logger.debug("passlib verify failed, falling back to pbkdf2")
         if hashed.startswith("pbkdf2$"):
