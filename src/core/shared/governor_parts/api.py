@@ -94,18 +94,25 @@ class APIMixin:
             self._request_count += 1
         self.stats["requests_served"] += 1
 
-        # GC ligero antes de cada request (gen 0 solo)
-        gc.collect(0)
+        # No GC before requests — let Python's automatic GC handle it.
+        # Forced GC with llama-cpp-python loaded can trigger C extension
+        # crashes (segfault) on ARM/Termux during object finalization.
+        # The background monitor's _auto_gc() handles periodic cleanup.
 
     def post_request(self) -> None:
-        """Llama despues de cada request para limpiar."""
-        # GC de generacion 1 despues de cada request
-        gc.collect(1)
+        """Llama despues de cada request para limpiar.
 
-        # Si la RAM esta alta, hacer full GC
+        FIX (v18.1): Removed aggressive gc.collect() calls here.
+        Calling gc.collect() after every request was causing crashes
+        in llama-cpp-python's C code on ARM/Termux. The C extension
+        has internal state that can be corrupted when Python's GC
+        finalizes objects while the model is loaded.
+
+        The background monitor's _auto_gc() method handles periodic
+        GC when RAM is high, which is sufficient for memory management.
+        """
+        # Update RAM measurement (non-destructive, no GC)
         self._update_ram_usage()
-        if self._ram_usage_mb > self.gc_threshold_mb * 0.8:
-            gc.collect(2)
 
     def get_z3_memory_limit_mb(self) -> int:
         """

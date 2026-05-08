@@ -136,12 +136,23 @@ class MonitorMixin:
             self._thermal_throttle = min(1.0, self._thermal_throttle * 1.05)
 
     def _auto_gc(self):
-        """Fuerza garbage collection si la RAM se acerca al limite."""
+        """Fuerza garbage collection si la RAM se acerca al limite.
+
+        FIX (v18.1): Only run gc.collect(0) (gen-0, lightweight) in the
+        background monitor. Full gc.collect(2) can crash llama-cpp-python's
+        C extension on ARM/Termux when it finalizes Python wrappers around
+        native model state. We only do gen-0 collection which is safe and
+        fast. Full GC is reserved for explicit unload_model() scenarios
+        where the model is already freed.
+        """
         if self._ram_usage_mb > self.gc_threshold_mb:
-            collected = gc.collect(2)  # Full collection
-            self._gc_count += 1
-            self.stats["gc_forced"] += 1
-            logger.info(
-                "Auto-GC: RAM=%.0fMB > threshold=%.0fMB, collected %d objects",
-                self._ram_usage_mb, self.gc_threshold_mb, collected
-            )
+            try:
+                collected = gc.collect(0)  # Gen-0 only (safe with C extensions)
+                self._gc_count += 1
+                self.stats["gc_forced"] += 1
+                logger.info(
+                    "Auto-GC: RAM=%.0fMB > threshold=%.0fMB, gen-0 collected %d objects",
+                    self._ram_usage_mb, self.gc_threshold_mb, collected
+                )
+            except Exception as e:
+                logger.debug("Auto-GC error (non-critical): %s", e)

@@ -208,6 +208,18 @@ class VerdictMixin:
             user_parts.append(f"Context: {context[:200]}")
         return "\n".join(user_parts)
 
+    def _ensure_verdict_executor(self):
+        """Ensure _verdict_executor is available, creating it lazily if needed.
+
+        FIX (v18.1): After unload_model() shuts down _verdict_executor and
+        sets it to None, subsequent verdict calls would crash with
+        AttributeError: 'NoneType' object has no attribute 'submit'.
+        This method lazily recreates the executor, matching the pattern
+        used by _call_llm() for self._executor.
+        """
+        if getattr(self, '_verdict_executor', None) is None:
+            self._verdict_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
     def _verdict_single_attempt(self, user_prompt: str, question: str,
                                  start_time: float, evidence_for: str,
                                  evidence_against: str, consensus_hint: float) -> Dict[str, Any]:
@@ -234,6 +246,7 @@ class VerdictMixin:
 
             # Try LLM with strict timeout
             try:
+                self._ensure_verdict_executor()
                 future = self._verdict_executor.submit(
                     self._verdict_llm_call, user_prompt
                 )
@@ -336,6 +349,7 @@ class VerdictMixin:
                 time.sleep(0.3)
 
             try:
+                self._ensure_verdict_executor()
                 future = self._verdict_executor.submit(
                     self._verdict_llm_call, user_prompt
                 )

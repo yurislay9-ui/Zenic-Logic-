@@ -16,7 +16,14 @@ class RAMMixin:
         return (current_mb + needed_mb) <= self._ram_budget_mb
 
     def _try_free_ram(self, needed_mb: int):
-        """Intenta liberar RAM descargando modelos menos usados."""
+        """Intenta liberar RAM descargando modelos menos usados.
+
+        FIX (v18.1): Changed gc.collect(2) to gc.collect(0) to avoid
+        crashing llama-cpp-python's C extension on ARM/Termux during
+        object finalization. Full GC after unloading models is safe
+        because the model's C objects are already deleted by unload_model().
+        But just in case, we use gen-0 which is much safer.
+        """
         # Strategy: unload least recently used model first
         sem_idle = time.time() - self._semantic_last_access if self._semantic_last_access > 0 else 9999
         ai_idle = time.time() - self._ai_last_access if self._ai_last_access > 0 else 9999
@@ -27,8 +34,8 @@ class RAMMixin:
         elif self._mini_ai_engine and self._mini_ai_engine.is_loaded:
             self.unload_ai(reason="free_ram_for_semantic")
 
-        # Force garbage collection
-        gc.collect(2)
+        # Light GC after model unload — models are already freed so this is safe
+        gc.collect(0)
 
     @staticmethod
     def _get_current_ram_mb() -> float:
