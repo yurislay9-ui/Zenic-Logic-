@@ -133,6 +133,22 @@ class RateLimiter:
         with self._lock:
             self._active_requests = max(0, self._active_requests - 1)
 
+    def reset(self):
+        """Emergency reset: clear all active request counters and client buckets.
+
+        Useful after a crash or when slots have been leaked due to bugs.
+        """
+        with self._lock:
+            leaked = self._active_requests
+            self._active_requests = 0
+            self._clients.clear()
+            self._total_rejected = 0
+            self._total_accepted = 0
+            if leaked:
+                logger.warning(
+                    "Rate limiter reset: recovered %d leaked slots", leaked
+                )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return rate limiter statistics."""
         with self._lock:

@@ -80,6 +80,7 @@ def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
     idle_min = int(os.environ.get("TITAN_MODEL_IDLE_TIMEOUT", "300")) // 60
     ram_budget = os.environ.get("TITAN_RAM_BUDGET_MB", "1536")
     auto_unload = "ON" if os.environ.get("TITAN_AUTO_UNLOAD", "1") == "1" else "OFF"
+    rl_concurrent = os.environ.get("TITAN_RATE_LIMIT_CONCURRENT", "60")
     banner = f"""
 +==============================================================+
 |  TITAN OMNISCALE X {TITAN_VERSION_STR} - HEADLESS SERVER [{server_type}]    
@@ -99,7 +100,8 @@ def print_banner(ip, port, solver_name, governor, server_type="HYBRID MODE"):
 |    RAM: {res.get('ram_usage_mb', 0):.0f}MB / {res.get('ram_limit_mb', '?')}MB limite           |
 |    Models: Lazy (se cargan al primer request)               |
 |    Auto-unload: {auto_unload} ({idle_min} min idle) | Budget: {ram_budget}MB           |
-|    GC tuned for ARM | Priority: low                          |
+|    Rate limit: {rl_concurrent} concurrent | GC tuned for ARM        |
+|    Priority: low                                             |
 |                                                              |
 |  Ctrl+C para detener                                         |
 +==============================================================+
@@ -186,27 +188,31 @@ def main():
             auth_service = None
 
     # Crear rate limiter con soporte tenant si auth habilitado
+    # Configurable via env vars for Cline and other tools that send rapid requests
+    _rl_rpm = int(os.environ.get("TITAN_RATE_LIMIT_RPM", str(max(1, args.ram_limit // 64))))
+    _rl_burst = int(os.environ.get("TITAN_RATE_LIMIT_BURST", "20"))
+    _rl_concurrent = int(os.environ.get("TITAN_RATE_LIMIT_CONCURRENT", "60"))
     if auth_service is not None:
         try:
             from src.server.tenant_rate_limiter import TenantRateLimiter
             rate_limiter = TenantRateLimiter(
-                max_requests_per_minute=max(1, args.ram_limit // 64),
-                burst_size=10,
-                global_max_concurrent=20,
-                default_user_rpm=max(1, args.ram_limit // 64),
-                default_user_burst=10,
+                max_requests_per_minute=_rl_rpm,
+                burst_size=_rl_burst,
+                global_max_concurrent=_rl_concurrent,
+                default_user_rpm=_rl_rpm,
+                default_user_burst=_rl_burst,
             )
         except ImportError:
             rate_limiter = RateLimiter(
-                max_requests_per_minute=max(1, args.ram_limit // 64),
-                burst_size=10,
-                global_max_concurrent=20,
+                max_requests_per_minute=_rl_rpm,
+                burst_size=_rl_burst,
+                global_max_concurrent=_rl_concurrent,
             )
     else:
         rate_limiter = RateLimiter(
-            max_requests_per_minute=max(1, args.ram_limit // 64),
-            burst_size=10,
-            global_max_concurrent=20,
+            max_requests_per_minute=_rl_rpm,
+            burst_size=_rl_burst,
+            global_max_concurrent=_rl_concurrent,
         )
 
     # Configurar handler compartido con governor + rate limiter

@@ -844,7 +844,20 @@ def create_app(
         user_msg = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
+                raw_content = msg.get("content", "")
+                # Handle OpenAI multimodal content (list of parts or string)
+                if isinstance(raw_content, list):
+                    parts = []
+                    for part in raw_content:
+                        if isinstance(part, str):
+                            parts.append(part)
+                        elif isinstance(part, dict) and part.get("type") == "text":
+                            parts.append(part.get("text", ""))
+                    user_msg = " ".join(parts)
+                elif isinstance(raw_content, str):
+                    user_msg = raw_content
+                else:
+                    user_msg = str(raw_content) if raw_content else ""
                 break
 
         if not user_msg:
@@ -853,17 +866,21 @@ def create_app(
         # ── Open Design Detection ──
         detection_result = None
         if _OPEN_DESIGN_AVAILABLE:
-            headers_dict = {k.lower(): v for k, v in request.headers.items()}
-            detection_result = OpenDesignDetector.detect(
-                messages=messages, headers=headers_dict, body=body,
-            )
-            if detection_result.get("is_open_design") or detection_result.get("is_visual_request"):
-                logger.info(
-                    "OpenDesign: detected request (bypass=%s, DS=%s, signals=%s)",
-                    detection_result.get("bypass_solver"),
-                    detection_result.get("has_design_system"),
-                    detection_result.get("detection_signals"),
+            try:
+                headers_dict = {k.lower(): v for k, v in request.headers.items()}
+                detection_result = OpenDesignDetector.detect(
+                    messages=messages, headers=headers_dict, body=body,
                 )
+                if detection_result.get("is_open_design") or detection_result.get("is_visual_request"):
+                    logger.info(
+                        "OpenDesign: detected request (bypass=%s, DS=%s, signals=%s)",
+                        detection_result.get("bypass_solver"),
+                        detection_result.get("has_design_system"),
+                        detection_result.get("detection_signals"),
+                    )
+            except Exception as e:
+                logger.warning("OpenDesign detection failed (skipping): %s", e)
+                detection_result = None
 
         # Execute with retry + circuit breaker
         try:
@@ -1578,31 +1595,34 @@ def create_app_from_env() -> Any:
         except Exception as e:
             logger.warning("AuthService init failed: %s", e)
 
-    # Rate limiter
+    # Rate limiter (configurable via env vars for Cline and other tools)
+    _rl_rpm = int(os.environ.get("TITAN_RATE_LIMIT_RPM", str(max(1, ram_limit // 64))))
+    _rl_burst = int(os.environ.get("TITAN_RATE_LIMIT_BURST", "20"))
+    _rl_concurrent = int(os.environ.get("TITAN_RATE_LIMIT_CONCURRENT", "60"))
     if auth_service is not None:
         try:
             from src.server.tenant_rate_limiter import TenantRateLimiter
             rate_limiter: Any = TenantRateLimiter(
-                max_requests_per_minute=max(1, ram_limit // 64),
-                burst_size=10,
-                global_max_concurrent=20,
-                default_user_rpm=max(1, ram_limit // 64),
-                default_user_burst=10,
+                max_requests_per_minute=_rl_rpm,
+                burst_size=_rl_burst,
+                global_max_concurrent=_rl_concurrent,
+                default_user_rpm=_rl_rpm,
+                default_user_burst=_rl_burst,
             )
         except ImportError:
             from src.server.rate_limiter import RateLimiter
             rate_limiter = RateLimiter(
-                max_requests_per_minute=max(1, ram_limit // 64),
-                burst_size=10,
-                global_max_concurrent=20,
+                max_requests_per_minute=_rl_rpm,
+                burst_size=_rl_burst,
+                global_max_concurrent=_rl_concurrent,
             )
     else:
         try:
             from src.server.rate_limiter import RateLimiter
             rate_limiter = RateLimiter(
-                max_requests_per_minute=max(1, ram_limit // 64),
-                burst_size=10,
-                global_max_concurrent=20,
+                max_requests_per_minute=_rl_rpm,
+                burst_size=_rl_burst,
+                global_max_concurrent=_rl_concurrent,
             )
         except ImportError:
             rate_limiter = None

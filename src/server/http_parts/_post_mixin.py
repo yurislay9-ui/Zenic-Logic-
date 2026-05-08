@@ -19,6 +19,35 @@ except ImportError:
     _OPEN_DESIGN_AVAILABLE = False
 
 
+def _extract_msg_text(content):
+    """Extract plain text from OpenAI message content.
+
+    The OpenAI API allows 'content' to be either a string or a list of
+    content parts (multimodal messages).  Cline and other tools send the
+    list format, which caused: TypeError: can only concatenate list (not
+    "str") to list.
+
+    Args:
+        content: str, list[dict], list[str], or None
+
+    Returns:
+        str — the concatenated text from the content field
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") == "text":
+                parts.append(part.get("text", ""))
+        return " ".join(parts)
+    return str(content)
+
+
 class PostMixin:
     """POST endpoint handlers for TitanHTTPHandler."""
 
@@ -69,51 +98,60 @@ class PostMixin:
                 self._send_json(build_overloaded_response(), status=503)
                 if self.rate_limiter:
                     self.rate_limiter.release()
+                if gov:
+                    gov.post_request()
                 return
 
+        # Wrap everything in try/finally so rate_limiter.release() is ALWAYS called,
+        # even if OpenDesignDetector.detect() or JSON parsing crashes.
         try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8')
-            data = json.loads(body)
-        except (json.JSONDecodeError, ValueError) as e:
-            self._send_json({
-                "error": {"message": f"Invalid JSON: {str(e)}",
-                          "type": "invalid_request_error"}
-            }, status=400)
-            return
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8')
+                data = json.loads(body)
+            except (json.JSONDecodeError, ValueError) as e:
+                self._send_json({
+                    "error": {"message": f"Invalid JSON: {str(e)}",
+                              "type": "invalid_request_error"}
+                }, status=400)
+                return
 
-        messages = data.get("messages", [])
-        if not messages:
-            self._send_json({
-                "error": {"message": "No messages provided",
-                          "type": "invalid_request_error"}
-            }, status=400)
-            return
+            messages = data.get("messages", [])
+            if not messages:
+                self._send_json({
+                    "error": {"message": "No messages provided",
+                              "type": "invalid_request_error"}
+                }, status=400)
+                return
 
-        user_msg = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
-                break
+            # Extract user message — content can be string or list (OpenAI multimodal)
+            user_msg = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_msg = _extract_msg_text(msg.get("content", ""))
+                    break
 
-        if not user_msg:
-            self._send_json({
-                "error": {"message": "No user message found",
-                          "type": "invalid_request_error"}
-            }, status=400)
-            return
+            if not user_msg:
+                self._send_json({
+                    "error": {"message": "No user message found",
+                              "type": "invalid_request_error"}
+                }, status=400)
+                return
 
-        # ── Open Design Detection ──
-        detection_result = None
-        if _OPEN_DESIGN_AVAILABLE:
-            headers_dict = {
-                k.lower(): v for k, v in self.headers.items()
-            }
-            detection_result = OpenDesignDetector.detect(
-                messages=messages, headers=headers_dict, body=data,
-            )
+            # ── Open Design Detection ──
+            detection_result = None
+            if _OPEN_DESIGN_AVAILABLE:
+                try:
+                    headers_dict = {
+                        k.lower(): v for k, v in self.headers.items()
+                    }
+                    detection_result = OpenDesignDetector.detect(
+                        messages=messages, headers=headers_dict, body=data,
+                    )
+                except Exception as e:
+                    logger.warning("OpenDesign detection failed (skipping): %s", e)
+                    detection_result = None
 
-        try:
             result = _run_async(self.orchestrator.execute(user_msg))
 
             # ── SSE Streaming for Open Design ──

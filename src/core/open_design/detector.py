@@ -7,7 +7,7 @@ and whether it requires visual bypass routing (skip SMT/AC-3 solver).
 
 import re
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 from .config import get_open_design_config
 
@@ -46,6 +46,29 @@ class OpenDesignDetector:
         re.IGNORECASE,
     )
 
+    @staticmethod
+    def _extract_text(content: Union[str, List, None]) -> str:
+        """Extract plain text from OpenAI message content.
+
+        OpenAI API allows content to be either:
+        - A string: "Hello"
+        - A list of content parts: [{"type": "text", "text": "Hello"}, ...]
+        - None (rare, treated as empty)
+        """
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(part.get("text", ""))
+            return " ".join(parts)
+        return str(content)
+
     @classmethod
     def detect(cls, messages: List[Dict[str, str]],
                headers: Optional[Dict[str, str]] = None,
@@ -60,13 +83,13 @@ class OpenDesignDetector:
 
         Returns:
             Dict with:
-                is_open_design: bool — request originates from Open Design
-                is_visual_request: bool — request should use visual bypass
-                has_design_system: bool — request contains design system data
-                has_artifact: bool — message contains <artifact> tags
-                bypass_solver: bool — should skip Z3/AC-3 solver
-                context_budget_multiplier: float — budget multiplier for context
-                detection_signals: List[str] — which signals triggered detection
+                is_open_design: bool -- request originates from Open Design
+                is_visual_request: bool -- request should use visual bypass
+                has_design_system: bool -- request contains design system data
+                has_artifact: bool -- message contains <artifact> tags
+                bypass_solver: bool -- should skip Z3/AC-3 solver
+                context_budget_multiplier: float -- budget multiplier for context
+                detection_signals: List[str] -- which signals triggered detection
         """
         config = get_open_design_config()
         headers = headers or {}
@@ -78,7 +101,7 @@ class OpenDesignDetector:
         has_design_system = False
         has_artifact = False
 
-        # ── Signal 1: HTTP Headers ──
+        # -- Signal 1: HTTP Headers --
         # Check for explicit Open Design client header
         if headers.get("x-client", "") == "open-design":
             is_open_design = True
@@ -96,7 +119,7 @@ class OpenDesignDetector:
             is_open_design = True
             signals.append("header:user-agent")
 
-        # ── Signal 2: Request body metadata ──
+        # -- Signal 2: Request body metadata --
         # Open Design sends stream=true for real-time rendering
         if body.get("stream", False):
             signals.append("body:stream=true")
@@ -112,14 +135,15 @@ class OpenDesignDetector:
             is_visual_request = True
             signals.append("body:visual_context")
 
-        # ── Signal 3: Message content analysis ──
+        # -- Signal 3: Message content analysis --
         user_message = ""
         all_content = ""
         for msg in messages:
             content = msg.get("content", "")
-            all_content += content + " "
+            text = cls._extract_text(content)
+            all_content += text + " "
             if msg.get("role") == "user":
-                user_message += content + " "
+                user_message += text + " "
 
         # Check for <artifact> tags
         if cls.ARTIFACT_PATTERN.search(all_content):
@@ -140,7 +164,7 @@ class OpenDesignDetector:
                 is_visual_request = True
                 signals.append(f"content:ui_keywords({len(keyword_matches)})")
 
-        # ── Determine bypass ──
+        # -- Determine bypass --
         bypass_solver = False
         if is_visual_request and config.visual_bypass_enabled:
             bypass_solver = True
@@ -161,7 +185,7 @@ class OpenDesignDetector:
 
         if signals:
             logger.debug(
-                "OpenDesign: detection result — OD=%s visual=%s DS=%s "
+                "OpenDesign: detection result -- OD=%s visual=%s DS=%s "
                 "bypass=%s signals=%s",
                 is_open_design, is_visual_request, has_design_system,
                 bypass_solver, signals,
