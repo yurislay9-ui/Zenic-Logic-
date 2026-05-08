@@ -262,7 +262,8 @@ def create_app(
         from src.core.distributed import CoordinationBackend, BackendConfig, DistributedTaskQueue
         _backend_config = BackendConfig()
         # Use PostgreSQL in production if configured
-        import os
+        # NOTE: Do NOT re-import 'os' here — it shadows the module-level
+        # import (line 44) and causes UnboundLocalError for earlier os.getenv() calls.
         db_url = os.getenv("DATABASE_URL", "")
         if db_url and ("postgresql" in db_url or "postgres" in db_url):
             from src.core.distributed.backend import BackendType
