@@ -18,6 +18,7 @@ INVARIANTS:
 
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -36,7 +37,7 @@ VERDICT_TIMEOUT_S = 5.0
 VERDICT_MAX_RETRIES = 3
 VERDICT_BASE_DELAY = 1.0
 VERDICT_MAX_DELAY = 10.0
-VERDICT_CONSENSUS_ATTEMPTS = 3
+VERDICT_CONSENSUS_ATTEMPTS = int(os.environ.get("TITAN_VERDICT_CONSENSUS", "1"))  # ARM: 1 attempt (was 3, too many LLM timeouts)
 VERDICT_CONSENSUS_THRESHOLD = 2  # Minimum YES count for verdict YES
 
 VERDICT_SYSTEM_PROMPT = (

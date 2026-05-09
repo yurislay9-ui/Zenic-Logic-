@@ -906,6 +906,13 @@ def create_app(
             logger.error("Orchestrator error: %s", e, exc_info=True)
             return build_error_response(str(e))
 
+        # ── Defensive: ensure result is never None/empty ──
+        # If the orchestrator returns None, Cline would receive
+        # an empty HTTP body → parse error → crash
+        if result is None:
+            logger.error("chat_completions: orchestrator returned None — building error response")
+            result = {"status": "ERROR", "code": "", "error": "Orchestrator returned empty result"}
+
         # ── SSE Streaming for Open Design ──
         if (body.get("stream", False) and _OPEN_DESIGN_AVAILABLE
                 and detection_result

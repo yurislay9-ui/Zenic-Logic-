@@ -275,7 +275,10 @@ class DAGOrchestrator(
 
         # Ejecutar DAG desde CACHE_CHECK
         current_node = "CACHE_CHECK"
-        max_total_steps = 20
+        max_total_steps = int(os.environ.get("TITAN_DAG_MAX_STEPS", "40"))  # ARM: 40 (was 20, complex requests need more)
+
+        # Track node visit order for cycling detection
+        node_visit_order = []
 
         for step in range(max_total_steps):
             if current_node not in self._pipeline_dag:
@@ -285,8 +288,19 @@ class DAGOrchestrator(
 
             # Anti-ciclo: trackear iteraciones por nodo
             ctx["iteration_counts"][current_node] = ctx["iteration_counts"].get(current_node, 0) + 1
+            node_visit_order.append(current_node)
+
             if ctx["iteration_counts"][current_node] > dag_node.max_retries + 1:
-                logger.warning(f"DAG: Max iterations reached for {current_node}, forcing DONE")
+                # Log EXACTLY which nodes are cycling (for debugging)
+                from collections import Counter
+                node_counts = Counter(node_visit_order[-10:])  # Last 10 visits
+                logger.warning(
+                    f"DAG: Max iterations reached for {current_node} "
+                    f"(visited {ctx['iteration_counts'][current_node]}x, "
+                    f"max_retries={dag_node.max_retries}). "
+                    f"Recent node visits: {dict(node_counts)}. "
+                    f"Forcing DONE with status=DAG_TIMEOUT"
+                )
                 break
 
             # Ejecutar nodo
@@ -318,9 +332,15 @@ class DAGOrchestrator(
             elapsed = int((time.time() - start_time) * 1000)
             return self._build_response(ctx, "COMPLETED", elapsed)
 
-        # Si llegamos aquí sin DONE, devolver resultado del contexto
+        # Si llegamos aquí sin DONE, el DAG fue interrumpido (max iterations o nodo faltante)
         elapsed = int((time.time() - start_time) * 1000)
-        return self._build_response(ctx, "COMPLETED", elapsed)
+        # Use DAG_TIMEOUT status (not COMPLETED) so Cline knows the pipeline was interrupted
+        logger.warning(
+            "DAG: Pipeline interrupted at node=%s after %d steps (%dms). "
+            "Node visit counts: %s",
+            current_node, step + 1, elapsed, ctx["iteration_counts"],
+        )
+        return self._build_response(ctx, "DAG_TIMEOUT", elapsed)
 
     def set_client_id(self, client_id: str) -> None:
         """Brecha B: Set the client_id for multi-client isolation."""

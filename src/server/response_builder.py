@@ -25,6 +25,9 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
     """
     Construye la respuesta OpenAI-compatible para un resultado normal del pipeline.
 
+    Robustness: Handles DAG_TIMEOUT, empty results, and missing fields gracefully.
+    Cline MUST always receive valid OpenAI JSON — never an empty response.
+
     Args:
         data: JSON original de la peticion del cliente
         result: Dict resultado del TitanOrchestrator.execute()
@@ -34,7 +37,39 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
     Returns:
         Dict con la respuesta OpenAI-compatible
     """
-    content_parts = [f"{TITAN_FULL_NAME} - {result['status']}"]
+    # Defensive: ensure result is a dict with required fields
+    if not isinstance(result, dict):
+        result = {"status": "ERROR", "code": "", "error": "Empty result from pipeline"}
+
+    status = result.get("status", "UNKNOWN")
+
+    # Handle DAG_TIMEOUT explicitly — Cline needs to know the pipeline was interrupted
+    if status == "DAG_TIMEOUT":
+        content_parts = [
+            f"{TITAN_FULL_NAME} - DAG_TIMEOUT",
+            "The pipeline exceeded maximum iterations and was interrupted.",
+            "This usually means the model is slow on ARM (first request after startup).",
+            "Please try again — subsequent requests will be faster after warm-up.",
+        ]
+        if result.get("explanations"):
+            for exp in result["explanations"]:
+                content_parts.append(f"  {exp}")
+        response_content = "\n".join(content_parts)
+        return {
+            "id": f"titan-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": data.get("model", "titan-omniscale-x"),
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": response_content},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": len(user_msg.split()), "completion_tokens": len(response_content.split()), "total_tokens": len(user_msg.split()) + len(response_content.split())},
+            "titan_metadata": {"status": "DAG_TIMEOUT", "processing_time_ms": result.get("processing_time_ms", 0)},
+        }
+
+    content_parts = [f"{TITAN_FULL_NAME} - {status}"]
 
     if result.get("explanations"):
         for exp in result["explanations"]:
@@ -43,6 +78,9 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
     if result.get("code"):
         lang = result.get("ast_analysis", {}).get("language", "python")
         content_parts.append(f"\n```{lang}\n{result['code']}\n```")
+    elif not result.get("explanations") and status not in ("CACHED", "NO_OP"):
+        # No code AND no explanations — likely a pipeline issue
+        content_parts.append("\nNo output was generated. The pipeline may have timed out.")
 
     if result.get("warnings"):
         content_parts.append("\nWarnings:")

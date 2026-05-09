@@ -134,6 +134,10 @@ class SSEStreamer:
         in Open Design's iframe. Code content is streamed character-by-character
         for the typing effect; metadata is sent as a single chunk.
 
+        Robustness: If the DAG forced a premature DONE (DAG_TIMEOUT) or
+        the result is empty/malformed, we still emit valid SSE chunks so
+        Cline doesn't hang waiting for a response that never comes.
+
         Args:
             result: Orchestrator result dict.
             body: Original request body.
@@ -142,32 +146,68 @@ class SSEStreamer:
         Yields:
             SSE-formatted strings.
         """
-        # Extract content from the result (same as build_normal_response)
-        content_parts = self._build_content_parts(result)
-        full_content = "\n".join(content_parts)
+        try:
+            # Handle DAG_TIMEOUT or empty results — Cline MUST get a response
+            status = result.get("status", "UNKNOWN") if isinstance(result, dict) else "UNKNOWN"
+            if status == "DAG_TIMEOUT" or not result:
+                logger.warning(
+                    "SSE: DAG_TIMEOUT or empty result detected (status=%s), "
+                    "sending error chunk to client",
+                    status,
+                )
+                error_msg = (
+                    "Pipeline timeout — the DAG exceeded maximum iterations. "
+                    "This usually means the model is slow on ARM. "
+                    "Please try again — subsequent requests are faster after warm-up."
+                )
+                yield self.format_chunk(error_msg)
+                yield self.format_chunk("", finish_reason="stop")
+                yield self.format_done()
+                return
 
-        # If artifact wrapping is needed, wrap the content
-        if detection_result and (detection_result.get("is_open_design")
-                                  or detection_result.get("is_visual_request")):
-            from .artifact_builder import ArtifactBuilder
-            full_content = ArtifactBuilder.wrap_response_content(
-                full_content, detection_result,
-                language=result.get("ast_analysis", {}).get("language", "html"),
-            )
+            # Extract content from the result (same as build_normal_response)
+            content_parts = self._build_content_parts(result)
+            full_content = "\n".join(content_parts)
 
-        # Stream content in chunks for progressive rendering
-        chunk_size = 4  # Characters per chunk (typing effect)
-        for i in range(0, len(full_content), chunk_size):
-            chunk_text = full_content[i:i + chunk_size]
-            yield self.format_chunk(chunk_text)
-            # Small delay for natural typing feel
-            if self._config.sse_chunk_delay_s > 0:
-                import asyncio
-                await asyncio.sleep(self._config.sse_chunk_delay_s)
+            # If content is still empty after building, send a minimal valid response
+            if not full_content or not full_content.strip():
+                logger.warning("SSE: Empty content after building parts, sending minimal response")
+                full_content = f"{TITAN_FULL_NAME} - {status} (no output generated)"
 
-        # Final chunk with finish_reason
-        yield self.format_chunk("", finish_reason="stop")
-        yield self.format_done()
+            # If artifact wrapping is needed, wrap the content
+            if detection_result and (detection_result.get("is_open_design")
+                                      or detection_result.get("is_visual_request")):
+                from .artifact_builder import ArtifactBuilder
+                full_content = ArtifactBuilder.wrap_response_content(
+                    full_content, detection_result,
+                    language=result.get("ast_analysis", {}).get("language", "html"),
+                )
+
+            # Stream content in chunks for progressive rendering
+            chunk_size = 4  # Characters per chunk (typing effect)
+            for i in range(0, len(full_content), chunk_size):
+                chunk_text = full_content[i:i + chunk_size]
+                yield self.format_chunk(chunk_text)
+                # Small delay for natural typing feel
+                if self._config.sse_chunk_delay_s > 0:
+                    import asyncio
+                    await asyncio.sleep(self._config.sse_chunk_delay_s)
+
+            # Final chunk with finish_reason
+            yield self.format_chunk("", finish_reason="stop")
+            yield self.format_done()
+        except Exception as e:
+            logger.error("SSE: stream_orchestrator_result crashed: %s", e, exc_info=True)
+            # CRITICAL: Always emit valid SSE even on crash — Cline is waiting
+            try:
+                yield self.format_chunk(
+                    f"[Stream Error: {str(e)[:100]}] The pipeline encountered an error."
+                )
+                yield self.format_chunk("", finish_reason="stop")
+                yield self.format_done()
+            except Exception:
+                # Absolute last resort — raw SSE DONE signal
+                yield "data: [DONE]\n\n"
 
     def stream_orchestrator_result_sync(
         self,
@@ -179,28 +219,59 @@ class SSEStreamer:
         Synchronous version of stream_orchestrator_result.
 
         Used by the stdlib HTTP server which doesn't support async.
+        Robustness: Same DAG_TIMEOUT and empty result handling as async version.
         """
-        content_parts = self._build_content_parts(result)
-        full_content = "\n".join(content_parts)
+        try:
+            # Handle DAG_TIMEOUT or empty results
+            status = result.get("status", "UNKNOWN") if isinstance(result, dict) else "UNKNOWN"
+            if status == "DAG_TIMEOUT" or not result:
+                logger.warning(
+                    "SSE (sync): DAG_TIMEOUT or empty result (status=%s)", status,
+                )
+                error_msg = (
+                    "Pipeline timeout — the DAG exceeded maximum iterations. "
+                    "Please try again — subsequent requests are faster after warm-up."
+                )
+                yield self.format_chunk(error_msg)
+                yield self.format_chunk("", finish_reason="stop")
+                yield self.format_done()
+                return
 
-        # Artifact wrapping
-        if detection_result and (detection_result.get("is_open_design")
-                                  or detection_result.get("is_visual_request")):
-            from .artifact_builder import ArtifactBuilder
-            full_content = ArtifactBuilder.wrap_response_content(
-                full_content, detection_result,
-                language=result.get("ast_analysis", {}).get("language", "html"),
-            )
+            content_parts = self._build_content_parts(result)
+            full_content = "\n".join(content_parts)
 
-        # Stream in chunks
-        chunk_size = 8  # Larger chunks for sync (no async delay)
-        for i in range(0, len(full_content), chunk_size):
-            chunk_text = full_content[i:i + chunk_size]
-            yield self.format_chunk(chunk_text)
+            # If content is empty, send minimal response
+            if not full_content or not full_content.strip():
+                full_content = f"{TITAN_FULL_NAME} - {status} (no output generated)"
 
-        # Final chunk
-        yield self.format_chunk("", finish_reason="stop")
-        yield self.format_done()
+            # Artifact wrapping
+            if detection_result and (detection_result.get("is_open_design")
+                                      or detection_result.get("is_visual_request")):
+                from .artifact_builder import ArtifactBuilder
+                full_content = ArtifactBuilder.wrap_response_content(
+                    full_content, detection_result,
+                    language=result.get("ast_analysis", {}).get("language", "html"),
+                )
+
+            # Stream in chunks
+            chunk_size = 8  # Larger chunks for sync (no async delay)
+            for i in range(0, len(full_content), chunk_size):
+                chunk_text = full_content[i:i + chunk_size]
+                yield self.format_chunk(chunk_text)
+
+            # Final chunk
+            yield self.format_chunk("", finish_reason="stop")
+            yield self.format_done()
+        except Exception as e:
+            logger.error("SSE (sync): stream crashed: %s", e, exc_info=True)
+            try:
+                yield self.format_chunk(
+                    f"[Stream Error: {str(e)[:100]}] The pipeline encountered an error."
+                )
+                yield self.format_chunk("", finish_reason="stop")
+                yield self.format_done()
+            except Exception:
+                yield "data: [DONE]\n\n"
 
     def _build_content_parts(self, result: Dict[str, Any]) -> List[str]:
         """Build content parts from orchestrator result (mirrors response_builder)."""

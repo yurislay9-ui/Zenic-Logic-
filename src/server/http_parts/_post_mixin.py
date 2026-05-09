@@ -151,6 +151,13 @@ class PostMixin:
 
             result = _run_async(self.orchestrator.execute(user_msg))
 
+            # ── Defensive: ensure result is never None/empty ──
+            # If the orchestrator returns None (e.g. exception swallowed),
+            # Cline would receive an empty HTTP body → parse error → crash
+            if result is None:
+                logger.error("chat_completions: orchestrator returned None — building error response")
+                result = {"status": "ERROR", "code": "", "error": "Orchestrator returned empty result"}
+
             # ── SSE Streaming for Open Design ──
             if (data.get("stream", False) and _OPEN_DESIGN_AVAILABLE
                     and detection_result
