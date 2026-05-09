@@ -12,7 +12,7 @@ proot-distro, VPS y cualquier terminal sin dependencias graficas.
 
 Modo de uso:
   1. Pulsa INICIAR MOTOR
-  2. Conecta Cline/Aide a: http://TU_IP:5000/v1
+  2. Conecta Cline/Aide a: http://TU_IP:5001/v1
   3. El motor procesa tus peticiones con 8 niveles de razonamiento
 """
 
@@ -147,7 +147,7 @@ class TitanTUIApp(App):
 
         # IP Info
         yield Label(
-            "Conecta Cline/Aide/OpenCode a:\nhttp://0.0.0.0:5000/v1",
+            "Conecta Cline/Aide/OpenCode a:\nhttp://0.0.0.0:5001/v1",
             id="ip-label",
         )
 
@@ -190,7 +190,7 @@ class TitanTUIApp(App):
             f"1. Inicia el motor en esta app\n"
             f"2. En VS Code, configura Cline:\n"
             f"   - API Provider: OpenAI Compatible\n"
-            f"   - Base URL: http://TU_IP:5000/v1\n"
+            f"   - Base URL: http://TU_IP:5001/v1\n"
             f"   - Model: titan-omniscale-x\n"
             f"3. Cline enviara peticiones a tu telefono\n\n"
             f"ATAJOS DE TECLADO:\n"
@@ -236,7 +236,7 @@ class TitanTUIApp(App):
 
         def run_server():
             try:
-                self.server = ThreadedHTTPServer(('0.0.0.0', 5000), TitanHTTPHandler)
+                self.server = ThreadedHTTPServer(('0.0.0.0', 5001), TitanHTTPHandler)
                 self.server_running = True
                 self.call_from_thread(self._update_status_running, ip)
                 self.server.serve_forever()
@@ -273,7 +273,7 @@ class TitanTUIApp(App):
     def _update_status_running(self, ip: str) -> None:
         solver_name = "Z3" if HAS_Z3 else "AC-3"
         self._update_status(
-            f"Motor {TITAN_VERSION_STR} ACTIVO ({solver_name}) - {ip}:5000",
+            f"Motor {TITAN_VERSION_STR} ACTIVO ({solver_name}) - {ip}:5001",
             "success",
         )
         start_btn = self.query_one("#start-btn", Button)

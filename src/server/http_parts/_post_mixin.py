@@ -2,6 +2,8 @@
 POST endpoint mixin for TitanHTTPHandler.
 """
 
+import time
+
 from ._imports import (
     logger, json, _run_async, _REQUEST_TIMEOUT,
     build_normal_response, build_partial_reasoning_response,
@@ -159,13 +161,22 @@ class PostMixin:
                 self._send_json(build_error_response("Orchestrator returned empty result"), status=500)
                 return
 
-            # ── SSE Streaming for Open Design ──
-            if (data.get("stream", False) and _OPEN_DESIGN_AVAILABLE
-                    and detection_result
-                    and (detection_result.get("is_open_design")
-                         or detection_result.get("is_visual_request"))):
-                self._send_sse_stream(result, data, detection_result)
-                return
+            # ── SSE Streaming ──
+            # OpenAI spec: when stream=true, client expects SSE format.
+            # For Open Design requests, use full SSEStreamer with fractal phases.
+            # For general Cline requests with stream=true, use basic SSE streaming.
+            if data.get("stream", False):
+                if (_OPEN_DESIGN_AVAILABLE
+                        and detection_result
+                        and (detection_result.get("is_open_design")
+                             or detection_result.get("is_visual_request"))):
+                    # Open Design: full SSE with fractal phases and artifact events
+                    self._send_sse_stream(result, data, detection_result)
+                    return
+                else:
+                    # General Cline request with stream=true: basic SSE streaming
+                    self._send_sse_basic(result, data)
+                    return
 
             # Standard JSON response
             if result.get("partial_reasoning"):
@@ -205,6 +216,87 @@ class PostMixin:
                 gov.post_request()
             if self.rate_limiter:
                 self.rate_limiter.release()
+
+    def _send_sse_basic(self, result, data):
+        """Send orchestrator result as basic SSE stream for general Cline requests.
+
+        Follows OpenAI streaming spec: each chunk is a chat.completion.chunk object.
+        This is used when Cline sends stream=true but is NOT an Open Design request.
+        """
+        import uuid
+        request_id = f"titan-{uuid.uuid4().hex[:8]}"
+        created = int(time.time()) if hasattr(time, 'time') else 0
+        model = data.get("model", "titan-omniscale-x")
+
+        # Build the full content first (reuse build_normal_response logic)
+        response = build_normal_response(data, result, "")
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        if not content:
+            content = f"[No output generated - status: {result.get('status', 'UNKNOWN')}]"
+
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('X-Accel-Buffering', 'no')
+            self._set_cors_headers()
+            self.end_headers()
+
+            # Stream content in chunks following OpenAI format
+            chunk_size = 8
+            for i in range(0, len(content), chunk_size):
+                chunk_text = content[i:i + chunk_size]
+                sse_chunk = {
+                    "id": request_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": chunk_text},
+                        "finish_reason": None,
+                    }],
+                }
+                self.wfile.write(f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+                self.wfile.flush()
+
+            # Final chunk with finish_reason="stop"
+            final_chunk = {
+                "id": request_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }],
+            }
+            self.wfile.write(f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except Exception as e:
+            logger.error("SSE basic streaming error: %s", e, exc_info=True)
+            # Try to send error as final SSE chunk
+            try:
+                error_chunk = {
+                    "id": request_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": f"\n[Stream Error: {str(e)[:100]}]"},
+                        "finish_reason": "stop",
+                    }],
+                }
+                self.wfile.write(f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except Exception:
+                pass
 
     def _send_sse_stream(self, result, data, detection_result):
         """Send orchestrator result as SSE stream for Open Design."""

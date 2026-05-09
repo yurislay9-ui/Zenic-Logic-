@@ -290,6 +290,24 @@ class SSEStreamer:
             for w in result["warnings"]:
                 parts.append(f"  - {w}")
 
+        # Cache hit info (matches build_normal_response)
+        if result.get("cache_source"):
+            parts.append(
+                f"\nCache hit: {result['cache_source']} (hits: {result.get('cache_hits', 0)})"
+            )
+
+        # Processing metadata (matches build_normal_response)
+        from src.core.shared._version import TITAN_FULL_NAME as _FN
+        from src.core.shared.contracts import HAS_Z3 as _HAS_Z3
+        _sname = "Z3" if _HAS_Z3 else "AC-3"
+        meta_parts = [
+            f"\nTime: {result.get('processing_time_ms', 0)}ms",
+            f"Route: {result.get('route', 'N/A')}",
+            f"Hash: {result.get('hash', 'N/A')}",
+            f"Solver({_sname}): {result.get('solver_status', 'N/A')}",
+        ]
+        parts.append(" | ".join(meta_parts))
+
         return parts
 
 

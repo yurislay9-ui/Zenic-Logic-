@@ -22,11 +22,7 @@ def _solver_name():
 
 
 def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
-    # Defensive: ensure data is never None
-    if not isinstance(data, dict):
-        data = {}
-    """
-    Construye la respuesta OpenAI-compatible para un resultado normal del pipeline.
+    """Construye la respuesta OpenAI-compatible para un resultado normal del pipeline.
 
     Robustness: Handles DAG_TIMEOUT, empty results, and missing fields gracefully.
     Cline MUST always receive valid OpenAI JSON — never an empty response.
@@ -40,6 +36,9 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
     Returns:
         Dict con la respuesta OpenAI-compatible
     """
+    # Defensive: ensure data is never None
+    if not isinstance(data, dict):
+        data = {}
     # Defensive: ensure result is a dict with required fields
     if not isinstance(result, dict):
         result = {"status": "ERROR", "code": "", "error": "Empty result from pipeline"}
@@ -164,11 +163,7 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
 
 
 def build_partial_reasoning_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str) -> Dict[str, Any]:
-    # Defensive: ensure result is never None
-    if not isinstance(result, dict):
-        result = {"status": "ERROR", "partial_reasoning_payload": {}}
-    """
-    Construye la respuesta de Razonamiento Parcial con tool_calls.
+    """Construye la respuesta de Razonamiento Parcial con tool_calls.
 
     El payload JSON incluye tool_calls para que el cliente (Cline/Aide)
     pueda continuar la operacion subdividida.
@@ -181,6 +176,9 @@ def build_partial_reasoning_response(data: Dict[str, Any], result: Dict[str, Any
     Returns:
         Dict con la respuesta OpenAI-compatible con tool_calls
     """
+    # Defensive: ensure result is never None
+    if not isinstance(result, dict):
+        result = {"status": "ERROR", "partial_reasoning_payload": {}}
     partial = result.get("partial_reasoning_payload", {})
 
     return {
@@ -254,23 +252,34 @@ def build_overloaded_response() -> Dict[str, Any]:
     Construye la respuesta de servidor sobrecargado (503).
 
     Returns:
-        Dict con la respuesta de error 503
+        Dict con la respuesta de error 503 in OpenAI-compatible format.
+        Cline expects OpenAI format for ALL responses, including errors.
     """
+    error_content = (
+        f"{TITAN_FULL_NAME} - Server Overloaded\n"
+        "Server RAM is critically low. Retry later.\n"
+        "This is common on ARM devices — the model may still be loading."
+    )
     return {
-        "error": {
-            "message": "Server overloaded - RAM critical. Retry later.",
-            "type": "server_overloaded"
-        }
+        "id": f"titan-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": "titan-omniscale-x",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": error_content
+            },
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
 
 def build_artifact_response(data: Dict[str, Any], result: Dict[str, Any],
                              user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
-    # Defensive: ensure result is never None
-    if not isinstance(result, dict):
-        result = {"status": "ERROR", "code": "", "error": "Empty result from pipeline"}
-    """
-    Construye la respuesta OpenAI-compatible con código envuelto en <artifact> tags.
+    """Construye la respuesta OpenAI-compatible con código envuelto en <artifact> tags.
 
     Usado cuando Open Design envía una petición visual/UI y espera el código
     final envuelto en etiquetas <artifact> para renderizado en su iframe.
@@ -284,6 +293,9 @@ def build_artifact_response(data: Dict[str, Any], result: Dict[str, Any],
     Returns:
         Dict con la respuesta OpenAI-compatible con artifact wrapping.
     """
+    # Defensive: ensure result is never None
+    if not isinstance(result, dict):
+        result = {"status": "ERROR", "code": "", "error": "Empty result from pipeline"}
     # First build the normal response content
     base_response = build_normal_response(data, result, user_msg, governor)
 

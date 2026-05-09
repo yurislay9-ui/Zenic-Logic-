@@ -40,8 +40,8 @@ if _open_design_available:
     try:
         _od_config = get_open_design_config()
         _od_allowed_origins = set(_od_config.open_design_origins)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("OpenDesign config load failed: %s", e)
 
 def _get_cors_origin(request_origin: str = "") -> str:
     """Resolve the Access-Control-Allow-Origin header value.

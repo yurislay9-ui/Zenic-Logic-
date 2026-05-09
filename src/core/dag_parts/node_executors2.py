@@ -179,8 +179,8 @@ class NodeExecutors2Mixin:
                 try:
                     self._isolation_manager.release_workspace(workspace.sandbox_id)
                     ctx["sandbox_workspace"] = None  # Prevent double-release
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Workspace release failed: %s", e)
             ctx["trial"] = None
             return "FAIL"
 
@@ -273,8 +273,8 @@ class NodeExecutors2Mixin:
                                 description=mem.get("solution", "")[:MAX_CODE_SNIPPET_LEN],
                                 success=True,
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Memory pattern learning failed: %s", e)
         else:
             self._memory.add_working(
                 msg, "NO_OP", intent.op if intent else "",
@@ -303,4 +303,6 @@ class NodeExecutors2Mixin:
             mcts_sims=ctx.get("plan", None) and ctx["plan"].mcts_simulations or 0,
         )
 
-        return self._build_response(ctx, status, elapsed)
+        result = self._build_response(ctx, status, elapsed)
+        result["_dag_done"] = True  # Signal DAG loop to exit immediately
+        return result

@@ -17,6 +17,7 @@ Coexists with the legacy stdlib server for backward compatibility.
 Start with: python main_headless.py --server fastapi
 """
 
+import json
 import time
 import logging
 import uuid
@@ -118,6 +119,91 @@ _orch_breaker = CircuitBreaker(
 
 # ── FastAPI app (lazy creation) ───────────────────────────
 _app = None
+
+
+async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
+    """Async generator for basic SSE streaming of orchestrator results.
+
+    Follows OpenAI streaming spec: each chunk is a chat.completion.chunk object.
+    Used when Cline sends stream=true but is NOT an Open Design request.
+    """
+    request_id = f"titan-{uuid.uuid4().hex[:8]}"
+    created = int(time.time())
+    model = body.get("model", "titan-omniscale-x")
+
+    # Build full content using the same logic as build_normal_response
+    user_msg = ""
+    messages = body.get("messages", [])
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            raw = msg.get("content", "")
+            if isinstance(raw, list):
+                user_msg = " ".join(
+                    p.get("text", "") if isinstance(p, dict) and p.get("type") == "text"
+                    else (p if isinstance(p, str) else "")
+                    for p in raw
+                )
+            else:
+                user_msg = str(raw)
+            break
+
+    response = build_normal_response(body, result, user_msg)
+    content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    if not content:
+        content = f"[No output generated - status: {result.get('status', 'UNKNOWN')}]"
+
+    try:
+        # Stream content in chunks
+        chunk_size = 8
+        for i in range(0, len(content), chunk_size):
+            chunk_text = content[i:i + chunk_size]
+            sse_chunk = {
+                "id": request_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": chunk_text},
+                    "finish_reason": None,
+                }],
+            }
+            yield f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0)  # Yield control to event loop
+
+        # Final chunk with finish_reason="stop"
+        final_chunk = {
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": "stop",
+            }],
+        }
+        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        logger.error("SSE generator crashed: %s", e, exc_info=True)
+        try:
+            error_chunk = {
+                "id": request_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": f"\n[Stream Error: {str(e)[:100]}]"},
+                    "finish_reason": "stop",
+                }],
+            }
+            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception:
+            yield "data: [DONE]\n\n"
 
 
 def create_app(
@@ -904,7 +990,10 @@ def create_app(
             )
         except Exception as e:
             logger.error("Orchestrator error: %s", e, exc_info=True)
-            return build_error_response(str(e))
+            return JSONResponse(
+                status_code=500,
+                content=build_error_response(str(e)),
+            )
 
         # ── Defensive: ensure result is never None/empty ──
         # If the orchestrator returns None, Cline would receive
@@ -913,16 +1002,35 @@ def create_app(
             logger.error("chat_completions: orchestrator returned None — building error response")
             result = {"status": "ERROR", "code": "", "error": "Orchestrator returned empty result"}
 
-        # ── SSE Streaming for Open Design ──
-        if (body.get("stream", False) and _OPEN_DESIGN_AVAILABLE
-                and detection_result
-                and (detection_result.get("is_open_design")
-                     or detection_result.get("is_visual_request"))):
+        # ── SSE Streaming ──
+        # OpenAI spec: when stream=true, client expects SSE format.
+        # For Open Design requests, use full SSEStreamer with fractal phases.
+        # For general Cline requests with stream=true, use basic SSE streaming.
+        if body.get("stream", False):
+            if (_OPEN_DESIGN_AVAILABLE
+                    and detection_result
+                    and (detection_result.get("is_open_design")
+                         or detection_result.get("is_visual_request"))):
+                # Open Design: full SSE with fractal phases and artifact events
+                try:
+                    streamer = SSEStreamer()
+                    return create_sse_response(streamer, result, body, detection_result)
+                except Exception as e:
+                    logger.warning("OpenDesign: SSE streaming failed, falling back to basic SSE: %s", e)
+            # General Cline or Open Design fallback: basic SSE streaming
             try:
-                streamer = SSEStreamer()
-                return create_sse_response(streamer, result, body, detection_result)
+                from fastapi.responses import StreamingResponse
+                return StreamingResponse(
+                    _basic_sse_generator(body, result),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
             except Exception as e:
-                logger.warning("OpenDesign: SSE streaming failed, falling back to JSON: %s", e)
+                logger.warning("SSE streaming failed, falling back to JSON: %s", e)
 
         # Standard JSON response
         if result.get("partial_reasoning"):
@@ -946,10 +1054,13 @@ def create_app(
                 "chat_completions: 100%% fallback rate (%d calls) — model not responding",
                 total_calls,
             )
-            return build_error_response(
-                "Model inference timed out — the AI model is not responding in time. "
-                "This is common on first request after startup (warm-up). "
-                "Please try again — subsequent requests will be faster."
+            return JSONResponse(
+                status_code=503,
+                content=build_error_response(
+                    "Model inference timed out — the AI model is not responding in time. "
+                    "This is common on first request after startup (warm-up). "
+                    "Please try again — subsequent requests will be faster."
+                ),
             )
 
         return build_normal_response(body, result, user_msg, governor=governor)
