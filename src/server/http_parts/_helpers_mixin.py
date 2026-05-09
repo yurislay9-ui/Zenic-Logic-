@@ -33,7 +33,7 @@ class HelpersMixin:
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')
             self._set_cors_headers()
-            body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
             self.send_header('Content-Length', len(body))
             self.end_headers()
             self.wfile.write(body)

@@ -22,6 +22,9 @@ def _solver_name():
 
 
 def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
+    # Defensive: ensure data is never None
+    if not isinstance(data, dict):
+        data = {}
     """
     Construye la respuesta OpenAI-compatible para un resultado normal del pipeline.
 
@@ -161,6 +164,9 @@ def build_normal_response(data: Dict[str, Any], result: Dict[str, Any], user_msg
 
 
 def build_partial_reasoning_response(data: Dict[str, Any], result: Dict[str, Any], user_msg: str) -> Dict[str, Any]:
+    # Defensive: ensure result is never None
+    if not isinstance(result, dict):
+        result = {"status": "ERROR", "partial_reasoning_payload": {}}
     """
     Construye la respuesta de Razonamiento Parcial con tool_calls.
 
@@ -260,6 +266,9 @@ def build_overloaded_response() -> Dict[str, Any]:
 
 def build_artifact_response(data: Dict[str, Any], result: Dict[str, Any],
                              user_msg: str, governor: Optional[Any] = None) -> Dict[str, Any]:
+    # Defensive: ensure result is never None
+    if not isinstance(result, dict):
+        result = {"status": "ERROR", "code": "", "error": "Empty result from pipeline"}
     """
     Construye la respuesta OpenAI-compatible con código envuelto en <artifact> tags.
 

@@ -139,7 +139,7 @@ class NodeExecutors2Mixin:
         OPTIMIZATION: Skip sandbox for EXPLAIN/ANALYZE/SEARCH operations
         that don't produce executable code. Saves 1-30s per non-code request.
         """
-        final_code = ctx["final_code"]
+        final_code = ctx.get("final_code", "")
         lang = ctx.get("lang", "python")
         intent = ctx.get("intent")
 
@@ -174,10 +174,11 @@ class NodeExecutors2Mixin:
             return trial.status
         except Exception as e:
             logger.error("SANDBOX: Validation failed with exception: %s", e)
-            # Release workspace on error
+            # Release workspace on error AND clear ctx to prevent double-release in LEDGER_ROLLBACK
             if workspace:
                 try:
                     self._isolation_manager.release_workspace(workspace.sandbox_id)
+                    ctx["sandbox_workspace"] = None  # Prevent double-release
                 except Exception:
                     pass
             ctx["trial"] = None
@@ -194,7 +195,7 @@ class NodeExecutors2Mixin:
     async def _exec_ledger_commit(self, ctx: Dict) -> str:
         """Nodo LEDGER_COMMIT: Commit del código validado."""
         intent = ctx.get("intent")
-        final_code = ctx["final_code"]
+        final_code = ctx.get("final_code", "")
         workspace = ctx.get("sandbox_workspace")
 
         p_dir = str(get_projects_dir())

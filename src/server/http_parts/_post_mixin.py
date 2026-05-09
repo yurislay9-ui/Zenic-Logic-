@@ -155,8 +155,9 @@ class PostMixin:
             # If the orchestrator returns None (e.g. exception swallowed),
             # Cline would receive an empty HTTP body → parse error → crash
             if result is None:
-                logger.error("chat_completions: orchestrator returned None — building error response")
-                result = {"status": "ERROR", "code": "", "error": "Orchestrator returned empty result"}
+                logger.error("chat_completions: orchestrator returned None")
+                self._send_json(build_error_response("Orchestrator returned empty result"), status=500)
+                return
 
             # ── SSE Streaming for Open Design ──
             if (data.get("stream", False) and _OPEN_DESIGN_AVAILABLE
@@ -181,7 +182,8 @@ class PostMixin:
                 return
 
             response = build_normal_response(data, result, user_msg, governor=gov)
-            self._send_json(response)
+            http_status = 500 if result.get("status") in ("ERROR", "ROLLBACK", "DAG_TIMEOUT") else 200
+            self._send_json(response, status=http_status)
         except TimeoutError:
             logger.error(
                 "Request TIMEOUT after %ds — orchestrator took too long. "
@@ -206,8 +208,14 @@ class PostMixin:
 
     def _send_sse_stream(self, result, data, detection_result):
         """Send orchestrator result as SSE stream for Open Design."""
+        # Create streamer BEFORE sending headers so we can fall back to JSON on error
         try:
             streamer = SSEStreamer()
+        except Exception as e:
+            logger.error("SSE: Failed to create streamer: %s", e, exc_info=True)
+            self._send_json(build_error_response(f"Streaming unavailable: {e}"), status=500)
+            return
+        try:
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-cache')
@@ -253,6 +261,8 @@ class PostMixin:
         output_dir = data.get("output_dir", "")
         try:
             result = _run_async(self.orchestrator.generate_app(description, project_name, output_dir))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"App generation error: {e}", exc_info=True)
@@ -274,6 +284,8 @@ class PostMixin:
         output_dir = data.get("output_dir", "")
         try:
             result = _run_async(self.orchestrator.generate_automation(description, output_dir))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Automation generation error: {e}", exc_info=True)
@@ -339,6 +351,8 @@ class PostMixin:
             return
         try:
             result = _run_async(self.orchestrator.design_schema(description))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Schema design error: {e}", exc_info=True)
@@ -360,6 +374,8 @@ class PostMixin:
         context = data.get("context", "")
         try:
             result = _run_async(self.orchestrator.think(query, context))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Thinking error: {e}", exc_info=True)
@@ -382,6 +398,8 @@ class PostMixin:
         context = data.get("context", "")
         try:
             result = _run_async(self.orchestrator.reason(query, mode, context))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Reasoning error: {e}", exc_info=True)
@@ -402,6 +420,8 @@ class PostMixin:
             return
         try:
             result = _run_async(self.orchestrator.validate_logic_chain(description))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Chain validation error: {e}", exc_info=True)
@@ -424,6 +444,8 @@ class PostMixin:
         recovery = data.get("recovery", "skip")
         try:
             result = _run_async(self.orchestrator.execute_logic_chain(description, chain_data, recovery))
+            if result is None:
+                result = {"error": "Orchestrator returned empty result"}
             self._send_json(result)
         except Exception as e:
             logger.error(f"Chain execution error: {e}", exc_info=True)
