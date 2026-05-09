@@ -197,7 +197,7 @@ class PostMixin:
             }, status=504)
         except Exception as e:
             logger.error("Error processing request: %s", e, exc_info=True)
-            self._send_json(build_error_response(str(e)))
+            self._send_json(build_error_response(str(e)), status=500)
         finally:
             if gov:
                 gov.post_request()

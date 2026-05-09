@@ -47,7 +47,6 @@ class NodeExecutors2Mixin:
 
         if is_low_crit:
             # Use fallback (regex-based) validation — no LLM call
-            from src.core.agents.schemas import IntentPayload
             intent = ctx.get("intent")
             v_out = self._validation_agent.fallback(
                 target="code",
