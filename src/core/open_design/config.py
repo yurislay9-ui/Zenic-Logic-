@@ -45,6 +45,10 @@ class OpenDesignConfig:
 
     # ── Visual Bypass ──────────────────────────────────────
     # When True, UI/Design requests skip Z3/AC-3 solver verification
+    # IMPORTANT: Set TITAN_NO_VISUAL_BYPASS=1 in .env when using Cline,
+    # because Cline messages often contain UI keywords ("page", "form",
+    # "button", "style", "screen") that trigger false visual bypass,
+    # causing the AI model to be skipped and returning empty/incomplete responses.
     visual_bypass_enabled: bool = True
     # Criticality level assigned to visual/UI requests (1=FAST, skips solver)
     visual_criticality_level: int = 1
@@ -161,6 +165,11 @@ class OpenDesignConfig:
         # Visual bypass
         vb_env = os.getenv("OPEN_DESIGN_VISUAL_BYPASS", "true").lower()
         config.visual_bypass_enabled = vb_env in ("true", "1", "yes")
+
+        # TITAN_NO_VISUAL_BYPASS: Override to disable visual bypass for Cline
+        # This takes priority over OPEN_DESIGN_VISUAL_BYPASS
+        if os.getenv("TITAN_NO_VISUAL_BYPASS", "0") == "1":
+            config.visual_bypass_enabled = False
 
         # Preserve Design Systems
         ds_env = os.getenv("OPEN_DESIGN_PRESERVE_DS", "true").lower()

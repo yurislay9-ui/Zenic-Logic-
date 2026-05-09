@@ -63,18 +63,35 @@ class NodeExecutorsMixin:
         Zero LLM calls — pure deterministic pattern matching.
         Returns 'chat' for simple conversational messages,
         'pipeline' for anything that needs the full DAG.
+
+        IMPORTANT: Cline and other AI coding assistants send messages that
+        look like "simple questions" but are actually complex requests.
+        The TITAN_NO_CHAT_DETECT env var disables this shortcut entirely
+        for environments where all requests should go through the full pipeline.
         """
+        import os
+
+        # ── KILL SWITCH: Disable chat detect for Cline-only environments ──
+        # When TITAN_NO_CHAT_DETECT=1, ALL messages go to the full pipeline.
+        # This prevents Cline requests from being misclassified as "chat".
+        if os.environ.get("TITAN_NO_CHAT_DETECT", "0") == "1":
+            logger.debug("CHAT_DETECT: bypassed (TITAN_NO_CHAT_DETECT=1)")
+            return "pipeline"
+
         msg = ctx["msg"].strip()
 
         # Always go to pipeline if code indicators present
         if _CODE_INDICATORS.search(msg):
             return "pipeline"
 
-        # Short message length threshold
+        # ── GUARD: Messages >15 words are NEVER chat ──
+        # Cline sends multi-sentence requests that match _CHAT_SIMPLE_Q
+        # (e.g. "how do I fix the authentication bug in my Flask app?")
+        # but are clearly NOT simple chat. Only VERY short messages qualify.
         word_count = len(msg.split())
 
         # Very short messages that match greetings/thanks → chat mode
-        if word_count <= 8:
+        if word_count <= 5:
             if _CHAT_GREETINGS.match(msg):
                 logger.info("CHAT_DETECT: greeting detected → chat mode")
                 return "chat"
@@ -82,10 +99,10 @@ class NodeExecutorsMixin:
                 logger.info("CHAT_DETECT: thanks/ack detected → chat mode")
                 return "chat"
 
-        # Medium messages with simple question patterns but no code
-        if word_count <= 30 and _CHAT_SIMPLE_Q.match(msg) and not _CODE_INDICATORS.search(msg):
-            logger.info("CHAT_DETECT: simple question detected → chat mode")
-            return "chat"
+        # DISABLED: The _CHAT_SIMPLE_Q pattern is too aggressive for Cline.
+        # Messages like "how do I fix..." or "what is the error..." get
+        # misclassified as chat and receive template responses instead of
+        # going through the pipeline. Only pure greetings/thanks qualify now.
 
         # Everything else → full pipeline
         return "pipeline"
@@ -174,7 +191,19 @@ class NodeExecutorsMixin:
         )
 
     async def _exec_cache_check(self, ctx: Dict) -> Union[str, Dict]:
-        """Nodo CACHE_CHECK: Check SmartMemory cache."""
+        """Nodo CACHE_CHECK: Check SmartMemory cache.
+
+        Can be disabled via TITAN_NO_CACHE=1 env var to force all requests
+        through the full pipeline. Useful for Cline environments where cached
+        (potentially stale/truncated) responses cause more harm than good.
+        """
+        import os
+
+        # ── KILL SWITCH: Disable cache for Cline environments ──
+        if os.environ.get("TITAN_NO_CACHE", "0") == "1":
+            logger.debug("CACHE_CHECK: bypassed (TITAN_NO_CACHE=1)")
+            return "miss"
+
         cached = self._memory.check_cache(ctx["msg"])
         if cached:
             elapsed = int((time.time() - ctx["start_time"]) * 1000)

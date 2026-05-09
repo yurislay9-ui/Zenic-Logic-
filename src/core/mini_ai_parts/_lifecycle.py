@@ -116,6 +116,18 @@ class ModelLifecycleMixin:
                     self._verdict_executor = None
                 logger.info("MiniAI: Model unloaded from memory")
 
+    def chat(self, message: str, max_tokens: int = 256) -> Optional[str]:
+        """Conversational LLM call for chat mode responses.
+
+        Simple wrapper around _call_llm that uses a conversational system prompt.
+        Returns the LLM response text, or None if model is not loaded / fails.
+        """
+        return self._call_llm(
+            system_prompt="You are a helpful AI assistant. Respond concisely and directly.",
+            user_prompt=message,
+            max_tokens=max_tokens,
+        )
+
     @property
     def is_loaded(self) -> bool:
         return self._loaded and self._llm is not None
