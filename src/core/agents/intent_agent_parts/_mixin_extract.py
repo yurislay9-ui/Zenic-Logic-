@@ -40,15 +40,18 @@ class ExtractMixin:
             lang = FENCE_LANG_MAP.get(lang_hint.lower(), "python")
             return lang, code
 
-        # Detect inline code indicators
+        # Detect inline code indicators — only return lines that look like actual code,
+        # NOT the entire message (which is often natural language with "import" etc.)
         code_indicators = [
             'def ', 'class ', 'function ', 'fun ', 'func ',
             'import ', 'from ', 'package ',
         ]
         lines = text.strip().split('\n')
         code_lines = [l for l in lines if any(ind in l for ind in code_indicators)]
-        if code_lines:
-            return 'python', text.strip()
+        if code_lines and len(code_lines) >= 2:
+            # Require at least 2 code-like lines to reduce false positives
+            # from NL messages like "I need to import a function from my module"
+            return 'python', '\n'.join(code_lines)
 
         return None, None
 

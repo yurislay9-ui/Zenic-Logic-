@@ -118,6 +118,7 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
         exec_method="_exec_steps",
         transitions={"*": "VALIDATE"},
         default_next="VALIDATE",
+        max_retries=3,  # Must match VALIDATE's F5 correction loop (3 cycles)
     ),
     "VALIDATE": DAGNode(
         name="VALIDATE",

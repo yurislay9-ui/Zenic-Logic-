@@ -76,11 +76,22 @@ class NodeExecutors2Mixin:
         ctx["validation_risk_score"] = risk_score
         ctx["validation_issues"] = issues
 
-        if risk_score <= 0.0 or not issues:
-            logger.info(
-                f"VALIDATE(F5): Code CLEAN (risk={risk_score:.2f}, issues=0). "
-                f"Proceeding to SANDBOX."
-            )
+        # Low-crit path: tolerate low risk scores without correction loop
+        # (e.g. risk=0.22 with 3 warnings is normal for generated code)
+        risk_threshold = 0.3 if is_low_crit else 0.0
+
+        if risk_score <= risk_threshold or not issues:
+            if risk_score > 0.0 and issues:
+                logger.info(
+                    f"VALIDATE(F5): Low-risk issues (risk={risk_score:.2f}, "
+                    f"issues={len(issues)}) below threshold ({risk_threshold}). "
+                    f"Proceeding to SANDBOX."
+                )
+            else:
+                logger.info(
+                    f"VALIDATE(F5): Code CLEAN (risk={risk_score:.2f}, issues=0). "
+                    f"Proceeding to SANDBOX."
+                )
             return "clean"
 
         logger.warning(

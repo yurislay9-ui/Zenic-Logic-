@@ -38,11 +38,15 @@ class ExtractorsMixin:
         if matches:
             lang_hint, code = matches[0]
             return FENCE_LANG.get(lang_hint.lower(), "python"), code
-        # Inline code detection
+        # Inline code detection — only return lines that look like actual code,
+        # NOT the entire message (which is often natural language with "import" etc.)
         indicators = ['def ', 'class ', 'function ', 'fun ', 'func ', 'import ', 'from ']
         lines = text.strip().split('\n')
-        if any(any(ind in l for ind in indicators) for l in lines):
-            return 'python', text.strip()
+        code_lines = [l for l in lines if any(ind in l for ind in indicators)]
+        if code_lines and len(code_lines) >= 2:
+            # Require at least 2 code-like lines to reduce false positives
+            # from NL messages like "I need to import a function from my module"
+            return 'python', '\n'.join(code_lines)
         return None, None
 
     @staticmethod
