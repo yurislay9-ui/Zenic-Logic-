@@ -55,7 +55,7 @@ class ModelLifecycleMixin:
                 n_threads=N_THREADS,
                 n_batch=int(os.environ.get("TITAN_LLM_BATCH", "512")),
                 use_mmap=True,
-                use_mlock=False,
+                use_mlock=True,  # ARM: lock model in RAM, prevent page faults during inference
                 verbose=False,
             )
             self._load_time = time.time() - start
@@ -166,7 +166,7 @@ class ModelLifecycleMixin:
             return self._llm.create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt + "\n/no_think"},  # /no_think disables Qwen3 thinking mode (saves 50-100 tokens on ARM)
                 ],
                 max_tokens=max_tokens,
                 temperature=TEMPERATURE,
@@ -180,7 +180,18 @@ class ModelLifecycleMixin:
             try:
                 response = future.result(timeout=LLM_TIMEOUT_S)
             except concurrent.futures.TimeoutError:
+                future.cancel()
                 logger.warning(f"MiniAI: LLM call timed out after {LLM_TIMEOUT_S}s for: {user_prompt[:50]}")
+                # CRITICAL FIX: Recreate executor to unblock thread pool.
+                # When a call times out, the underlying llama_cpp thread keeps running
+                # and holds the executor's single worker (max_workers=1). All subsequent
+                # calls are blocked until that thread finishes naturally, causing cascading
+                # timeouts. By shutting down and recreating, we get a fresh thread.
+                try:
+                    self._executor.shutdown(wait=False)
+                except Exception:
+                    pass
+                self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
                 with self._lock:
                     self._fallback_count += 1
                 return None

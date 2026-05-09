@@ -8,6 +8,7 @@ Integrates Circuit Breaker, Retry with exponential backoff, and Bulkhead
 patterns from src.core.patterns.resilience for robust fault tolerance.
 """
 
+import os
 import time
 import json
 import threading
@@ -34,7 +35,7 @@ TEMPERATURE_AGENT = 0.15        # Temperatura baja = más determinista
 
 # Default resilience configurations
 DEFAULT_RETRY_CONFIG = RetryConfig(
-    max_attempts=3,
+    max_attempts=int(os.environ.get("TITAN_AGENT_RETRIES", "1")),  # ARM: 1 attempt (was 3, retries multiply with DAG nodes)
     base_delay=1.0,
     max_delay=30.0,
     exponential_base=2,

@@ -23,7 +23,7 @@ MAX_TOKENS_GENERATE = 400
 MAX_TOKENS_EXPLAIN = 200
 MAX_TOKENS_SUBTASK = 200
 
-LLM_TIMEOUT_S = float(os.environ.get("TITAN_LLM_TIMEOUT_S", "60.0"))  # Max seconds per LLM call (was 8s→30s→60s, ARM needs more time)
+LLM_TIMEOUT_S = float(os.environ.get("TITAN_LLM_TIMEOUT_S", "120.0"))  # ARM needs 120s (was 60s, still not enough for Qwen3 on ARM)
 N_CTX = 2048                    # Context window
 N_THREADS = int(os.environ.get("TITAN_LLM_THREADS", "4"))  # CPU threads (configurable for ARM/low-power)
 TEMPERATURE = 0.1               # Low temperature = more deterministic

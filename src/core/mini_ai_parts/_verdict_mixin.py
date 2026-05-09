@@ -15,6 +15,7 @@ v17.1 MEJORAS DE RESILIENCIA:
 """
 
 import re
+import os
 import time
 import logging
 import concurrent.futures
@@ -31,7 +32,7 @@ VERDICT_TIMEOUT_S = 15.0         # Timeout por intento (was 5s, too short for AR
 VERDICT_MAX_RETRIES = 3          # Reintentos con exponential backoff
 VERDICT_BASE_DELAY = 1.0         # Delay base entre reintentos (segundos)
 VERDICT_MAX_DELAY = 10.0         # Delay máximo entre reintentos
-VERDICT_CONSENSUS_ATTEMPTS = 3   # Preguntar N veces, mayoría gana
+VERDICT_CONSENSUS_ATTEMPTS = int(os.environ.get("TITAN_VERDICT_CONSENSUS", "1"))  # ARM: 1 attempt (was 3, too many LLM timeouts)
 VERDICT_CONSENSUS_THRESHOLD = 2  # Mínimo de YES para verdict YES
 
 VERDICT_SYSTEM_PROMPT = (
