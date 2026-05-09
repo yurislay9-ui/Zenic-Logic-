@@ -121,8 +121,8 @@ def main():
         description=f"TITAN OMNISCALE X {TITAN_VERSION_STR} - Headless Server"
     )
     parser.add_argument(
-        '--port', type=int, default=5000,
-        help='Puerto del servidor (default: 5000)'
+        '--port', type=int, default=5001,
+        help='Puerto del servidor (default: 5001)'
     )
     parser.add_argument(
         '--host', type=str, default='0.0.0.0',

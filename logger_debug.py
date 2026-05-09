@@ -21,7 +21,7 @@
 ║    python3 logger_debug.py                    # Modo completo    ║
 ║    python3 logger_debug.py --fast             # Solo FastAPI     ║
 ║    python3 logger_debug.py --stdlib           # Solo stdlib      ║
-║    python3 logger_debug.py --port 5001        # Puerto custom    ║
+║    python3 logger_debug.py --port 5000        # Puerto custom    ║
 ║    python3 logger_debug.py --no-preload       # Sin precarga     ║
 ║                                                                  ║
 ║  El log se guarda en:                                            ║
@@ -1034,8 +1034,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=f"TITAN OMNISCALE X v18 — Motor de Diagnostico Completo"
     )
-    parser.add_argument('--port', type=int, default=5000,
-                        help='Puerto del servidor (default: 5000, mismo que main_headless.py)')
+    parser.add_argument('--port', type=int, default=5001,
+                        help='Puerto del servidor (default: 5001)')
     parser.add_argument('--host', type=str, default='0.0.0.0',
                         help='Host para bind (default: 0.0.0.0)')
     parser.add_argument('--ram-limit', type=int, default=4096,
