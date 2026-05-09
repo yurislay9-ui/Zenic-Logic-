@@ -146,7 +146,7 @@ def _get_shared_loop():
     return _shared_loop
 
 
-_REQUEST_TIMEOUT = int(os.environ.get("TITAN_REQUEST_TIMEOUT", "120"))
+_REQUEST_TIMEOUT = int(os.environ.get("TITAN_REQUEST_TIMEOUT", "300"))  # Was 120s, increased for ARM + Cline (Cline waits ~300s)
 _MAX_ASYNC_RETRIES = 2  # How many times to retry if daemon thread dies mid-flight
 
 

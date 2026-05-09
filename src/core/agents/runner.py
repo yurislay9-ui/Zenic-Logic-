@@ -28,7 +28,7 @@ T = TypeVar('T')
 
 # Límites de seguridad para llamadas al LLM
 MAX_TOKENS_AGENT = 600          # Max tokens por llamada de agente
-AGENT_TIMEOUT_S = 10.0          # Timeout por llamada
+AGENT_TIMEOUT_S = 60.0          # Timeout por llamada (was 10s, must be >= LLM_TIMEOUT_S for ARM)
 MAX_RETRIES = 1                 # Reintentos antes de fallback
 TEMPERATURE_AGENT = 0.15        # Temperatura baja = más determinista
 
@@ -46,10 +46,10 @@ DEFAULT_RETRY_CONFIG = RetryConfig(
 
 DEFAULT_CIRCUIT_BREAKER = CircuitBreaker(
     name="llm_agent",
-    failure_threshold=5,
-    recovery_timeout=30.0,
-    half_open_max_calls=3,
-    success_threshold=3,
+    failure_threshold=3,         # Was 5, reduced: ARM LLM timeouts accumulate fast
+    recovery_timeout=60.0,       # Was 30s, increased: ARM needs more recovery time
+    half_open_max_calls=2,       # Was 3, reduced: fewer probe calls in half-open
+    success_threshold=2,         # Was 3, reduced: easier to close circuit on ARM
 )
 
 DEFAULT_BULKHEAD = Bulkhead(

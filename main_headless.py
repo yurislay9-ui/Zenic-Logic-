@@ -174,6 +174,19 @@ def main():
     if hasattr(orchestrator, '_model_mgr'):
         governor.set_model_manager(orchestrator._model_mgr)
 
+    # Reset circuit breakers on startup to avoid stale OPEN state from previous runs
+    if hasattr(orchestrator, '_agent_runner') and orchestrator._agent_runner is not None:
+        cb = getattr(orchestrator._agent_runner, '_circuit_breaker', None)
+        if cb is not None:
+            cb.reset()
+            logger.info("Circuit breaker 'llm_agent' reset to CLOSED on startup")
+    # Also reset verdict circuit breaker if it exists
+    if hasattr(orchestrator, '_model_mgr') and orchestrator._model_mgr.ai_loaded:
+        ai = orchestrator._model_mgr.mini_ai_engine
+        if hasattr(ai, '_verdict_cb') and ai._verdict_cb is not None:
+            ai._verdict_cb.reset()
+            logger.info("Verdict circuit breaker reset to CLOSED on startup")
+
     # ── Precarga de modelos ──
     # Cargar modelos ANTES de empezar a servir requests para evitar
     # TimeoutError en el primer request (Qwen ~400MB + SemanticEngine ~150MB)
