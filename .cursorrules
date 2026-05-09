@@ -1,0 +1,310 @@
+# =============================================================================
+# ZENIC LOGIC v18 — .cursorrules
+# Motor de IA Quirurgico Local | 48 Agentes SRP | Unified DAG 59 Nodos
+# =============================================================================
+# Este archivo potencia a cualquier agente AI que trabaje en este proyecto.
+# Lee, respeta y aplica TODAS las reglas aqui definidas.
+# Si algo no esta claro, consulta ARCHITECTURE_V18_SR_DESIGN.md y WORKLOG.md
+# =============================================================================
+
+## IDENTIDAD DEL PROYECTO
+
+- Nombre: ZENIC LOGIC v18 (alias: TITAN OMNISCALE X)
+- Version: 18.0.0
+- Lenguaje: Python 3.10+
+- Descripcion: Motor de IA quirurgico local, servidor OpenAI-compatible, 48 agentes atomicos SRP, DAG unificado de 59 nodos, determinista por diseno, IA solo como arbitro binario YES/NO.
+- Plataforma objetivo: Android/Termux (Xiaomi Redmi 12R Pro), CPU-only (sin GPU)
+- Modelo IA: Qwen3-0.6B Q4_K_M via llama-cpp-python (solo en A43 VerdictEngine)
+
+## 6 INVARIANTES ARQUITECTONICOS (NO VIOLAR NUNCA)
+
+1. **No LLM directo**: Ningun agente llama al LLM directamente. Todo va por VerdictEngine (A43).
+2. **Solo SI/NO**: El LLM solo puede responder YES o NO. Cualquier otra respuesta = NO.
+3. **Fallback determinista**: Cada agente funciona sin IA. El sistema opera 100% sin modelo.
+4. **Sin duplicacion**: Cada funcion existe en exactamente un agente. Duplicar = error de diseno.
+5. **Auditoria total**: Cada llamada y decision tiene registro con evidencia.
+6. **Veto de seguridad**: Si SecurityScanner (A23) dice NO, es NO. Sin override posible.
+
+## REGLAS DE ACTIVACION DEL AGENTE
+
+### SIEMPRE haz esto cuando trabajes en este proyecto:
+
+1. **Lee WORKLOG.md** antes de hacer cambios para entender el historial y estado actual.
+2. **Lee agent-ctx/** para contexto de tareas previas de agentes.
+3. **Verifica la capa** del agente que vas a modificar — respeta su responsabilidad unica.
+4. **Registra tu trabajo** en WORKLOG.md con el formato establecido (Task ID, Agent, Work Log, Stage Summary).
+5. **Ejecuta tests** antes y despues de cada cambio: `pytest tests/ -v`.
+6. **Usa tipos de schemas/** — nunca definas dataclasses de resultado fuera de `src/core/agents_v2/schemas/types.py`.
+7. **Respeta las constantes** en `src/core/shared/constants.py` — unico source of truth.
+8. **Escribe en espanol** los comentarios y docstrings (coherencia con el codigo existente).
+9. **Mantén fallback determinista** — todo agente nuevo DEBE implementar `execute()` y `fallback()`.
+10. **Respeta la configuracion de resiliencia** por capa (circuit breaker, retry, bulkhead, timeout).
+
+### NUNCA hagas esto:
+
+1. **NUNCA** agregues llamadas LLM directas en ningun agente excepto A43 VerdictEngine.
+2. **NUNCA** dupliques logica que ya existe en otro agente — rutea al agente correspondiente.
+3. **NUNCA** definas constantes (VALID_INTENT_OPERATIONS, EXT_LANG_MAP, etc.) fuera de `src/core/shared/constants.py`.
+4. **NUNCA** definas tipos de resultado fuera de `src/core/agents_v2/schemas/types.py`.
+5. **NUNCA** cambies el fallback de SecurityScanner a safe=True — siempre safe=False (principio de precaucion).
+6. **NUNCA** registres fallbacks como fallos de circuit breaker — previene death spiral (bug F-05 ya corregido).
+7. **NUNCA** uses wildcard imports en `__init__.py` — usa imports explicitos nombrados.
+8. **NUNCA** agregues dependencias sin verificar compatibilidad con Termux/ARM.
+9. **NUNCA** modifiques el DAG unificado sin actualizar `unified_definition.py`.
+10. **NUNCA** rompas retro-compatibilidad con v16 sin proporcionar shim/adapter.
+
+## ARQUITECTURA — 9 CAPAS, 48 AGENTES
+
+```
+CAPA 1: UNDERSTANDING    A01 IntentClassifier, A02 EntityExtractor, A03 TargetResolver, A04 CriticalityScorer, A48 BilingualRouter
+CAPA 2: MEMORY & CONTEXT A05 MemoryCollector, A06 RelevanceScorer, A07 ContextCompressor, A08 ContextPrefetcher
+CAPA 3: BUSINESS         A09 InvoiceProcessor, A10 InventoryManager, A11 CRMPipeline, A12 TaskScheduler, A13 ReportGenerator, A14 NotificationDispatcher, A15 DataAnalyzer, A16 OperationRouter
+CAPA 4: CODE OPS         A17 CodeGenerator, A18 CodeRefactorer, A19 CodeOptimizer, A20 CodeFixer, A21 ProjectScaffolder, A22 DefensiveInjector
+CAPA 5: VALIDATION       A23 SecurityScanner, A24 SyntaxValidator, A25 ChainValidator, A26 ConfigValidator, A27 RiskCalculator, A28 FixSuggester
+CAPA 6: AUTOMATION       A29 TriggerInferrer, A30 ActionInferrer, A31 ScheduleParser, A32 ConditionExtractor, A33 AutomationNamer, A34 WorkflowSerializer
+CAPA 7: REASONING        A35 ProblemDetector, A36 StepDecomposer, A37 TemplateReasoner, A38 ConfidenceEstimator, A39 ConclusionExtractor
+CAPA 8: VERDICT (AI)     A40 DeterministicPipeline, A41 EvidenceCollector, A42 ConsensusResolver, A43 VerdictEngine (UNICO con IA)
+CAPA 9: INFRASTRUCTURE   A44 AgentRunner, A45 HealthMonitor, A46 AuditLogger, A47 CircuitBreakerManager, A48 BilingualRouter
+```
+
+## FLUJO DEL DAG UNIFICADO (59 NODOS)
+
+```
+ENTRY: CACHE_CHECK → BILINGUAL_ROUTE → INTENT_CLASSIFY
+  ↓ [ENTITY_EXTRACT ∥ TARGET_RESOLVE] (PARALELO)
+  ↓ CRITICALITY_SCORE
+  ↓ [MEMORY_COLLECT ∥ SEMANTIC_PREP] (PARALELO)
+  ↓ RELEVANCE_SCORE → CONTEXT_COMPRESS → CONTEXT_PREFETCH
+  ↓ AST_ANALYZE → THEOREM_CACHE → ROUTE → ROUTE_DECISION
+  ↓ {CODE_PATH | BIZ_PATH | AUTO_PATH | REASON_PATH | HIGH_CRIT | VISUAL | ABORTIVE}
+  ↓ SECURITY_SCAN → SYNTAX_VALIDATE → RISK_CALC → FIX_SUGGEST
+  ↓ EVIDENCE_COLLECT → CONSENSUS_RESOLVE → VERDICT
+  ↓ SANDBOX → LEDGER_COMMIT/ROLLBACK → THEOREM_SAVE → MEMORY_SAVE → DONE
+```
+
+## ESTRUCTURA DE DIRECTORIOS CRITICA
+
+```
+src/core/agents_v2/           # 48 agentes SRP (V18) — MODULO PRINCIPAL
+├── understanding/            # Capa 1: A01-A04, A48
+├── memory/                   # Capa 2: A05-A08
+├── business/                 # Capa 3: A09-A16
+├── code_ops/                 # Capa 4: A17-A22
+├── validation/               # Capa 5: A23-A28
+├── automation/               # Capa 6: A29-A34
+├── reasoning/                # Capa 7: A35-A39
+├── verdict/                  # Capa 8: A40-A43
+├── infrastructure/           # Capa 9: A44-A47
+├── resilience/               # BaseAgent, CircuitBreaker, HealthMonitor, AuditLogger
+└── schemas/                  # Tipos compartidos (SINGLE SOURCE OF TRUTH)
+
+src/core/dag_parts/           # Unified DAG Orchestrator
+src/core/shared/              # Infraestructura compartida
+├── shared_memory_bus.py      # RingBuffer + Mailbox + SQLite WAL
+├── fast_connection_pool.py   # Thread-local SQLite pool
+├── constants.py              # Constantes del sistema (NO redefinir)
+├── contracts.py              # Tipos v16 (facade re-export)
+├── retry.py                  # with_retry() compartido
+├── tenant_utils.py           # resolve_tenant_id()
+├── ast_utils.py              # compute_cyclomatic_complexity()
+├── db_utils.py               # escape_sql_like(), purge_tenant_rows()
+├── z3_parts/                 # Z3 Solver (11 modulos, fallback AC-3)
+└── ...
+
+src/core/agents/              # Agentes originales v17 (BACKWARD COMPAT — no modificar)
+src/server/                   # FastAPI + HTTP server
+src/config/                   # YAML config loader
+tests/unit/                   # 381+ tests por capa
+tests/integration/            # Tests de integracion del pipeline
+```
+
+## PATRON BASEAGENT — CADA AGENTE NUEVO DEBE SEGUIR ESTE PATRON
+
+```python
+from src.core.agents_v2.resilience.base_agent import BaseAgent
+from src.core.agents_v2.schemas.types import AgentResult  # o tipo especifico
+
+class MiNuevoAgente(BaseAgent[MiResultado]):
+    """Axx NombreAgente — UNA sola responsabilidad."""
+
+    def __init__(self, **kwargs):
+        super().__init__(name="Axx_NombreAgente", **kwargs)
+
+    def execute(self, input_data: Any) -> MiResultado:
+        """Logica determinista principal. NUNCA llama al LLM."""
+        # ... logica pura ...
+        return MiResultado(...)
+
+    def fallback(self, input_data: Any) -> MiResultado:
+        """Fallback determinista. SIEMPRE funciona. NUNCA falla."""
+        return MiResultado(...)  # valores seguros/conservadores
+```
+
+## CONFIGURACION DE RESILIENCIA POR CAPA
+
+| Capa       | Circuit Breaker | Retry    | Bulkhead | Timeout |
+|------------|:---:|:---:|:---:|:---:|
+| A01-A04    | 3f/60s  | 3x exp | 4 conc | 5s  |
+| A05-A08    | 5f/30s  | 3x exp | 8 conc | 3s  |
+| A09-A15    | 3f/60s  | 3x exp | 2 conc | 10s |
+| A16        | 3f/30s  | 2x exp | 4 conc | 2s  |
+| A17-A22    | 3f/60s  | 3x exp | 4 conc | 15s |
+| A23-A28    | 5f/30s  | 2x exp | 8 conc | 5s  |
+| A29-A34    | 3f/30s  | 3x exp | 4 conc | 3s  |
+| A35-A39    | 3f/60s  | 3x exp | 4 conc | 10s |
+| A40-A42    | 5f/30s  | 3x exp | 8 conc | 5s  |
+| **A43**    | **3f/60s** | **3x exp** | **1 conc** | **5s** |
+| A44        | 5f/30s  | 3x exp | 4 conc | 30s |
+| A45-A47    | 5f/30s  | 2x exp | 2 conc | 3s  |
+| A48        | 3f/30s  | 2x exp | 4 conc | 1s  |
+
+## VEREDICTO — FLUJO DE DECISION
+
+1. A40 DeterministicPipeline ejecuta 7 tareas sin IA.
+2. A41 EvidenceCollector recolecta evidencia a favor/en contra.
+3. A42 ConsensusResolver resuelve consenso:
+   - Consenso >= HIGH → Decision sin IA (rapido, <30ms)
+   - Consenso < HIGH → Escalar a A43 VerdictEngine
+4. A43 VerdictEngine (SOLO SI NECESARIO):
+   - 3 llamadas a Qwen, mayoria gana (2/3)
+   - Respuesta solo YES o NO
+   - Circuit breaker abierto → Fallback NO inmediato (0ms, principio de precaucion)
+
+## BUGS CONOCIDOS Y CORRECCIONES IMPORTANTES
+
+- **F-01a**: `_function_returns_on_all_paths` siempre retornaba True → Corregido con heuristica proper.
+- **F-01b**: `fallback()` de SyntaxValidator era fail-open → Cambiado a fail-closed (valid=False).
+- **F-05**: BaseAgent.run() registraba fallbacks como fallos CB (death spiral) → Degraded success no registra CB.
+- **Seguridad**: SecurityScanner fallback ahora es safe=False (principio de precaucion).
+- **Deadlock**: GlobalHealthMonitor.all_snapshots() tenia deadlock → Corregido copiando keys bajo lock.
+- **Duplicados**: CircuitState y AuditEntry eliminados de schemas/types.py (source of truth en resilience/).
+
+## CONVENCIONES DE CODIGO
+
+- **Idioma**: Comentarios y docstrings en espanol. Nombres de variables/funciones en ingles.
+- **Tipos**: Usar `from __future__ import annotations` al inicio de cada archivo.
+- **Dataclasses**: Todos los tipos de resultado son @dataclass con `source: str = "deterministic"`.
+- **Imports**: Explicitos, nunca wildcard. Orden: stdlib → terceros → proyecto.
+- **Logging**: Usar `logging.getLogger("NOMBRE_MODULO")`. Nunca print() en produccion.
+- **Tests**: Un archivo por capa en tests/unit/. Formato: test_layerN_nombre.py. Minimo 60+ tests por capa.
+- **Naming archivos**: snake_case.py. Un agente = un archivo.
+- **Naming clases**: PascalCase (IntentClassifier, SecurityScanner, etc.).
+- **Naming constantes**: UPPER_SNAKE_CASE. Privadas del modulo: _UPPER_SNAKE con underscore inicial.
+- **Thread safety**: Usar threading.Lock() para stats compartidas. Nunca asumir single-thread.
+
+## TESTING
+
+```bash
+# Tests por capa
+pytest tests/unit/test_layer5_validation.py -v     # 78 tests
+pytest tests/unit/test_layer6_automation.py -v     # 66 tests
+pytest tests/unit/test_layer7_reasoning.py -v      # 91 tests
+pytest tests/unit/test_layer8_verdict.py -v        # 84 tests
+pytest tests/unit/test_layer9_infrastructure.py -v # 62 tests
+
+# Todos los tests
+pytest tests/ -v                                    # 381+ tests
+
+# Con cobertura
+pytest tests/ --cov=src --cov-report=term-missing
+```
+
+## DEPENDENCIAS CLAVE
+
+- **Core**: fastapi, uvicorn, pydantic>=2.0, aiosqlite, numpy, pyyaml, python-jose, passlib
+- **Opcional**: z3-solver (verificacion formal), fastembed (embeddings), textual (TUI), llama-cpp-python (IA)
+- **Dev**: pytest, pytest-asyncio, pytest-cov, pytest-timeout
+- **NO agregar**: Dependencias que no funcionen en Termux/ARM sin verificacion previa.
+
+## MULTI-TENANCY
+
+- Aislamiento por tenant_id en 17+ tablas SQLite.
+- Usar `resolve_tenant_id()` de `src/core/shared/tenant_utils.py`.
+- Usar `purge_tenant_rows()` de `src/core/shared/db_utils.py` para cleanup GDPR.
+- Constante: `ANONYMOUS_TENANT = "__anonymous__"`.
+
+## BILINGUE (EN/ES)
+
+- A48 BilingualRouter detecta idioma y rutea a manejadores EN/ES.
+- Keywords de clasificacion y patrones deben cubrir ambos idiomas.
+- Ejemplos: "crear"/"create", "eliminar"/"delete", "buscar"/"search", "cada"/"every".
+
+## DOMINIOS DE NEGOCIO (DNA)
+
+- Reglas de negocio obligatorias en `src/templates/dna/domain_expert_rules.yaml`.
+- 13 industrias cubiertas: retail, healthcare_clinic, healthcare_hospital, dental, pharmacy, mental_health, education_k12, education_university, education_online, finance_banking, finance_insurance, finance_crypto, legal_practice.
+- Cada industria tiene: mandatory_logic, ux_patterns, compliance_requirements, business_invariants, edge_cases, suggested_entities, notification_triggers.
+
+## API ENDPOINTS PRINCIPALES
+
+- `POST /v1/chat/completions` — Chat OpenAI-compatible (SSE streaming)
+- `GET /v1/models` — Listar modelos
+- `GET /health` / `GET /ready` — K8s probes
+- `POST /v1/generate/app` — Generar app completa
+- `POST /v1/generate/automation` — Generar automatizacion
+- `POST /v1/think` — ThinkingEngine
+- `POST /v1/reason` — Razonamiento avanzado
+- `GET /v1/niches` — 107 templates, 20 dominios
+- `POST /v1/dna/validate` — Validar contra gates de dominio
+- `GET /metrics` — Prometheus metrics
+
+## REGLAS PARA MODIFICACIONES ESTRUCTURALES
+
+1. **Nuevo agente**: Crear archivo en la capa correspondiente, agregar a `__init__.py` con import explicito, agregar tipo a `schemas/types.py`, agregar nodo al DAG en `unified_definition.py`, crear tests.
+2. **Nueva capa**: Requiere aprobacion arquitectonica. Crear directorio, __init__.py, agregar a agents_v2/__init__.py, actualizar DAG, actualizar README.
+3. **Cambios en resiliencia**: Modificar solo en `resilience/`. Nunca duplicar patrones en agentes individuales.
+4. **Cambios en shared/**: Verificar que no rompe backward compat. Agregar tests de regresion.
+5. **Cambios en DAG**: Actualizar UNIFICADO_PIPELINE_DAG en `unified_definition.py`. Verificar V16_TO_UNIFIED_NODE_MAP si afecta retro-compat.
+
+## TERMUX + DATOS MOVILES — REGLAS CRITICAS
+
+### Problema conocido
+En Termux con datos moviles (sin WiFi), la deteccion de IP falla porque:
+- Android no da permisos completos de red a Termux
+- La interfaz movil (rmnet0, ccmni0) no se detecta con `socket.connect()`
+- Cline no puede conectarse si la IP mostrada es incorrecta
+
+### Soluciones implementadas
+1. **get_local_ip() v18**: 7 metodos de deteccion con fallbacks automaticos (UDP, IPv6, ip addr, /proc/net, ifconfig, netifaces, TITAN_BIND_IP env)
+2. **TITAN_BIND_IP**: Variable de entorno en .env para configurar IP manualmente
+3. **termux_network_diag.py**: Script de diagnostico completo de red
+4. **get_network_info()**: API de diagnostico programatico
+
+### Cuando trabajes en red/termux:
+- **SIEMPRE** prueba con `python3 termux_network_diag.py` antes de depurar
+- **SIEMPRE** configura TITAN_BIND_IP en .env si estas en datos moviles
+- **SIEMPRE** usa `0.0.0.0` como bind address (ya es default)
+- **NUNCA** asumas que `socket.connect(("8.8.8.8", 80))` funciona en datos moviles
+- **NUNCA** uses `localhost` como bind address — usa `0.0.0.0`
+- **RECUERDA**: Cline en el MISMO telefono siempre puede usar `http://127.0.0.1:5000/v1`
+
+### Interfaces de red en datos moviles (prioridad)
+1. `rmnet0`, `rmnet_data0` (Qualcomm) — Datos moviles
+2. `ccmni0`, `ccmni1` (MediaTek) — Datos moviles
+3. `wlan0` — WiFi
+4. `usb0`, `rndis0` — USB tethering
+
+### Configuracion Cline en Termux
+- **Mismo telefono**: Base URL = `http://127.0.0.1:5000/v1`
+- **Otro dispositivo via hotspot**: Base URL = `http://192.168.43.1:5000/v1`
+- **Otro dispositivo misma red WiFi**: Base URL = `http://<IP_WIFI>:5000/v1`
+
+## MODO DE OPERACION DEL AGENTE AI
+
+Cuando trabajes en este proyecto:
+
+1. **Primero lee** WORKLOG.md y agent-ctx/ para contexto.
+2. **Identifica la capa** afectada y los agentes involucrados.
+3. **Verifica invariantes** antes de proponer cambios.
+4. **Implementa** siguiendo el patron BaseAgent.
+5. **Ejecuta tests** para verificar que nada se rompe.
+6. **Documenta** cambios en WORKLOG.md con formato estandar.
+7. **Si hay duda**, aplica principio de precaucion: fallback conservador.
+
+## RECORDATORIO FINAL
+
+> Este sistema es DETERMINISTA POR DISENO. La IA es la excepcion, no la regla.
+> Cada cambio debe preservar la propiedad de que el sistema funciona 100% sin modelo.
+> Si un cambio requiere IA para funcionar, es un cambio incorrecto.
+
+> "Un agente = una funcion. Sin excepciones."

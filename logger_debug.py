@@ -21,7 +21,7 @@
 ║    python3 logger_debug.py                    # Modo completo    ║
 ║    python3 logger_debug.py --fast             # Solo FastAPI     ║
 ║    python3 logger_debug.py --stdlib           # Solo stdlib      ║
-║    python3 logger_debug.py --port 5000        # Puerto custom    ║
+║    python3 logger_debug.py --port 5001        # Puerto custom    ║
 ║    python3 logger_debug.py --no-preload       # Sin precarga     ║
 ║                                                                  ║
 ║  El log se guarda en:                                            ║
@@ -403,10 +403,13 @@ def patch_threading():
         original_init(self, *args, **kwargs)
         diag.thread_creations += 1
         creator = "".join(traceback.format_stack()[-4:-1])
+        # NOTA: self.ident es None hasta que se llama a start()
+        # Guardamos por nombre en vez de ident para evitar colisiones
         with diag._lock:
-            diag.active_threads[self.ident] = {
+            diag.active_threads[id(self)] = {
                 "name": self.name,
                 "daemon": self.daemon,
+                "ident": self.ident,  # None hasta start()
                 "created_at": time.time(),
                 "created_from": creator[:200],
             }
@@ -1032,7 +1035,7 @@ def main():
         description=f"TITAN OMNISCALE X v18 — Motor de Diagnostico Completo"
     )
     parser.add_argument('--port', type=int, default=5000,
-                        help='Puerto del servidor (default: 5000)')
+                        help='Puerto del servidor (default: 5000, mismo que main_headless.py)')
     parser.add_argument('--host', type=str, default='0.0.0.0',
                         help='Host para bind (default: 0.0.0.0)')
     parser.add_argument('--ram-limit', type=int, default=4096,
@@ -1344,7 +1347,15 @@ def _start_stdlib(orchestrator, governor, rate_limiter, ip, args):
 
     print(f"\n{'='*70}")
     print(f"  TITAN OMNISCALE X v18 — DIAGNOSTIC MODE [Stdlib]")
-    print(f"  http://{ip}:{args.port}/v1")
+    print(f"{'='*70}")
+    print(f"")
+    print(f"  >>> CLINE / AIDE / OPENCODE — CONFIGURA ESTA URL:")
+    print(f"      http://{ip}:{args.port}/v1")
+    print(f"")
+    if ip.startswith("169.254."):
+        print(f"  [!] IP link-local detectada (datos moviles)")
+        print(f"      Si Cline no conecta, intenta: http://127.0.0.1:{args.port}/v1")
+        print(f"      O configura TITAN_BIND_IP en .env con tu IP real")
     print(f"  Log: {_LOG_FILE}")
     print(f"{'='*70}")
     print(f"\n  Comandos interactivos:")
@@ -1455,10 +1466,10 @@ def _cmd_threads():
     """List active threads."""
     print(f"\n  === THREADS ACTIVOS ({threading.active_count()}) ===")
     for t in threading.enumerate():
-        ident = t.ident
-        info = diag.active_threads.get(ident, {})
+        # Buscar info de creacion por id() del objeto thread
+        info = diag.active_threads.get(id(t), {})
         created_from = info.get('created_from', 'unknown')[:80]
-        print(f"  {t.name} (daemon={t.daemon}, id={ident})")
+        print(f"  {t.name} (daemon={t.daemon}, ident={t.ident})")
         if created_from != 'unknown':
             print(f"    Creado desde: {created_from}")
 
