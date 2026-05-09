@@ -47,8 +47,10 @@ def main():
 
     user, hostname = host.split('@', 1)
 
-    # Load SSH key
-    key_path = os.path.expanduser('~/.ssh/id_ed25519')
+    # Load SSH key - prefer github-specific key
+    key_path = os.path.expanduser('~/.ssh/id_ed25519_github')
+    if not os.path.exists(key_path):
+        key_path = os.path.expanduser('~/.ssh/id_ed25519')
     if not os.path.exists(key_path):
         key_path = os.path.expanduser('~/.ssh/id_rsa')
 
