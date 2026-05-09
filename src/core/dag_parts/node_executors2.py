@@ -8,7 +8,7 @@ import time
 import logging
 from typing import Dict, Any, Union
 
-from src.core.agents.schemas import CriticalityOutput
+from src.core.agents.schemas import CriticalityOutput, ValidationInput
 from src.core.smart_memory import SmartMemory
 from src.core.shared.db_initializer import get_projects_dir
 from src.core.dag_parts.definition import (
@@ -49,10 +49,12 @@ class NodeExecutors2Mixin:
             # Use fallback (regex-based) validation — no LLM call
             intent = ctx.get("intent")
             v_out = self._validation_agent.fallback(
-                target="code",
-                content=final_code,
-                rules=["security", "quality"],
-                language=lang,
+                ValidationInput(
+                    target="code",
+                    content=final_code,
+                    rules=["security", "quality"],
+                    language=lang,
+                )
             )
             logger.info(
                 "VALIDATE(F5): FAST-PATH low_crit → regex-only (skipped LLM)"
