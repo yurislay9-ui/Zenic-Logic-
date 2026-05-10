@@ -121,8 +121,8 @@ def main():
         description=f"TITAN OMNISCALE X {TITAN_VERSION_STR} - Headless Server"
     )
     parser.add_argument(
-        '--port', type=int, default=5001,
-        help='Puerto del servidor (default: 5001)'
+        '--port', type=int, default=5000,
+        help='Puerto del servidor (default: 5000)'
     )
     parser.add_argument(
         '--host', type=str, default='0.0.0.0',
@@ -297,7 +297,7 @@ def main():
         server = ThreadedHTTPServer((args.host, args.port), TitanHTTPHandler)
     except OSError as e:
         logger.error(f"No se pudo iniciar el servidor: {e}")
-        logger.error(f"Puerto {args.port} en uso? Intenta: --port 5001")
+        logger.error(f"Puerto {args.port} en uso? Intenta: --port 5000")
         sys.exit(1)
 
     # Signal handler para shutdown limpio

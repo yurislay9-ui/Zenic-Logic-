@@ -75,7 +75,12 @@ class CodeAgent(
     # ============================================================
 
     def build_prompt(self, input_data: Any) -> Tuple[str, str]:
-        """Construye system + user prompt según tipo de tarea."""
+        """Construye system + user prompt según tipo de tarea.
+
+        R2 FIX: For 'generate' task, use simplified markdown code block prompt
+        instead of JSON prompt. Qwen3-0.6B can produce code blocks much more
+        reliably than JSON-wrapped code.
+        """
         if isinstance(input_data, CodeInput):
             task = input_data.task
             requirements = input_data.requirements
@@ -89,12 +94,17 @@ class CodeAgent(
             existing_code = ""
             constraints = {}
 
-        system_prompt = TASK_PROMPTS.get(task, AgentPrompts.CODE_SYSTEM_GENERATE)
+        # Use simplified prompt for generate task (0.6B-friendly)
+        if task == "generate":
+            system_prompt = AgentPrompts.CODE_SYSTEM_GENERATE.replace("{language}", language)
+        else:
+            system_prompt = TASK_PROMPTS.get(task, AgentPrompts.CODE_SYSTEM_GENERATE_JSON)
+
         user_prompt = AgentPrompts.CODE_USER.format(
             task=task,
-            requirements=requirements[:500],
+            requirements=requirements[:800],  # R2: increased from 500 to 800
             language=language,
-            existing_code=existing_code[:300] if existing_code else "none",
+            existing_code=existing_code[:600] if existing_code else "none",  # R2: increased from 300 to 600
         )
 
         # Add constraints context
@@ -106,16 +116,33 @@ class CodeAgent(
         return system_prompt, user_prompt
 
     def parse_response(self, raw_response: str, input_data: Any) -> Optional[CodeOutput]:
-        """Parsea la respuesta del LLM a un CodeOutput válido."""
+        """Parsea la respuesta del LLM a un CodeOutput válido.
+
+        R2 FIX: Prioritize markdown code block extraction over JSON.
+        Qwen3-0.6B can produce code blocks much more reliably than
+        JSON-wrapped code. JSON parsing is still attempted as fallback.
+        """
         cleaned = self.clean_llm_text(raw_response)
 
-        # Try JSON extraction first
+        # Try to extract code from markdown code blocks FIRST
+        # (0.6B models produce code blocks more reliably than JSON)
+        code_block_result = self._parse_code_blocks(cleaned, source="llm")
+        if code_block_result and code_block_result.code:
+            return code_block_result
+
+        # Try JSON extraction as fallback
         json_data = self.extract_json(cleaned)
         if json_data and isinstance(json_data, dict):
             return self._json_to_code_output(json_data, source="llm")
 
-        # Try to extract code from markdown code blocks
-        return self._parse_code_blocks(cleaned, source="llm")
+        # Last resort: return raw text as code
+        if cleaned.strip():
+            return CodeOutput(
+                code=cleaned.strip(),
+                language="python",
+                source="llm_raw",
+            )
+        return None
 
     def fallback(self, input_data: Any) -> CodeOutput:
         """

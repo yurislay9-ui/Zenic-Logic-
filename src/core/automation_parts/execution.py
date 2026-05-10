@@ -2,10 +2,16 @@
 ExecutionMixin — Workflow execution logic for AutomationEngine.
 
 Contains:
-  - Sync/async workflow execution
+  - Async-first workflow execution (primary API)
+  - Sync wrapper for non-async callers
   - Individual action execution (with ActionExecutor or legacy stubs)
+
+Fix #4: execute_workflow() now properly awaits async executors when called
+from an already-running event loop (e.g., FastAPI endpoints). Previously,
+it fell back to sync stubs that only logged, bypassing real executors.
 """
 
+import asyncio
 import time
 import logging
 from typing import List
@@ -25,17 +31,35 @@ class ExecutionMixin:
     #  WORKFLOW EXECUTION
     # ================================================================
 
-    def execute_workflow(self, workflow_id: str) -> WorkflowExecution:
-        """Ejecuta un workflow específico (sync wrapper for async execution)."""
-        import asyncio
+    async def execute_workflow(self, workflow_id: str) -> WorkflowExecution:
+        """Ejecuta un workflow usando ActionExecutors async (primary API).
+
+        This is the primary entry point — always uses async executors.
+        FastAPI endpoints and other async callers should use this directly
+        with `await engine.execute_workflow(id)`.
+        """
+        return await self._execute_workflow_async(workflow_id)
+
+    def execute_workflow_sync(self, workflow_id: str) -> WorkflowExecution:
+        """Sync wrapper for non-async callers (TUI, scripts, tests).
+
+        Tries to run the async path via event loop. If already inside
+        an async context (rare for sync callers), falls back to
+        sync stubs with a warning.
+        """
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # We're already in an async context, use sync fallback
+                # Sync caller but loop is running — use sync fallback
+                logger.warning(
+                    "Automation: execute_workflow_sync() called from running "
+                    "event loop — using sync stubs. Use await execute_workflow() instead."
+                )
                 return self._execute_workflow_sync(workflow_id)
             return loop.run_until_complete(self._execute_workflow_async(workflow_id))
         except RuntimeError:
-            return self._execute_workflow_sync(workflow_id)
+            # No event loop at all — create one
+            return asyncio.run(self._execute_workflow_async(workflow_id))
 
     async def _execute_workflow_async(self, workflow_id: str) -> WorkflowExecution:
         """Ejecuta un workflow específico usando ActionExecutors async."""
@@ -85,7 +109,11 @@ class ExecutionMixin:
         return execution
 
     def _execute_workflow_sync(self, workflow_id: str) -> WorkflowExecution:
-        """Ejecuta un workflow usando stubs síncronos (legacy fallback)."""
+        """Ejecuta un workflow usando stubs síncronos (legacy fallback).
+
+        Only used when called from a running event loop in a sync context
+        (e.g., TUI callback). Prefer execute_workflow() with await instead.
+        """
         wf = self._workflows.get(workflow_id)
         if not wf:
             return WorkflowExecution(workflow_id=workflow_id, status="failed", error="Workflow not found")

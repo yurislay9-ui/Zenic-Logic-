@@ -550,8 +550,20 @@ def create_app(
                 if auth_ctx and auth_ctx.tenant_id and auth_service and hasattr(auth_service, "record_usage"):
                     try:
                         compute_seconds = processing_time_ms / 1000.0
-                        # Estimate tokens from response (if available)
-                        tokens = 0
+                        # Estimate tokens from request + response body
+                        # Using word-count heuristic (~1.3 tokens/word for code,
+                        # ~1.0 for natural language). Average ≈ 1.15 tokens/word.
+                        prompt_words = 0
+                        completion_words = 0
+                        try:
+                            # Read request body size from content-length header
+                            prompt_words = int(request.headers.get("content-length", "0")) // 5  # rough ~5 bytes/word
+                            # Read response body for completion token estimate
+                            if hasattr(response, "body") and response.body:
+                                completion_words = len(response.body) // 5
+                        except (ValueError, TypeError):
+                            pass
+                        tokens = int((prompt_words + completion_words) * 1.15)
                         auth_service.record_usage(
                             auth_ctx.tenant_id,
                             requests=1,

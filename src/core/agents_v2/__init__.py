@@ -1,6 +1,11 @@
 """
 ZENIC LOGIC v18 — Single-Responsibility Agent Architecture
 
+⚠️  EXPERIMENTAL — This module is NOT used by the default pipeline.
+The default pipeline (v16 DAGOrchestrator) uses agents from src/core/agents/.
+This v2 agent system is used only by the experimental UnifiedDAGOrchestrator (v18).
+Enable with: TITAN_USE_UNIFIED_DAG=1
+
 Every agent has EXACTLY ONE function. No exceptions.
 Qwen AI is ONLY used for binary verdicts (YES/NO) through VerdictEngine.
 Everything else is 100% deterministic.

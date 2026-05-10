@@ -599,7 +599,7 @@ class UnifiedDAGOrchestrator(DAGOrchestrator):
 
         # ── Execute unified DAG ──
         current_node = "CACHE_CHECK"
-        max_total_steps = 35  # More steps for the larger DAG
+        max_total_steps = int(os.environ.get("TITAN_UNIFIED_DAG_MAX_STEPS", "60"))  # Was 35, too low for 49-node DAG
 
         for step in range(max_total_steps):
             # Check for terminal node
@@ -650,7 +650,7 @@ class UnifiedDAGOrchestrator(DAGOrchestrator):
             return self._build_response(ctx, "COMPLETED", elapsed)
 
         elapsed = int((time.time() - start_time) * 1000)
-        return self._build_response(ctx, "COMPLETED", elapsed)
+        return self._build_response(ctx, "DAG_TIMEOUT", elapsed)  # R3 FIX: was "COMPLETED", now correctly reports timeout
 
     # ══════════════════════════════════════════════════════════
     #  PARALLEL GROUP EXECUTION

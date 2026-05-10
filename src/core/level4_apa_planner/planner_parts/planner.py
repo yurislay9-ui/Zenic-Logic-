@@ -53,29 +53,61 @@ class APAPlanner(
     def generate_plan(self, routing):
         intent = routing.intent
         solver_result = None
+        best_action = None
         governor = get_governor()
 
         # Throttle CPU entre requests pesados
         governor.cpu_throttle_sleep()
 
+        # ── FAST PATH: Skip solver + MCTS for low_crit / standard ──
+        # These paths already skip SOLVER_VERIFY in the DAG, but Z3+MCTS
+        # still ran wastefully inside generate_plan(). This saves ~15-20s
+        # per request for ~80% of all requests.
+        import os as _os
+        crit_level = getattr(routing, 'criticality', 2)
+        crit_path = {1: "low_crit", 2: "standard", 3: "high_crit"}.get(crit_level, "standard")
+        skip_solver = _os.environ.get("TITAN_SKIP_SOLVER", "0") == "1"
+        skip_mcts = _os.environ.get("TITAN_SKIP_MCTS", "0") == "1"
+
+        if crit_path in ("low_crit", "standard") and not skip_solver and not skip_mcts:
+            # low_crit/standard: skip expensive Z3+MCTS, use heuristic steps only
+            logger.info(
+                "APAPlanner: SKIP solver+MCTS for %s (crit=%d) — heuristic steps only",
+                crit_path, crit_level
+            )
+            steps = self._build_steps(intent, routing, best_action=None)
+            return ExecutionPlan(
+                plan_id=str(uuid.uuid4()),
+                steps=steps,
+                solver_status="SKIPPED_" + crit_path.upper(),
+                solver_proof=None,
+                mcts_simulations=0,
+                mcts_depth_reached=0
+            )
+
+        # ── HIGH_CRIT or env-var override: Run full solver + MCTS ──
         # Timeout adaptativo segun carga del sistema
         adaptive_solver_timeout = governor.get_adaptive_solver_timeout(self.solver_timeout_ms)
 
-        # Ejecutar solver si la ruta lo requiere
-        # FIX (Phase 2): Added retry for solver transient failures
-        solver_result = self._run_solver_with_retry(
-            routing, intent, adaptive_solver_timeout
-        )
+        # Ejecutar solver si la ruta lo requiere (and not globally skipped)
+        if not skip_solver:
+            solver_result = self._run_solver_with_retry(
+                routing, intent, adaptive_solver_timeout
+            )
+        else:
+            logger.info("APAPlanner: Solver SKIPPED by TITAN_SKIP_SOLVER=1")
 
-        # MCTS con simulaciones adaptativas segun carga CPU
-        adaptive_sims = governor.get_adaptive_mcts_simulations(self.MCTS_MAX_SIMULATIONS)
-        adaptive_mcts_timeout = governor.get_adaptive_solver_timeout(self.mcts_timeout_ms)
-
-        # FIX (Phase 2): Added retry for MCTS search — if first attempt
-        # returns None (no actions found), retry with a broader search
-        best_action = self._run_mcts_with_retry(
-            intent, adaptive_sims, adaptive_mcts_timeout
-        )
+        # MCTS con simulaciones adaptativas (and not globally skipped)
+        if not skip_mcts:
+            adaptive_sims = governor.get_adaptive_mcts_simulations(self.MCTS_MAX_SIMULATIONS)
+            adaptive_mcts_timeout = governor.get_adaptive_solver_timeout(self.mcts_timeout_ms)
+            best_action = self._run_mcts_with_retry(
+                intent, adaptive_sims, adaptive_mcts_timeout
+            )
+        else:
+            logger.info("APAPlanner: MCTS SKIPPED by TITAN_SKIP_MCTS=1")
+            self._last_mcts_simulations = 0
+            self._last_mcts_depth = 0
 
         # Generar pasos del plan
         steps = self._build_steps(intent, routing, best_action)
