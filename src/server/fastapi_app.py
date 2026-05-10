@@ -1232,6 +1232,118 @@ def create_app(
             logger.error("Code generation error: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/v1/project/run")
+    async def run_project(request: Request):
+        """Run a generated project with auto venv + deps + server start (M6).
+
+        Body:
+            project_name: Name of the project to run (required)
+            port: Port to run on, 0 = auto (optional)
+            auto_install: Install dependencies (optional, default: true)
+            auto_start: Start the server (optional, default: true)
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        project_name = body.get("project_name", "")
+        if not project_name:
+            raise HTTPException(status_code=400, detail="Missing 'project_name' field")
+
+        try:
+            from src.core.project_runner import ProjectRunner
+            runner = ProjectRunner()
+            result = runner.run_project(
+                project_name=project_name,
+                port=body.get("port", 0),
+                auto_install=body.get("auto_install", True),
+                auto_start=body.get("auto_start", True),
+            )
+            return {
+                "success": result.success,
+                "project_name": result.project_name,
+                "project_dir": result.project_dir,
+                "port": result.port,
+                "pid": result.pid,
+                "health_ok": result.health_ok,
+                "installed_deps": result.installed_deps,
+                "failed_deps": result.failed_deps,
+                "errors": result.errors,
+                "warnings": result.warnings,
+                "startup_time_s": result.startup_time_s,
+            }
+        except Exception as e:
+            logger.error("Project run error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/v1/project/stop")
+    async def stop_project(request: Request):
+        """Stop a running project (M6)."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        project_name = body.get("project_name", "")
+        if not project_name:
+            raise HTTPException(status_code=400, detail="Missing 'project_name' field")
+
+        try:
+            from src.core.project_runner import ProjectRunner
+            runner = ProjectRunner()
+            stopped = runner.stop_project(project_name)
+            return {"success": stopped, "project_name": project_name}
+        except Exception as e:
+            logger.error("Project stop error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/v1/project/running")
+    async def list_running_projects():
+        """List all running projects (M6)."""
+        try:
+            from src.core.project_runner import ProjectRunner
+            runner = ProjectRunner()
+            return {"projects": runner.list_running()}
+        except Exception as e:
+            logger.error("List running error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/v1/generate/tests")
+    async def generate_tests(request: Request):
+        """Auto-generate pytest tests for code (M9).
+
+        Body:
+            code: Python source code to generate tests for (required)
+            module_name: Module name (optional, default: module)
+            project_name: Project name (optional)
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        code = body.get("code", "")
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing 'code' field")
+
+        try:
+            from src.core.test_generator import TestGenerator
+            gen = TestGenerator()
+            test_code = gen.generate_tests(
+                code=code,
+                module_name=body.get("module_name", "module"),
+                project_name=body.get("project_name", "test_project"),
+            )
+            return {
+                "status": "generated",
+                "test_code": test_code,
+                "lines": len(test_code.split('\n')),
+            }
+        except Exception as e:
+            logger.error("Test generation error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/v1/design/schema")
     async def design_schema(request: Request):
         """Design a database schema from description. Requires 'schema_design' feature."""
