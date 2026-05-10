@@ -25,7 +25,10 @@ def main():
         repo_path = git_command
 
     # Load SSH key
-    key_path = os.path.expanduser("~/.ssh/id_rsa")
+    key_path = os.path.expanduser("~/.ssh/id_rsa_github")
+    # Fallback to default RSA key if GitHub-specific key not found
+    if not os.path.exists(key_path):
+        key_path = os.path.expanduser("~/.ssh/id_rsa")
     try:
         pkey = paramiko.RSAKey.from_private_key_file(key_path)
     except FileNotFoundError:
