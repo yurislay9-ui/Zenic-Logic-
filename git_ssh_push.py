@@ -5,13 +5,13 @@ import paramiko
 import os
 import sys
 
-SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_ed25519")
+SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa_github")
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def push():
     print("Loading SSH key...")
-    key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_PATH)
+    key = paramiko.RSAKey.from_private_key_file(SSH_KEY_PATH)
 
     print("Connecting to GitHub...")
     client = paramiko.SSHClient()
