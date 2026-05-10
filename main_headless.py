@@ -305,7 +305,8 @@ def main():
         logger.info("Shutting down gracefully...")
         governor.stop_monitoring()
         server.shutdown()
-        from src.server.http_handler import _shutdown_loop
+        # E07-fix: Import directly from source module instead of fragile re-export chain
+        from src.server.http_parts._imports import _shutdown_loop
         _shutdown_loop()
         sys.exit(0)
 
@@ -357,7 +358,8 @@ def main():
 
         governor.stop_monitoring()
         server.shutdown()
-        from src.server.http_handler import _shutdown_loop
+        # E07-fix: Import directly from source module instead of fragile re-export chain
+        from src.server.http_parts._imports import _shutdown_loop
         _shutdown_loop()
         logger.info("Server stopped.")
 

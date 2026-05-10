@@ -3,6 +3,7 @@ ContextAgent — main class inheriting from mixins.
 """
 
 from typing import Any, Dict
+import threading
 
 from ._imports import BaseAgent, ContextOutput
 from ._cables_mixin import CablesMixin
@@ -27,7 +28,9 @@ class ContextAgent(CablesMixin, CoreMixin, BaseAgent[ContextOutput]):
 
         # Cache de contexto compartido (deduplicación cross-agent)
         # Each entry stores (compressed_context, timestamp) for per-entry TTL
+        # E05-fix: Thread-safe access via lock (HTTP server uses ThreadingMixIn)
         self._shared_context_cache: Dict[str, tuple] = {}
+        self._shared_context_cache_lock = threading.Lock()
         self._shared_context_ttl: float = 30.0  # 30 segundos de TTL
 
         # Track de qué contexto ya se envió a cada agente (deduplicación)

@@ -114,8 +114,9 @@ class CoreMixin:
         comp_tokens = len(compressed.split()) if compressed else 0
         ratio = min(comp_tokens / max(raw_tokens, 1), 1.0) if raw_tokens > 0 else 1.0
 
-        # Cache compartido — store with per-entry timestamp
-        self._shared_context_cache[f"{op}:{goal}"] = (compressed, time.time())
+        # Cache compartido — store with per-entry timestamp (thread-safe)
+        with self._shared_context_cache_lock:
+            self._shared_context_cache[f"{op}:{goal}"] = (compressed, time.time())
 
         duration_ms = int((time.time() - start) * 1000)
         self._update_stats("fallback", duration_ms)
@@ -207,9 +208,10 @@ class CoreMixin:
         op = intent_output.operation if intent_output else "SEARCH"
         goal = intent_output.goal if intent_output else "FEATURE_ADD"
 
-        # Buscar en cache compartido
+        # Buscar en cache compartido (thread-safe read)
         cache_key = f"{op}:{goal}"
-        cached_entry = self._shared_context_cache.get(cache_key)
+        with self._shared_context_cache_lock:
+            cached_entry = self._shared_context_cache.get(cache_key)
         cached = ""
         cache_age = float('inf')
         if cached_entry:
@@ -282,13 +284,14 @@ class CoreMixin:
         op = intent_output.operation if intent_output else "SEARCH"
         goal = intent_output.goal if intent_output else "FEATURE_ADD"
 
-        # Verificar cache compartido
+        # Verificar cache compartido (thread-safe read)
         cache_key = f"{op}:{goal}"
-        if cache_key in self._shared_context_cache:
-            cached, ts = self._shared_context_cache[cache_key]
-            cache_age = time.time() - ts
-            if cache_age < self._shared_context_ttl:
-                return cached[:max_tokens * 4]
+        with self._shared_context_cache_lock:
+            if cache_key in self._shared_context_cache:
+                cached, ts = self._shared_context_cache[cache_key]
+                cache_age = time.time() - ts
+                if cache_age < self._shared_context_ttl:
+                    return cached[:max_tokens * 4]
 
         # Calcular fresh
         result = self.prepare_context("", intent_output, max_tokens)
@@ -300,7 +303,7 @@ class CoreMixin:
         return {
             "default_budget": DEFAULT_TOKEN_BUDGET,
             "total_budget": TOTAL_CONTEXT_BUDGET,
-            "shared_cache_entries": len(self._shared_context_cache),
+            "shared_cache_entries": len(self._shared_context_cache),  # thread-safe: len() is atomic in CPython
             "shared_cache_age": "per-entry",
             "agents_tracked": list(self._agent_context_sent.keys()),
         }

@@ -231,6 +231,12 @@ class NodeExecutorsMixin:
 
         code_lang, raw_code = SurgicalAgent._extract_code_block(ctx["msg"])
         if raw_code:
+            # E06-note: Mutating intent object post-construction to inject
+            # extracted code. This is safe because ctx["intent"] is not read
+            # by any node between _exec_intent and this point. However, if
+            # a new DAG node is added between INTENT and PLAN that reads
+            # intent.raw_code, it would see an empty string. Consider moving
+            # code extraction into IntentPayload.__init__ or _exec_intent.
             intent.raw_code = raw_code
             if code_lang:
                 intent.language = code_lang
