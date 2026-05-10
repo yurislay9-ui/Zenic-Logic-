@@ -342,7 +342,7 @@ echo -e "${CYAN}║  CONECTAR CLINE/AIDE:                                       
 echo -e "${YELLOW}║    http://TU_IP:5000/v1                                      ║${NC}"
 echo -e "${CYAN}║                                                              ║${NC}"
 echo -e "${CYAN}║  OPCIONES:                                                   ║${NC}"
-echo -e "${CYAN}║    --port 5001         Cambiar puerto                       ║${NC}"
+echo -e "${CYAN}║    --port 5000         Cambiar puerto                       ║${NC}"
 echo -e "${CYAN}║    --ram-limit 4096    Subir limite RAM a 4GB               ║${NC}"
 echo -e "${CYAN}║    --daemon            Correr en background                 ║${NC}"
 echo -e "${CYAN}║    --debug             Logs verbose                         ║${NC}"
