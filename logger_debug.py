@@ -1336,7 +1336,7 @@ def _start_stdlib(orchestrator, governor, rate_limiter, ip, args):
             governor.stop_monitoring()
         server.shutdown()
         try:
-            from src.server.http_handler import _shutdown_loop
+            from src.server.http_parts._imports import _shutdown_loop
             _shutdown_loop()
         except ImportError:
             pass
@@ -1404,7 +1404,7 @@ def _start_stdlib(orchestrator, governor, rate_limiter, ip, args):
         governor.stop_monitoring()
     server.shutdown()
     try:
-        from src.server.http_handler import _shutdown_loop
+        from src.server.http_parts._imports import _shutdown_loop
         _shutdown_loop()
     except ImportError:
         pass

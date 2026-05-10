@@ -107,7 +107,7 @@ _ORCH_RETRY = RetryConfig(
     max_delay=5.0,
     backoff_strategy="exponential",
     jitter=True,
-    retryable_exceptions=(Exception,),
+    retryable_exceptions=(ConnectionError, TimeoutError, OSError),
 )
 
 _orch_breaker = CircuitBreaker(
@@ -124,10 +124,12 @@ async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
     """Async generator for basic SSE streaming of orchestrator results.
 
     Follows OpenAI streaming spec: each chunk is a chat.completion.chunk object.
-    Used when Cline sends stream=true but is NOT an Open Design request.
+    Uses the shared sse_utils module for chunk construction.
     """
-    request_id = f"titan-{uuid.uuid4().hex[:8]}"
-    created = int(time.time())
+    from src.server.http_parts.sse_utils import (
+        iter_sse_chunks, format_sse_data, make_error_chunk, make_sse_request_id,
+    )
+
     model = body.get("model", "titan-omniscale-x")
 
     # Build full content using the same logic as build_normal_response
@@ -153,59 +155,18 @@ async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
         content = f"[No output generated - status: {result.get('status', 'UNKNOWN')}]"
 
     try:
-        # Stream content in chunks
-        chunk_size = 8
-        first_chunk = True
-        for i in range(0, len(content), chunk_size):
-            chunk_text = content[i:i + chunk_size]
-            delta = {"content": chunk_text}
-            # Per OpenAI spec: role appears in the FIRST chunk only
-            if first_chunk:
-                delta["role"] = "assistant"
-                first_chunk = False
-            sse_chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": delta,
-                    "finish_reason": None,
-                }],
-            }
-            yield f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n"
+        # Stream content using shared SSE chunk iterator
+        for sse_line in iter_sse_chunks(content, model=model):
+            yield sse_line
             await asyncio.sleep(0)  # Yield control to event loop
-
-        # Final chunk with finish_reason="stop" (no role per OpenAI spec)
-        final_chunk = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": {"content": ""},
-                "finish_reason": "stop",
-            }],
-        }
-        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
     except Exception as e:
         logger.error("SSE generator crashed: %s", e, exc_info=True)
         try:
-            error_chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": f"\n[Stream Error: {str(e)[:100]}]"},
-                    "finish_reason": "stop",
-                }],
-            }
-            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+            import time as _t
+            request_id = make_sse_request_id()
+            created = int(_t.time())
+            error_chunk = make_error_chunk(request_id, created, model, str(e))
+            yield format_sse_data(error_chunk)
             yield "data: [DONE]\n\n"
         except Exception:
             yield "data: [DONE]\n\n"
@@ -1533,7 +1494,7 @@ def create_app_from_env() -> Any:
 def run_fastapi_server(
     orchestrator: Any,
     host: str = "0.0.0.0",
-    port: int = 5000,
+    port: int = 5001,
     auth_service: Any = None,
     rate_limiter: Any = None,
     governor: Any = None,

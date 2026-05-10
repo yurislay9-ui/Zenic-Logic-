@@ -32,7 +32,7 @@ class OpenDesignConfig:
     ])
 
     # ZENIC LOGIC's own port (where Open Design points its API calls)
-    engine_port: int = 5000
+    engine_port: int = 5001
     engine_host: str = "0.0.0.0"
 
     # ── SSE Streaming ──────────────────────────────────────
@@ -134,7 +134,7 @@ class OpenDesignConfig:
 
         Environment variables:
             OPEN_DESIGN_ORIGINS: comma-separated list of allowed origins
-            OPEN_DESIGN_ENGINE_PORT: ZENIC LOGIC port (default: 5000)
+            OPEN_DESIGN_ENGINE_PORT: ZENIC LOGIC port (default: 5001)
             OPEN_DESIGN_SSE_ENABLED: 'true'/'false' (default: true)
             OPEN_DESIGN_VISUAL_BYPASS: 'true'/'false' (default: true)
             OPEN_DESIGN_PRESERVE_DS: 'true'/'false' (default: true)

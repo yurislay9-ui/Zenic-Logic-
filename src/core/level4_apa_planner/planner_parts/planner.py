@@ -66,7 +66,7 @@ class APAPlanner(
     def generate_plan(self, routing):
         intent = routing.intent
         solver_result = None
-        best_action = None
+        best_action_hint = None
         governor = get_governor()
 
         # Throttle CPU entre requests pesados
@@ -123,7 +123,7 @@ class APAPlanner(
         if not skip_mcts:
             adaptive_sims = governor.get_adaptive_mcts_simulations(self.MCTS_MAX_SIMULATIONS)
             adaptive_mcts_timeout = governor.get_adaptive_solver_timeout(self.mcts_timeout_ms)
-            best_action = self._run_mcts_with_retry(
+            best_action_hint = self._run_mcts_with_retry(
                 intent, adaptive_sims, adaptive_mcts_timeout
             )
         else:
@@ -132,7 +132,7 @@ class APAPlanner(
             self._last_mcts_depth = 0
 
         # Generar pasos del plan
-        steps = self._build_steps(intent, routing, best_action)
+        steps = self._build_steps(intent, routing, best_action_hint)
 
         # Determinar solver status
         solver_status = self._determine_solver_status(solver_result, routing)
@@ -197,7 +197,7 @@ class APAPlanner(
             "taken_actions": [],
         }
 
-        best_action = mcts.search(
+        best_action_hint = mcts.search(
             initial_state,
             action_generator=self._action_generator,
             reward_function=self._reward_function
@@ -208,7 +208,7 @@ class APAPlanner(
         self._last_mcts_depth = mcts.depth_reached
 
         # If MCTS found no actions, retry with fallback
-        if best_action is None:
+        if best_action_hint is None:
             logger.debug("APAPlanner: MCTS returned None — retrying with fallback action generator")
             mcts2 = MCTSPlanner(
                 max_depth=max(2, self.MCTS_MAX_DEPTH - 1),
@@ -223,7 +223,7 @@ class APAPlanner(
                     actions = ["QUICK_ANALYSIS"]
                 return actions
 
-            best_action = mcts2.search(
+            best_action_hint = mcts2.search(
                 initial_state,
                 action_generator=_broad_action_generator,
                 reward_function=self._reward_function
@@ -233,4 +233,4 @@ class APAPlanner(
             self._last_mcts_simulations = mcts.simulations_run + mcts2.simulations_run
             self._last_mcts_depth = max(mcts.depth_reached, mcts2.depth_reached)
 
-        return best_action
+        return best_action_hint

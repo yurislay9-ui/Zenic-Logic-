@@ -97,7 +97,7 @@ DEFAULT_RETRY_CONFIG = RetryConfig(
     exponential_base=2,
     jitter=True,
     jitter_max=0.5,
-    retryable_exceptions=(Exception,),
+    retryable_exceptions=(ConnectionError, TimeoutError, OSError),
     backoff_strategy="exponential",
 )
 

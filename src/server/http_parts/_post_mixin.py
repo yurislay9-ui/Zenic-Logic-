@@ -223,11 +223,10 @@ class PostMixin:
         """Send orchestrator result as basic SSE stream for general Cline requests.
 
         Follows OpenAI streaming spec: each chunk is a chat.completion.chunk object.
-        This is used when Cline sends stream=true but is NOT an Open Design request.
+        Uses the shared sse_utils module for chunk construction.
         """
-        import uuid
-        request_id = f"titan-{uuid.uuid4().hex[:8]}"
-        created = int(time.time()) if hasattr(time, 'time') else 0
+        from .sse_utils import iter_sse_chunks, format_sse_data, make_error_chunk
+
         model = data.get("model", "titan-omniscale-x")
 
         # Build the full content first (reuse build_normal_response logic)
@@ -246,61 +245,20 @@ class PostMixin:
             self._set_cors_headers()
             self.end_headers()
 
-            # Stream content in chunks following OpenAI format
-            chunk_size = 8
-            first_chunk = True
-            for i in range(0, len(content), chunk_size):
-                chunk_text = content[i:i + chunk_size]
-                delta = {"content": chunk_text}
-                # Per OpenAI spec: role appears in the FIRST chunk only
-                if first_chunk:
-                    delta["role"] = "assistant"
-                    first_chunk = False
-                sse_chunk = {
-                    "id": request_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": delta,
-                        "finish_reason": None,
-                    }],
-                }
-                self.wfile.write(f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+            # Stream content using shared SSE chunk iterator
+            for sse_line in iter_sse_chunks(content, model=model):
+                self.wfile.write(sse_line.encode('utf-8'))
                 self.wfile.flush()
-
-            # Final chunk with finish_reason="stop" (no role in final chunk per OpenAI spec)
-            final_chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": ""},
-                    "finish_reason": "stop",
-                }],
-            }
-            self.wfile.write(f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
-            self.wfile.write(b"data: [DONE]\n\n")
-            self.wfile.flush()
         except Exception as e:
             logger.error("SSE basic streaming error: %s", e, exc_info=True)
             # Try to send error as final SSE chunk
             try:
-                error_chunk = {
-                    "id": request_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"content": f"\n[Stream Error: {str(e)[:100]}]"},
-                        "finish_reason": "stop",
-                    }],
-                }
-                self.wfile.write(f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+                from .sse_utils import make_sse_request_id
+                import time as _t
+                request_id = make_sse_request_id()
+                created = int(_t.time())
+                error_chunk = make_error_chunk(request_id, created, model, str(e))
+                self.wfile.write(format_sse_data(error_chunk).encode('utf-8'))
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except Exception:

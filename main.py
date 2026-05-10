@@ -360,7 +360,7 @@ def _cleanup():
     except Exception:
         pass
     try:
-        from src.server.http_handler import _shutdown_loop
+        from src.server.http_parts._imports import _shutdown_loop
         _shutdown_loop()
     except Exception:
         pass

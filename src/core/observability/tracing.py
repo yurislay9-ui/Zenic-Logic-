@@ -191,7 +191,7 @@ def _setup_exporter(provider: Any, config: TracingConfig) -> None:
                     endpoint = config.endpoint or "http://localhost:14268/api/traces"
                     exporter = JaegerExporter(
                         agent_host_name=config.endpoint.split("://")[-1].split(":")[0] if config.endpoint else "localhost",
-                        agent_port=6831,
+                        agent_port=int(os.getenv("TITAN_JAEGER_PORT", "6831")),
                     )
 
             provider.add_span_processor(BatchSpanProcessor(exporter))

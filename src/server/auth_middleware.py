@@ -20,13 +20,21 @@ from src.core.patterns.resilience.circuit_breaker import (
 logger = logging.getLogger(__name__)
 
 # ── Retry config for auth DB operations ────────────────────
+# Only retry transient errors: DB locks, I/O failures, connection issues.
+# Logic errors (ValueError, KeyError, TypeError) are NOT retryable.
+try:
+    import sqlite3
+    _DB_TRANSIENT = (sqlite3.OperationalError, ConnectionError, TimeoutError, OSError)
+except ImportError:
+    _DB_TRANSIENT = (ConnectionError, TimeoutError, OSError)
+
 _AUTH_RETRY = RetryConfig(
     max_attempts=3,
     base_delay=0.2,
     max_delay=2.0,
     backoff_strategy="exponential",
     jitter=True,
-    retryable_exceptions=(Exception,),
+    retryable_exceptions=_DB_TRANSIENT,
 )
 
 # ── Circuit breaker for auth verification ──────────────────

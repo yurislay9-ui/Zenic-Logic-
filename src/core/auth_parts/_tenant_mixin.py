@@ -455,10 +455,15 @@ class TenantMixin:
             c.close()
 
         # 4. Purge data from all tenant-aware databases (with retry)
+        try:
+            import sqlite3
+            _db_transient = (sqlite3.OperationalError, ConnectionError, TimeoutError, OSError)
+        except ImportError:
+            _db_transient = (ConnectionError, TimeoutError, OSError)
         _purge_retry = RetryConfig(
             max_attempts=3, base_delay=0.5, max_delay=5.0,
             backoff_strategy="exponential", jitter=True,
-            retryable_exceptions=(Exception,),
+            retryable_exceptions=_db_transient,
         )
 
         # SmartMemory purge
