@@ -193,8 +193,10 @@ class PostMixin:
                 return
 
             response = build_normal_response(data, result, user_msg, governor=gov)
-            http_status = 500 if result.get("status") in ("ERROR", "ROLLBACK", "DAG_TIMEOUT") else 200
-            self._send_json(response, status=http_status)
+            # E08-fix: Return HTTP 200 for all pipeline results (including ROLLBACK/DAG_TIMEOUT).
+            # OpenAI-compatible clients treat 5xx as transport errors and discard the body,
+            # losing diagnostic info. Pipeline errors are communicated via titan_metadata.
+            self._send_json(response, status=200)
         except TimeoutError:
             logger.error(
                 "Request TIMEOUT after %ds — orchestrator took too long. "
@@ -246,8 +248,14 @@ class PostMixin:
 
             # Stream content in chunks following OpenAI format
             chunk_size = 8
+            first_chunk = True
             for i in range(0, len(content), chunk_size):
                 chunk_text = content[i:i + chunk_size]
+                delta = {"content": chunk_text}
+                # Per OpenAI spec: role appears in the FIRST chunk only
+                if first_chunk:
+                    delta["role"] = "assistant"
+                    first_chunk = False
                 sse_chunk = {
                     "id": request_id,
                     "object": "chat.completion.chunk",
@@ -255,14 +263,14 @@ class PostMixin:
                     "model": model,
                     "choices": [{
                         "index": 0,
-                        "delta": {"content": chunk_text},
+                        "delta": delta,
                         "finish_reason": None,
                     }],
                 }
                 self.wfile.write(f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
                 self.wfile.flush()
 
-            # Final chunk with finish_reason="stop"
+            # Final chunk with finish_reason="stop" (no role in final chunk per OpenAI spec)
             final_chunk = {
                 "id": request_id,
                 "object": "chat.completion.chunk",
@@ -270,7 +278,7 @@ class PostMixin:
                 "model": model,
                 "choices": [{
                     "index": 0,
-                    "delta": {"role": "assistant", "content": ""},
+                    "delta": {"content": ""},
                     "finish_reason": "stop",
                 }],
             }

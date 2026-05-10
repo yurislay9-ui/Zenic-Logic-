@@ -183,7 +183,7 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
         name="VISUAL_BYPASS",
         exec_method="_exec_visual_bypass",
         transitions={
-            "success": "MEMORY_SAVE",
+            "success": "VALIDATE",      # E04-fix: visual code must pass validation before save
             "fallback": "EXECUTE_STEPS",
         },
         default_next="EXECUTE_STEPS",

@@ -155,8 +155,14 @@ async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
     try:
         # Stream content in chunks
         chunk_size = 8
+        first_chunk = True
         for i in range(0, len(content), chunk_size):
             chunk_text = content[i:i + chunk_size]
+            delta = {"content": chunk_text}
+            # Per OpenAI spec: role appears in the FIRST chunk only
+            if first_chunk:
+                delta["role"] = "assistant"
+                first_chunk = False
             sse_chunk = {
                 "id": request_id,
                 "object": "chat.completion.chunk",
@@ -164,14 +170,14 @@ async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
                 "model": model,
                 "choices": [{
                     "index": 0,
-                    "delta": {"content": chunk_text},
+                    "delta": delta,
                     "finish_reason": None,
                 }],
             }
             yield f"data: {json.dumps(sse_chunk, ensure_ascii=False)}\n\n"
             await asyncio.sleep(0)  # Yield control to event loop
 
-        # Final chunk with finish_reason="stop"
+        # Final chunk with finish_reason="stop" (no role per OpenAI spec)
         final_chunk = {
             "id": request_id,
             "object": "chat.completion.chunk",
@@ -179,7 +185,7 @@ async def _basic_sse_generator(body: Dict[str, Any], result: Dict[str, Any]):
             "model": model,
             "choices": [{
                 "index": 0,
-                "delta": {"role": "assistant", "content": ""},
+                "delta": {"content": ""},
                 "finish_reason": "stop",
             }],
         }

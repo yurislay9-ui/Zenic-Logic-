@@ -60,7 +60,8 @@ class SSEStreamer:
             Formatted SSE data line: "data: {json}\\n\\n"
         """
         delta: Dict[str, Any] = {"content": content}
-        if finish_reason:
+        # Per OpenAI spec: role appears in the FIRST chunk (finish_reason=None)
+        if self._chunk_index == 0:
             delta["role"] = "assistant"
 
         chunk = {

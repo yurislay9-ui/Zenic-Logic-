@@ -202,19 +202,14 @@ def _run_async(coro):
         except RuntimeError as e:
             # Loop was closed or corrupted while coroutine was pending
             if "Event loop is closed" in str(e) or "Non-thread-safe" in str(e):
-                if attempt < _MAX_ASYNC_RETRIES:
-                    logger.warning(
-                        "HTTP: Event loop error during execution (attempt %d/%d): %s. "
-                        "Retrying with fresh loop...",
-                        attempt + 1, _MAX_ASYNC_RETRIES + 1, e,
-                    )
-                    # Need a new coroutine because the old one was consumed
-                    # by run_coroutine_threadsafe (it wraps it in a Task)
-                    # We can't re-use it — the caller must handle the retry.
-                    # Since we can't recreate the coroutine, just raise.
-                    raise
-                else:
-                    raise
+                # E02-fix: Cannot retry because the coroutine was consumed
+                # by run_coroutine_threadsafe. Log honestly and raise immediately.
+                logger.error(
+                    "HTTP: Event loop error (cannot retry — coroutine consumed): %s. "
+                    "The caller should handle this error.",
+                    e,
+                )
+                raise
             raise
         except Exception as e:
             logger.error("HTTP: Unexpected error in _run_async: %s", e, exc_info=True)
