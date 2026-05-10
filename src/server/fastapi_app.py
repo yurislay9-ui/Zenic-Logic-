@@ -1344,6 +1344,55 @@ def create_app(
             logger.error("Test generation error: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/v1/generate/multilang")
+    async def generate_multilang(request: Request):
+        """Generate API project in TypeScript, Go, or Kotlin (M10).
+
+        Body:
+            entities: List of entity dicts with name + fields (required)
+            project_name: Project name (required)
+            language: "typescript" | "go" | "kotlin" (required)
+            description: Project description (optional)
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        entities = body.get("entities", [])
+        project_name = body.get("project_name", "")
+        language = body.get("language", "")
+
+        if not entities:
+            raise HTTPException(status_code=400, detail="Missing 'entities' field")
+        if not project_name:
+            raise HTTPException(status_code=400, detail="Missing 'project_name' field")
+        if language not in ("typescript", "go", "kotlin"):
+            raise HTTPException(status_code=400, detail="Language must be 'typescript', 'go', or 'kotlin'")
+
+        try:
+            from src.core.multi_language import MultiLanguage
+            gen = MultiLanguage()
+            files = gen.generate_project(
+                entities=entities,
+                project_name=project_name,
+                language=language,
+                description=body.get("description", ""),
+            )
+            # Truncate file contents for response
+            truncated = {k: v[:300] + "..." if len(v) > 300 else v
+                        for k, v in files.items()}
+            return {
+                "status": "generated",
+                "language": language,
+                "project_name": project_name,
+                "total_files": len(files),
+                "files": truncated,
+            }
+        except Exception as e:
+            logger.error("Multilang generation error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/v1/design/schema")
     async def design_schema(request: Request):
         """Design a database schema from description. Requires 'schema_design' feature."""
