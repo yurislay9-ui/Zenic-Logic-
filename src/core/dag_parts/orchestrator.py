@@ -37,6 +37,9 @@ from src.core.agents.criticality_agent import CriticalityAgent
 from src.core.agents.code_agent import CodeAgent
 from src.core.fractal_generator import FractalGenerator
 
+# R04: ConversationState for multi-turn reference resolution
+from src.core.shared.conversation_state import ConversationStateManager
+
 # DAG sub-modules
 from src.core.dag_parts.definition import PIPELINE_DAG
 from src.core.dag_parts.titan_agent import TitanAgent
@@ -137,7 +140,10 @@ class DAGOrchestrator(
         # 8. Step dispatcher
         self._step_dispatcher = StepDispatcher(self)
 
-        # 9. God-level improvements
+        # 9. R04: ConversationState manager for multi-turn reference resolution
+        self._conversation_mgr = ConversationStateManager()
+
+        # 10. God-level improvements
         self._init_god_level_improvements()
 
         # Log status
@@ -149,11 +155,12 @@ class DAGOrchestrator(
             f"TitanAgent(F1)=ready | SurgicalAgent(F2)=ready | "
             f"ContextAgent(F3)=ready | CriticalityAgent(F4)=ready | "
             f"ValidationAgent(F5)=ready | "
+            f"ConversationState(R04)=ready | "
             f"DAG={len(self._pipeline_dag)} nodes | "
             f"ModelManager=lazy(idle={self._model_mgr._idle_timeout_s}s, budget={self._model_mgr._ram_budget_mb}MB)"
         )
 
-        # 10. Scan project
+        # 11. Scan project
         self._scan_project()
 
     # ============================================================

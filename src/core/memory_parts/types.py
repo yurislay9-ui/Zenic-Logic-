@@ -61,6 +61,8 @@ class MemoryEntry:
     response: str = ""
     operation: str = ""
     goal: str = ""
+    target: str = ""            # R05: Target component/file (e.g. "login", "auth.py")
+    language: str = ""          # R05: Programming language (e.g. "python", "kotlin")
     importance: float = 0.5     # 0.0-1.0, higher = more important
     timestamp: float = 0.0
     embedding: Optional[Any] = None  # np.ndarray when numpy available

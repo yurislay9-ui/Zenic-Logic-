@@ -98,7 +98,12 @@ class BaseInterfaceMixin:
 
     def classify_with_runner(self, runner: Any, message: str,
                              context: str = "") -> IntentOutput:
-        """Clasifica usando AgentRunner (LLM → fallback fusionado)."""
+        """Clasifica usando AgentRunner (LLM → fallback fusionado).
+
+        R07: If the result has target="unknown" and the context string
+        contains a previous target (from ConversationState), inherit it.
+        This is a safety net in case the ReferenceResolver missed something.
+        """
         input_data = IntentInput(message=message, context=context)
         result: AgentResult = runner.run(self, input_data)
 
@@ -106,9 +111,43 @@ class BaseInterfaceMixin:
             # Fusión: combinar resultado LLM con TF-IDF para calibrar confianza
             tfidf_result = self._cable_tfidf(message)
             llm_result = result.data
-            return self._fuse_signals(tfidf_result, llm_result)
+            fused = self._fuse_signals(tfidf_result, llm_result)
+            # R07: Follow-up detection — inherit from context if target is unknown
+            fused = self._apply_followup_inheritance(fused, context)
+            return fused
 
-        return self.fallback(input_data)
+        fallback_result = self.fallback(input_data)
+        # R07: Apply follow-up detection to fallback result too
+        if fallback_result:
+            fallback_result = self._apply_followup_inheritance(fallback_result, context)
+        return fallback_result
+
+    def _apply_followup_inheritance(self, output: IntentOutput,
+                                     context: str) -> IntentOutput:
+        """R07: If target is unknown but context mentions a previous target, inherit it.
+
+        This is a lightweight safety net. The main resolution happens in
+        _exec_intent() via ReferenceResolver, but this catches cases where
+        the LLM itself didn't extract the target but the context clearly
+        mentions what was being worked on.
+        """
+        if not output or not context:
+            return output
+        if output.target and output.target not in ("unknown", "", "none"):
+            return output  # Already has a target, no need to inherit
+
+        # Parse context for "prev: OP/TARGET/LANG" pattern from ConversationState
+        import re
+        prev_match = re.search(r'prev:\s*\w+/([^/\s|]+)', context)
+        if prev_match:
+            inherited_target = prev_match.group(1)
+            if inherited_target and inherited_target not in ("unknown", "", "none"):
+                logger.info(
+                    f"R07: SurgicalAgent inherited target='{inherited_target}' "
+                    f"from context (was '{output.target}')"
+                )
+                output.target = inherited_target
+        return output
 
     def to_intent_payload(self, output: IntentOutput, context: str = "") -> Any:
         """

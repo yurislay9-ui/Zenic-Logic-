@@ -127,14 +127,21 @@ class CacheMixin:
     #  2. WORKING MEMORY (context for Qwen, tenant-aware)
     # ================================================================
 
-    def add_working(self, query: str, response: str, operation: str = "", 
-                     goal: str = "", importance: float = 0.5):
-        """Añade entrada a la memoria de trabajo (contexto actual, tenant-aware)."""
+    def add_working(self, query: str, response: str, operation: str = "",
+                     goal: str = "", importance: float = 0.5,
+                     target: str = "", language: str = ""):
+        """Añade entrada a la memoria de trabajo (contexto actual, tenant-aware).
+
+        R05: Now accepts target and language fields so that downstream
+        reference resolution can query what the user was last working on.
+        """
         entry = MemoryEntry(
             query=query[:500],
             response=response[:1000],
             operation=operation,
             goal=goal,
+            target=target[:200] if target else "",          # R05
+            language=language[:50] if language else "",      # R05
             importance=importance,
             timestamp=time.time(),
             session_id=self._session_id,
@@ -173,6 +180,11 @@ class CacheMixin:
         
         for entry in sorted_entries:
             part = f"[{entry.operation}/{entry.goal}] Q: {entry.query[:80]}"
+            # R05: Include target and language in context for reference resolution
+            if entry.target:
+                part += f" target={entry.target[:40]}"
+            if entry.language:
+                part += f" lang={entry.language[:20]}"
             if entry.response:
                 part += f" → A: {entry.response[:100]}"
             

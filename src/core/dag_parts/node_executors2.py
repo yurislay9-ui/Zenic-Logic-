@@ -242,10 +242,13 @@ class NodeExecutors2Mixin:
         return "*"
 
     async def _exec_memory_save(self, ctx: Dict) -> str:
-        """Nodo MEMORY_SAVE: Guardar en SmartMemory (aprendizaje) + F3 context save."""
+        """Nodo MEMORY_SAVE: Guardar en SmartMemory (aprendizaje) + F3 context save + R04 ConversationState."""
         intent = ctx.get("intent")
         final_code = ctx["final_code"]
         msg = ctx["msg"]
+
+        # R04: Update ConversationState after every request
+        self._update_conversation_state(ctx)
 
         if ctx.get("trial") and ctx["trial"].status == "PASS" and final_code:
             importance = SmartMemory.compute_importance(
@@ -254,7 +257,9 @@ class NodeExecutors2Mixin:
             )
             self._memory.add_working(
                 msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op if intent else "",
-                intent.goal if intent else "", importance
+                intent.goal if intent else "", importance,
+                target=intent.target if intent else "",       # R05: pass target
+                language=intent.language if intent else "",    # R05: pass language
             )
             self._memory.save_to_cache(
                 msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op if intent else "",
@@ -278,9 +283,45 @@ class NodeExecutors2Mixin:
         else:
             self._memory.add_working(
                 msg, "NO_OP", intent.op if intent else "",
-                intent.goal if intent else "", importance=0.2
+                intent.goal if intent else "", importance=0.2,
+                target=intent.target if intent else "",       # R05: pass target
+                language=intent.language if intent else "",    # R05: pass language
             )
         return "*"
+
+    def _update_conversation_state(self, ctx: Dict) -> None:
+        """R04: Persist ConversationState after each request.
+
+        Updates the ConversationStateManager with the last operation's
+        metadata so that follow-up messages can reference it.
+        """
+        if not hasattr(self, '_conversation_mgr') or not self._conversation_mgr:
+            return
+
+        intent = ctx.get("intent")
+        intent_output = ctx.get("intent_output")
+        if not intent and not intent_output:
+            return
+
+        client_id = ctx.get("client_id", "default")
+        tenant_id = ctx.get("tenant_ctx")
+        tid = getattr(tenant_id, 'effective_tenant_id', '__anonymous__') if tenant_id else '__anonymous__'
+
+        # Extract criticality level
+        crit_output = ctx.get("criticality_output")
+        crit_level = getattr(crit_output, 'level', 0) if crit_output else 0
+
+        self._conversation_mgr.update_state(
+            client_id=client_id,
+            tenant_id=tid,
+            operation=intent.op if intent else (intent_output.operation if intent_output else ""),
+            target=intent.target if intent else "",
+            language=intent.language if intent else "",
+            goal=intent.goal if intent else (intent_output.goal if intent_output else ""),
+            template="",  # Not tracked yet
+            criticality=crit_level,
+            query=ctx.get("msg", ""),
+        )
 
     async def _exec_done(self, ctx: Dict) -> str:
         """Nodo DONE: Construir respuesta final."""

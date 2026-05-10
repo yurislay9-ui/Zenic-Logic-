@@ -8,12 +8,14 @@ through _exec_steps.
 import re
 import time
 import logging
-from typing import Dict, Any, Union
+from typing import Dict, Any, Optional, Tuple, Union
 
 from src.core.agents.surgical_agent import SurgicalAgent
 from src.core.agents.schemas import CriticalityOutput
 from src.core.agents.criticality_agent_parts._imports import CRITICALITY_ADJUSTMENTS
 from src.core.dag_parts.definition import MAX_CODE_SNIPPET_LEN
+from src.core.shared.conversation_state import ConversationState
+from src.core.shared.reference_resolver import resolve_references
 
 logger = logging.getLogger(__name__)
 
@@ -220,16 +222,106 @@ class NodeExecutorsMixin:
             }
         return "miss"
 
+    # ── R03/R06: Reference resolution + context enrichment ──────────
+
+    def _get_conversation_state(self, ctx: Dict) -> ConversationState:
+        """Obtain the ConversationState for the current client+tenant."""
+        client_id = ctx.get("client_id", "default")
+        tenant_id = ctx.get("tenant_ctx")
+        tid = getattr(tenant_id, 'effective_tenant_id', '__anonymous__') if tenant_id else '__anonymous__'
+        if hasattr(self, '_conversation_mgr') and self._conversation_mgr:
+            return self._conversation_mgr.get_state(client_id, tid)
+        return ConversationState()  # Fallback: stateless
+
+    def _resolve_and_enrich(self, msg: str, ctx: Dict) -> Tuple[str, Optional[str], Optional[str]]:
+        """Pre-INTENT: resolve anaphoric references + build context string.
+
+        R06: Before SurgicalAgent classifies, we check if the user's message
+        contains references to previous operations ("lo mismo", "en Kotlin", etc.)
+        and resolve them using ConversationState.
+
+        R03: We also build a context string from Working Memory so that
+        SurgicalAgent's `context` parameter is populated (was always empty).
+
+        Returns:
+            (enriched_msg, resolved_target, resolved_language)
+        """
+        conv_state = self._get_conversation_state(ctx)
+
+        # R06: Resolve anaphoric references
+        enriched_msg, resolved_target, resolved_language, resolution_source = \
+            resolve_references(msg, conv_state)
+
+        # R03: Build context string from Working Memory
+        working_context = ""
+        if hasattr(self, '_memory') and self._memory:
+            try:
+                working_context = self._memory.get_working_context(max_tokens=100)
+            except Exception:
+                pass
+
+        # Also include ConversationState as context for the LLM
+        conv_context = conv_state.to_context_string()
+        parts = []
+        if working_context:
+            parts.append(working_context)
+        if conv_context:
+            parts.append(conv_context)
+        full_context = " | ".join(parts) if parts else ""
+
+        # Store in ctx for downstream use
+        ctx["_resolved_target"] = resolved_target
+        ctx["_resolved_language"] = resolved_language
+        ctx["_resolution_source"] = resolution_source
+        ctx["_intent_context"] = full_context
+
+        if resolution_source != "none":
+            logger.info(
+                f"Pre-INTENT(R06): resolved target='{resolved_target}' "
+                f"lang='{resolved_language}' (source={resolution_source}) "
+                f"context_len={len(full_context)}"
+            )
+
+        return enriched_msg, resolved_target, resolved_language
+
     async def _exec_intent(self, ctx: Dict) -> str:
-        """Nodo INTENT: Clasificación unificada via SurgicalAgent (F2)."""
+        """Nodo INTENT: Clasificación unificada via SurgicalAgent (F2).
+
+        R03: Now passes real context (from Working Memory) instead of "".
+        R06: Pre-resolves anaphoric references before classification.
+        """
+        msg = ctx["msg"]
+
+        # R06: Pre-resolve references + R03: build context string
+        enriched_msg, resolved_target, resolved_language = \
+            self._resolve_and_enrich(msg, ctx)
+
+        # R03: Use real context instead of ""
+        intent_context = ctx.get("_intent_context", "")
+
         intent_output = self._surgical_agent.classify_with_runner(
-            self._agent_runner, ctx["msg"], context=""
+            self._agent_runner, enriched_msg, context=intent_context
         )
         intent = self._surgical_agent.to_intent_payload(
-            intent_output, context=ctx["msg"]
+            intent_output, context=msg
         )
 
-        code_lang, raw_code = SurgicalAgent._extract_code_block(ctx["msg"])
+        # R06: Apply resolved references if SurgicalAgent didn't extract them
+        if resolved_target and (not intent.target or intent.target == "unknown"):
+            intent.target = resolved_target
+            logger.info(
+                f"R06: Applied resolved target='{resolved_target}' "
+                f"(SurgicalAgent had '{intent_output.target}')"
+            )
+        if resolved_language and intent.language in ("python", "unknown", ""):
+            intent.language = resolved_language
+            ctx["lang"] = resolved_language
+            logger.info(
+                f"R06: Applied resolved language='{resolved_language}' "
+                f"(SurgicalAgent had '{intent_output.language}')"
+            )
+
+        code_lang, raw_code = SurgicalAgent._extract_code_block(msg)
         if raw_code:
             # E06-note: Mutating intent object post-construction to inject
             # extracted code. This is safe because ctx["intent"] is not read
@@ -248,6 +340,7 @@ class NodeExecutorsMixin:
 
         logger.info(
             f"SurgicalAgent(F2): {intent_output.operation}/{intent_output.goal} "
+            f"target={intent.target} lang={intent.language} "
             f"(source={intent_output.source}, conf={intent_output.confidence:.2f})"
         )
         return intent_output.operation
