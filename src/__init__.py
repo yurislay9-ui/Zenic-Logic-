@@ -1,20 +1,17 @@
 """
-TITAN OMNISCALE X - Motor de IA Quirurgico Local v16
+TITAN OMNISCALE X - Motor de IA Quirurgico Local v16.1
 
-Pipeline de 8 niveles con Z3 SMT Solver, MCTS real,
-Ejecucion Simbolica, Timeout enforcement, Cache de Teoremas,
-Protocolo Abortivo y Razonamiento Parcial.
+Pipeline DAG de 22 nodos con Z3 SMT Solver (opcional), MCTS real,
+Timeout enforcement, Cache de Teoremas, Protocolo Abortivo
+y Razonamiento Parcial.
 
 Compatible con Android (Termux + proot-distro).
 """
 
-__all__ = ["TitanOrchestrator", "DAGOrchestrator"]
+__all__ = ["DAGOrchestrator"]
 
 
 def __getattr__(name):
-    if name == "TitanOrchestrator":
-        from src.core.orchestrator import TitanOrchestrator
-        return TitanOrchestrator
     if name == "DAGOrchestrator":
         from src.core.dag_orchestrator import DAGOrchestrator
         return DAGOrchestrator

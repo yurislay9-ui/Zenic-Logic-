@@ -30,10 +30,7 @@ from src.core.shared.db_initializer import initialize_databases
 from src.core.shared._version import TITAN_VERSION_STR, TITAN_FULL_NAME
 
 # DAG Orchestrator — v16 production pipeline (tested with Cline)
-try:
-    from src.core.dag_orchestrator import DAGOrchestrator as _Orchestrator
-except ImportError:
-    from src.core.orchestrator import TitanOrchestrator as _Orchestrator
+from src.core.dag_orchestrator import DAGOrchestrator as _Orchestrator
 
 from src.server import (
     TitanHTTPHandler, ThreadedHTTPServer,

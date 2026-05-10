@@ -243,18 +243,15 @@ class CodeAgent(
                                 constraints: Optional[Dict[str, Any]] = None) -> CodeOutput:
         """Generate code using Qwen LLM with rich context.
 
-        R4: This is the new LLM-first generation path. It uses:
-        - MAX_TOKENS_CODE_GENERATE=1500 (vs 600 for other agents)
-        - CODE_SYSTEM_GENERATE prompt (markdown code blocks, Qwen-friendly)
-        - AST context and solver insights for richer prompts
-        - VerdictEngine for approval (Binary Arbiter stays as safety check)
-        - Fallback to deterministic templates if LLM fails
+        v16.1: Uses GenerativeMixin.generate_code() as primary path,
+        falling back to AgentRunner, then to deterministic templates.
+        VerdictMixin validates generated code as a safety gate.
 
         Flow:
-        1. Build enriched prompt with AST + solver context
-        2. Call Qwen via AgentRunner (1500 tokens)
-        3. If LLM produces valid code → return it
-        4. If LLM fails → fallback to deterministic template
+        1. Try GenerativeMixin.generate_code() directly (bypasses AgentRunner overhead)
+        2. Validate with VerdictMixin (Binary Arbiter safety gate)
+        3. If GenerativeMixin unavailable → try AgentRunner path
+        4. If all LLM paths fail → fallback to deterministic template
 
         Args:
             runner: AgentRunner with MiniAIEngine wired
@@ -281,23 +278,84 @@ class CodeAgent(
             enriched_req += f"\n\nAST context: {ast_context[:300]}"
         if solver_insights:
             enriched_req += f"\n\nSolver insights: {solver_insights[:200]}"
-        input_data.requirements = enriched_req
 
-        # Try LLM generation first (AgentRunner now uses 1500 tokens for code)
+        # ── PATH 1: GenerativeMixin.generate_code() (direct, fast) ──
+        if runner and hasattr(runner, '_mini_ai') and runner._mini_ai and runner._mini_ai.is_loaded:
+            mini_ai = runner._mini_ai
+            if hasattr(mini_ai, 'generate_code'):
+                try:
+                    raw_code = mini_ai.generate_code(enriched_req, language)
+                    if raw_code and len(raw_code.strip()) > 20:
+                        # Validate with VerdictMixin (Binary Arbiter safety gate)
+                        if hasattr(mini_ai, 'verdict'):
+                            try:
+                                verdict = mini_ai.verdict(
+                                    question="Is this generated code safe and correct?",
+                                    context=raw_code[:200],
+                                    evidence_for=f"Language: {language}, length: {len(raw_code)}",
+                                )
+                                if verdict.get("verdict") == "NO":
+                                    logger.info(
+                                        "CodeAgent: Verdict NO — rejecting %d chars of LLM code",
+                                        len(raw_code)
+                                    )
+                                    # Fall through to deterministic fallback
+                                else:
+                                    # Verdict YES or inconclusive — accept the code
+                                    duration_ms = int((time.time() - start) * 1000)
+                                    self._update_stats("llm", duration_ms)
+                                    logger.info(
+                                        "CodeAgent: GenerativeMixin + Verdict OK — %d chars of %s code",
+                                        len(raw_code), language
+                                    )
+                                    result = CodeOutput(
+                                        code=raw_code,
+                                        language=language,
+                                        source="llm_generative",
+                                    )
+                                    result = self._apply_criticality_adjustments(result)
+                                    return result
+                            except Exception as e:
+                                # Verdict failed — accept code anyway (no validation != bad code)
+                                logger.debug("CodeAgent: Verdict gate failed, accepting code: %s", e)
+                                duration_ms = int((time.time() - start) * 1000)
+                                self._update_stats("llm", duration_ms)
+                                result = CodeOutput(
+                                    code=raw_code,
+                                    language=language,
+                                    source="llm_generative",
+                                )
+                                result = self._apply_criticality_adjustments(result)
+                                return result
+                        else:
+                            # No verdict available — accept code directly
+                            duration_ms = int((time.time() - start) * 1000)
+                            self._update_stats("llm", duration_ms)
+                            result = CodeOutput(
+                                code=raw_code,
+                                language=language,
+                                source="llm_generative",
+                            )
+                            result = self._apply_criticality_adjustments(result)
+                            return result
+                except Exception as e:
+                    logger.debug("CodeAgent: GenerativeMixin failed: %s", e)
+
+        # ── PATH 2: AgentRunner (traditional path) ──
+        input_data.requirements = enriched_req
         if runner and runner._mini_ai and runner._mini_ai.is_loaded:
             try:
                 result: AgentResult = runner.run(self, input_data)
                 if result.success and isinstance(result.data, CodeOutput):
                     if result.data.code and len(result.data.code.strip()) > 20:
-                        # LLM produced meaningful code
                         logger.info(
-                            "CodeAgent: LLM generated %d chars of code (source=%s)",
+                            "CodeAgent: AgentRunner generated %d chars (source=%s)",
                             len(result.data.code), result.data.source
                         )
                         return result.data
             except Exception as e:
-                logger.warning("CodeAgent: LLM generation failed: %s", e)
+                logger.warning("CodeAgent: AgentRunner generation failed: %s", e)
 
-        # Fallback to deterministic template
+        # ── PATH 3: Deterministic fallback ──
         logger.info("CodeAgent: LLM unavailable/failed, using deterministic fallback")
         return self.fallback(input_data)

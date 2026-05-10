@@ -1,5 +1,5 @@
 """
-TITAN OMNISCALE X - Contratos de Datos v16 (Facade Module)
+TITAN OMNISCALE X - Contratos de Datos v16.1 (Facade Module)
 
 This module re-exports all contracts from their dedicated sub-modules
 for backward compatibility. The original monolith has been decomposed into:
@@ -10,8 +10,8 @@ for backward compatibility. The original monolith has been decomposed into:
 - z3_solver.py: Z3 SMT Solver wrapper
 - timeout.py: Timeout enforcement
 - code_constraints.py: Code constraint builder
-- symbolic_executor.py: Symbolic execution engine
-- kpath_analyzer.py: K-Path dependency analyzer
+- symbolic_executor.py: Lightweight stub (full implementation removed)
+- kpath_analyzer.py: Lightweight stub (full implementation removed)
 
 Any code that does `from src.core.shared.contracts import X` will continue to work.
 """
@@ -29,7 +29,7 @@ from .constraint_solver import Constraint, ConstraintSolver
 from .z3_solver import Z3Solver, HAS_Z3
 from .timeout import TimeoutEnforcer
 from .code_constraints import CodeConstraintBuilder
-from .symbolic_executor import SymbolicValue, SymbolicPath, SymbolicExecutor
+from .symbolic_executor import SymbolicExecutor
 from .kpath_analyzer import KPathAnalyzer
 
 __all__ = [
@@ -44,6 +44,6 @@ __all__ = [
     "Z3Solver", "HAS_Z3",
     "TimeoutEnforcer",
     "CodeConstraintBuilder",
-    "SymbolicValue", "SymbolicPath", "SymbolicExecutor",
+    "SymbolicExecutor",
     "KPathAnalyzer",
 ]

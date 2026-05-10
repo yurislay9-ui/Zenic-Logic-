@@ -9,7 +9,7 @@ Pattern Catalog:
 
 Usage::
 
-    from src.core.patterns.orchestration import EventBus, Event, EventHandler
+    from src.core.patterns.orchestration import EventBus, Event
     from src.core.patterns.orchestration import Mediator, Request, Response
 
 Designed for resource-constrained environments (Android/Termux, 500MB RAM).
@@ -23,7 +23,6 @@ No external dependencies beyond Python stdlib.
 from .event_bus import (
     Event,
     EventBus,
-    EventHandler,
 )
 
 # ============================================================
@@ -33,7 +32,6 @@ from .event_bus import (
 from .mediator import (
     Mediator,
     Request,
-    RequestHandler,
     Response,
 )
 
@@ -44,11 +42,9 @@ from .mediator import (
 __all__ = [
     # Event Bus
     "EventBus",
-    "EventHandler",
     "Event",
     # Mediator
     "Mediator",
     "Request",
     "Response",
-    "RequestHandler",
 ]

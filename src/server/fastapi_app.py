@@ -23,9 +23,9 @@ import logging
 import uuid
 import threading
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from src.core.shared._version import TITAN_VERSION, TITAN_VERSION_STR, TITAN_FULL_NAME
+from src.core.shared._version import TITAN_VERSION, TITAN_FULL_NAME
 from src.core.patterns.resilience.retry import RetryConfig, with_retry
 from src.core.patterns.resilience.circuit_breaker import (
     CircuitBreaker,
@@ -41,7 +41,7 @@ from src.server.response_builder import (
 )
 from src.core.auth_parts._tenant_mixin import PLAN_DEFINITIONS
 from src.core.tenant._context import (
-    TenantContext, set_current_tenant, clear_current_tenant, get_current_tenant,
+    TenantContext, set_current_tenant, clear_current_tenant,
 )
 from src.core.tenant._feature_gate import require_feature, FeatureNotAvailableError
 import os
@@ -49,7 +49,7 @@ import os
 # Phase 5: Observability & Security
 try:
     from src.core.observability.tracing import (
-        TracingConfig, init_tracing, trace_span, get_current_trace_id,
+        TracingConfig, init_tracing,
     )
     _TRACING_AVAILABLE = True
 except ImportError:
@@ -57,7 +57,7 @@ except ImportError:
 
 try:
     from src.core.observability.metrics import (
-        MetricsCollector, MetricsConfig, get_metrics_collector, metrics_middleware,
+        MetricsConfig, get_metrics_collector, metrics_middleware,
     )
     _METRICS_AVAILABLE = True
 except ImportError:
@@ -65,7 +65,7 @@ except ImportError:
 
 try:
     from src.core.observability.audit import (
-        AuditLogger, AuditEvent, AuditEventType, AuditSeverity, get_audit_logger,
+        AuditEventType, get_audit_logger,
     )
     _AUDIT_AVAILABLE = True
 except ImportError:
@@ -73,9 +73,8 @@ except ImportError:
 
 try:
     from src.core.observability.health import (
-        HealthAggregator, HealthStatus, HealthCheckResult, get_health_aggregator,
+        get_health_aggregator,
         check_orchestrator, check_auth_db, check_resources, check_disk_space,
-        check_coordination_backend,
     )
     _HEALTH_AVAILABLE = True
 except ImportError:
@@ -83,7 +82,7 @@ except ImportError:
 
 try:
     from src.server.security_middleware import (
-        SecurityConfig, InputSanitizer, create_security_middleware, TokenBlacklist,
+        SecurityConfig, create_security_middleware, TokenBlacklist,
     )
     _SECURITY_AVAILABLE = True
 except ImportError:
@@ -92,7 +91,7 @@ except ImportError:
 # Open Design Integration
 try:
     from src.core.open_design import (
-        OpenDesignDetector, OpenDesignConfig, get_open_design_config,
+        OpenDesignDetector, get_open_design_config,
         SSEStreamer, create_sse_response,
     )
     _OPEN_DESIGN_AVAILABLE = True
@@ -1454,17 +1453,13 @@ def create_app_from_env() -> Any:
         except Exception as e:
             logger.warning("Database init failed: %s", e)
 
-    # Create orchestrator
+    # Create orchestrator (DAG v16 — production pipeline)
     try:
         from src.core.dag_orchestrator import DAGOrchestrator
         orchestrator: Any = DAGOrchestrator()
     except ImportError:
-        try:
-            from src.core.orchestrator import TitanOrchestrator
-            orchestrator = TitanOrchestrator()
-        except ImportError:
-            logger.warning("No orchestrator available — AI endpoints will fail")
-            orchestrator = None
+        logger.warning("DAGOrchestrator unavailable — AI endpoints will fail")
+        orchestrator = None
 
     # Connect governor to model manager
     if governor and hasattr(orchestrator, '_model_mgr'):

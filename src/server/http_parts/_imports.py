@@ -4,12 +4,10 @@ Shared imports and async event loop for http_parts sub-modules.
 
 import json
 import logging
-import time
 import asyncio
 import threading
 import atexit
 import os
-from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 from src.core.shared.contracts import HAS_Z3

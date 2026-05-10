@@ -25,12 +25,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "RetryConfig",
-    "retry",
-    "retry_async",
     "with_retry",
     "with_config_retry",
-    "with_retry_async",
-    "RetryScope",
 ]
 
 

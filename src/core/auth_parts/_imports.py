@@ -2,8 +2,6 @@
 Shared imports and constants for auth_parts sub-modules.
 """
 
-import os
-import re
 import json
 import time
 import hashlib
@@ -15,7 +13,7 @@ import logging
 import base64
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, List, Set, Callable, Any
+from typing import Dict, Set
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +56,13 @@ except Exception:
     )
 
 try:
-    from fastapi import Depends, HTTPException, status
-    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    from fastapi import Depends, HTTPException
+    from fastapi.security import HTTPBearer
     HAS_FASTAPI = True
     _security = HTTPBearer()
 except ImportError:
     HAS_FASTAPI = False; Depends = None; HTTPException = None
-    status = None; _security = None
+    _security = None
 
 # --- Constants ---
 ROLE_HIERARCHY = {"viewer": 0, "user": 1, "manager": 2, "admin": 3}

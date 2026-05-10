@@ -6,6 +6,8 @@ engine_limits:
   mcts_max_depth: 5               # Profundidad maxima MCTS
   mcts_max_simulations: 100       # Maximo de simulaciones MCTS
   max_k_paths: 10                 # Radio de K-Paths
+  z3_mcts_enabled: false          # Desactivar Z3+MCTS por defecto (ahorra ~20-30s por request high_crit)
+  solver_timeout_arm_ms: 5000     # Timeout agresivo para ARM/Termux (default: 5s vs 15s x86)
 # ── Smart Scraper Configuration ──────────────────────────────
 # Configuracion del Scraper Inteligente multi-fuente.
 # NOTA: Los valores en .env tienen prioridad sobre estos defaults.

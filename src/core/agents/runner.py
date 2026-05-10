@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, TypeVar
 from src.core.agents.base import BaseAgent, AgentResult
 from src.core.agents.cache import AgentCache
 from src.core.patterns.resilience import (
-    CircuitBreaker, CircuitState, CircuitOpenError,
+    CircuitBreaker, CircuitOpenError,
     RetryConfig, with_retry,
 )
 

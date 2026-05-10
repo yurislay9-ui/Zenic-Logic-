@@ -33,6 +33,8 @@ _DEFAULTS: Dict[str, Any] = {
         "mcts_max_depth": 5,
         "mcts_max_simulations": 100,
         "max_k_paths": 10,
+        "z3_mcts_enabled": False,
+        "solver_timeout_arm_ms": 5000,
     },
     "scraper": {
         "timeout": 10,
@@ -292,6 +294,54 @@ def get_k_path_limit(settings: Optional[Dict[str, Any]] = None) -> int:
         settings = load_settings()
     limits = settings.get("engine_limits", _DEFAULTS["engine_limits"])
     return int(limits.get("max_k_paths", 10))
+
+
+def get_z3_mcts_enabled(settings: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Obtiene si Z3+MCTS esta habilitado para peticiones high_crit.
+
+    Cuando es False (default en ARM/Termux), el planner salta Z3 y MCTS
+    incluso para peticiones de alta criticidad, ahorrando ~20-30s por request.
+    El DAG sigue funcionando normalmente — solo se omite la verificacion formal.
+
+    Puede forzarse via variable de entorno: TITAN_Z3_MCTS_ENABLED=1
+
+    Args:
+        settings: Configuracion ya cargada (opcional).
+
+    Returns:
+        True si Z3+MCTS esta habilitado, False si no (default: False).
+    """
+    # Env var override has highest priority
+    env_val = os.environ.get("TITAN_Z3_MCTS_ENABLED", "").lower()
+    if env_val in ("1", "true", "yes"):
+        return True
+    if env_val in ("0", "false", "no"):
+        return False
+
+    if settings is None:
+        settings = load_settings()
+    limits = settings.get("engine_limits", _DEFAULTS["engine_limits"])
+    return bool(limits.get("z3_mcts_enabled", False))
+
+
+def get_solver_timeout_arm_ms(settings: Optional[Dict[str, Any]] = None) -> int:
+    """
+    Obtiene el timeout agresivo del solver para ARM/Termux.
+
+    En dispositivos moviles con recursos limitados, usar un timeout mas
+    corto que el estandar de 15s reduce la latencia significativamente.
+
+    Args:
+        settings: Configuracion ya cargada (opcional).
+
+    Returns:
+        Timeout en milisegundos (default: 5000 = 5s para ARM).
+    """
+    if settings is None:
+        settings = load_settings()
+    limits = settings.get("engine_limits", _DEFAULTS["engine_limits"])
+    return int(limits.get("solver_timeout_arm_ms", 5000))
 
 
 def get_sandbox_timeout_s(settings: Optional[Dict[str, Any]] = None) -> float:

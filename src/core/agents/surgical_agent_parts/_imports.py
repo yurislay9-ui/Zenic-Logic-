@@ -2,12 +2,8 @@
 Shared imports and constants for surgical_agent_parts.
 """
 
-import re
-import time
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, List
 
 from src.core.agents.base import BaseAgent, AgentResult
 from src.core.agents.schemas import IntentInput, IntentOutput
@@ -16,8 +12,6 @@ from src.core.agents.intent_shared import (
     VALID_OPERATIONS, VALID_GOALS, VALID_LANGUAGES,
     OP_KEYWORDS, GOAL_KEYWORDS,
     EXT_LANG_MAP, FENCE_LANG_MAP,
-    extract_target_and_language, extract_code_block,
-    extract_entities, infer_criticality, infer_template_type,
 )
 
 logger = logging.getLogger(__name__)

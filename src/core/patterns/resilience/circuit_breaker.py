@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["CircuitBreaker", "CircuitState", "CircuitOpenError"]
+__all__ = ["CircuitBreaker", "CircuitOpenError"]
 
 
 # ============================================================

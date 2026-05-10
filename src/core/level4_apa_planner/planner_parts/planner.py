@@ -3,6 +3,11 @@
 FIX (Phase 2): Added retry with backoff for MCTS search. If the
 MCTS search returns None (no actions available), we retry with a
 broader action set. Also added retry for solver transient failures.
+
+FIX (v16.1): Added z3_mcts_enabled config flag. When disabled (default
+on ARM/Termux), Z3+MCTS is skipped for ALL criticality levels, reducing
+latency by ~20-30s per high_crit request. The DAG pipeline still works
+normally — only formal verification is skipped.
 """
 
 import uuid
@@ -32,6 +37,7 @@ class APAPlanner(
     - MCTS con profundidad maxima configurable (default 5)
     - Protocolo abortivo cuando el solver agota el presupuesto
     - Timeout enforcement real
+    - z3_mcts_enabled flag para desactivar verificacion formal (default: False)
     """
 
     def __init__(self):
@@ -46,9 +52,16 @@ class APAPlanner(
         self._last_mcts_simulations = 0
         self._last_mcts_depth = 0
 
+        # Check if Z3+MCTS is enabled via config
+        from src.config.loader import get_z3_mcts_enabled
+        self.z3_mcts_enabled = get_z3_mcts_enabled(self.settings)
+
         solver_name = "Z3" if HAS_Z3 else "AC-3"
-        logger.info("APA Planner: Solver=%s, MCTS depth=%d, Solver timeout=%dms",
-                     solver_name, self.MCTS_MAX_DEPTH, self.solver_timeout_ms)
+        solver_status = "ENABLED" if self.z3_mcts_enabled else "DISABLED"
+        logger.info(
+            "APA Planner: Solver=%s, Z3+MCTS=%s, MCTS depth=%d, Solver timeout=%dms",
+            solver_name, solver_status, self.MCTS_MAX_DEPTH, self.solver_timeout_ms
+        )
 
     def generate_plan(self, routing):
         intent = routing.intent
@@ -59,31 +72,30 @@ class APAPlanner(
         # Throttle CPU entre requests pesados
         governor.cpu_throttle_sleep()
 
-        # ── FAST PATH: Skip solver + MCTS for low_crit / standard ──
-        # These paths already skip SOLVER_VERIFY in the DAG, but Z3+MCTS
-        # still ran wastefully inside generate_plan(). This saves ~15-20s
-        # per request for ~80% of all requests.
+        # ── Determine if Z3+MCTS should be skipped ──
         import os as _os
         crit_level = getattr(routing, 'criticality', 2)
         crit_path = {1: "low_crit", 2: "standard", 3: "high_crit"}.get(crit_level, "standard")
         skip_solver = _os.environ.get("TITAN_SKIP_SOLVER", "0") == "1"
         skip_mcts = _os.environ.get("TITAN_SKIP_MCTS", "0") == "1"
 
-        # BUG FIX: Original condition was `and not skip_solver and not skip_mcts`
-        # which meant setting TITAN_SKIP_SOLVER=1 would PREVENT the fast path
-        # (because the condition became False). The env vars should FORCE skip,
-        # not prevent it. Correct logic: skip for low/standard crit OR when
-        # env vars request it.
+        # Skip Z3+MCTS when:
+        # 1. Criticality is low_crit or standard (already skips SOLVER_VERIFY in DAG)
+        # 2. z3_mcts_enabled is False (config flag, default on ARM)
+        # 3. TITAN_SKIP_SOLVER env var is set
         should_skip_solver_mcts = (
             crit_path in ("low_crit", "standard")
+            or not self.z3_mcts_enabled
             or skip_solver
         )
 
         if should_skip_solver_mcts:
-            # low_crit/standard: skip expensive Z3+MCTS, use heuristic steps only
+            reason = crit_path if crit_path in ("low_crit", "standard") else (
+                "config_disabled" if not self.z3_mcts_enabled else "env_skip"
+            )
             logger.info(
-                "APAPlanner: SKIP solver+MCTS for %s (crit=%d) — heuristic steps only",
-                crit_path, crit_level
+                "APAPlanner: SKIP solver+MCTS (%s) for crit=%d — heuristic steps only",
+                reason, crit_level
             )
             steps = self._build_steps(intent, routing, best_action=None)
             return ExecutionPlan(
@@ -95,7 +107,7 @@ class APAPlanner(
                 mcts_depth_reached=0
             )
 
-        # ── HIGH_CRIT or env-var override: Run full solver + MCTS ──
+        # ── HIGH_CRIT with Z3+MCTS enabled: Run full solver + MCTS ──
         # Timeout adaptativo segun carga del sistema
         adaptive_solver_timeout = governor.get_adaptive_solver_timeout(self.solver_timeout_ms)
 
