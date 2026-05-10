@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
 from src.core.agents.base import BaseAgent, AgentResult
-from src.core.agents.runner import AgentRunner, MAX_RETRIES
+from src.core.agents.runner import AgentRunner
 from src.core.patterns.resilience import CircuitBreaker, RetryConfig
 from src.core.agents.runner import Bulkhead
 

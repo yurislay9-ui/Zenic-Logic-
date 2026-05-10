@@ -1,5 +1,18 @@
 """
-TITAN OMNISCALE X - SmartMemory Sub-package
+SmartMemory Sub-package — Multi-layer memory system for Zenic-Logic v18.
+
+SmartMemory composes four focused mixins:
+
+    SmartMemory(DatabaseMixin, EpisodesMixin, LongTermMixin, CacheMixin)
+
+Memory layers:
+    Working Memory   — Short-term context for the current request (in-memory)
+    Semantic Cache   — Embedding-based cache for similar query detection
+    Long-term Memory — Persistent storage of successful patterns/solutions
+    Episodic Memory  — Session-scoped interaction history
+
+Facade import (backward-compatible):
+    from src.core.smart_memory import SmartMemory
 
 Re-exports all public symbols from the modularized SmartMemory components.
 """

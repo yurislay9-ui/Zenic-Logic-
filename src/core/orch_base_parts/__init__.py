@@ -3,6 +3,21 @@ BaseOrchestrator — facade re-exporting all sub-modules.
 
 Backward-compatible: ``from src.core.orchestrator_base import BaseOrchestrator``
 still works exactly as before.
+
+BaseOrchestrator is the shared base class for both DAGOrchestrator (primary)
+and TitanOrchestrator (deprecated facade). It composes five focused mixins:
+
+    BaseOrchestrator(InitMixin, APIMixin, Phase7Mixin, Phase8Mixin, CompatMixin)
+
+Mixin responsibilities:
+    InitMixin   — Pipeline components init, AI architecture wiring, agent framework
+    APIMixin    — Public API methods (generate_app, build_logic, reason, think, etc.)
+    Phase7Mixin — ActionExecutor, LogicBuilder, AuthService integration
+    Phase8Mixin — ReasoningEngine, ChainValidator, ChainExecutor
+    CompatMixin — Backward-compat delegation methods (process → execute, etc.)
+
+All imports are re-exported for backward compatibility with code that does:
+    from src.core.orchestrator_base import MerkleLedger, SmartMemory, ...
 """
 
 from ._init_mixin import InitMixin

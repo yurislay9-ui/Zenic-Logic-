@@ -86,7 +86,9 @@ T = TypeVar('T')
 MAX_TOKENS_AGENT = 600          # Max tokens por llamada de agente
 MAX_TOKENS_CODE_GENERATE = 1500  # Max tokens para generación de código (was unused, now active)
 AGENT_TIMEOUT_S = 50.0          # Timeout por llamada (was 60s, reduced to match LLM_TIMEOUT_S=45s + margin)
-MAX_RETRIES = 1                 # Reintentos antes de fallback
+# NOTE: MAX_RETRIES was removed — retry is now controlled by RetryConfig
+# (DEFAULT_RETRY_CONFIG.max_attempts, env: TITAN_AGENT_RETRIES).
+# Import RetryConfig if you need custom retry behaviour.
 TEMPERATURE_AGENT = 0.15        # Temperatura baja = más determinista
 
 # Default resilience configurations

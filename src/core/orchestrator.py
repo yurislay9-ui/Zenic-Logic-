@@ -1,104 +1,50 @@
 """
-ZENIC LOGIC v17 - Orchestrator (Verdict Architecture)
+ZENIC LOGIC v18 - Orchestrator (Unified Architecture)
 
-CAMBIO FUNDAMENTAL (v16 → v17):
-  ANTES: La IA hacía 7 tareas bounded + 6 agentes la llamaban
-  AHORA: La IA SOLO emite veredictos binarios (SÍ/NO) como árbitro final
+DEPRECATED: TitanOrchestrator is now a thin wrapper around DAGOrchestrator.
+All pipeline execution is delegated to DAGOrchestrator with VerdictEngine
+enabled, achieving full architectural unification.
 
-Orquestador del pipeline completo de 8 niveles con Arquitectura de Veredicto.
-Incluye:
-- VerdictEngine: Qwen3-0.6B SOLO como árbitro binario (SÍ/NO)
-- DeterministicPipeline: Todas las tareas sin IA
-- EvidenceCollector + ConsensusResolver: Consenso multi-señal
-- Protocolo Abortivo: auto-subdivision cuando el solver hace timeout
-- Razonamiento Parcial: response contract OpenAI-compatible
-- Generacion contextual: usa datos del AST, solver y MCTS
-- Configuracion desde YAML
+Migration guide (recommended):
+    # Before (v17):
+    orch = TitanOrchestrator()
+    # After (v18 — direct):
+    from src.core.dag_orchestrator import DAGOrchestrator
+    from src.core.verdict_engine_module import VerdictEngine
+    verdict = VerdictEngine(mini_ai=ai, semantic_engine=se, smart_memory=mem)
+    orch = DAGOrchestrator(verdict_engine=verdict)
 
-Sin dependencias externas obligatorias. Compatible con Android.
+    # After (v18 — drop-in replacement, same as before):
+    orch = TitanOrchestrator()  # internally creates DAGOrchestrator+VerdictEngine
 
-Decomposed into focused modules:
-- orchestrator_base: BaseOrchestrator (shared init, public API, backward-compat)
-- step_dispatcher: StepDispatcher (unified step dispatch logic)
-- mini_ai_engine: MiniAIEngine (Qwen3-0.6B verdict-only arbitrer)
-- verdict_engine_module: VerdictEngine (full verdict pipeline)
-- subtask_descriptor: SubtaskDescriptor class
-- abortive_protocol: AbortiveProtocol (auto-subdivision)
-- partial_reasoning: PartialReasoningManager (response contract)
-- code_generator: CodeGenerator (pipeline-driven code generation)
-- code_transformer: CodeTransformer (refactoring, fixing, optimization)
-- analysis_utils: AnalysisUtils (quality reports, explanations, logging)
+This class is kept for backward compatibility. It creates a DAGOrchestrator
+with VerdictEngine and delegates all execute() calls to it.
+
+Architecture v18:
+  - DAGOrchestrator: Primary orchestrator (DAG pipeline + optional VerdictEngine)
+  - TitanOrchestrator: Backward-compatible facade → DAGOrchestrator(verdict_engine=...)
+  - Both share BaseOrchestrator (init, API, backward-compat)
+  - Both use ResponseSynthesizer for pipeline results
+  - Both use ConversationState + ReferenceResolver for multi-turn
 """
 
-import time
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
-from src.config.loader import load_settings
-from src.core.shared.db_initializer import get_projects_dir
-from src.core.shared.contracts import OperationType, GoalType, RoutePath
-from src.core.shared.response_synthesizer import ResponseSynthesizer
-
-# Base class with shared initialization, public API, backward-compat
-from src.core.orchestrator_base import BaseOrchestrator
-
-# Step dispatcher for unified step execution
-from src.core.step_dispatcher import StepDispatcher
-
-# Decomposed modules - 4-Layer Verdict Architecture (v17)
-from src.core.semantic_engine import SemanticEngine   # Capa 1: ENTIENDE
-from src.core.mini_ai_engine import MiniAIEngine      # Capa 4: ARBITRA (solo SÍ/NO)
-from src.core.smart_memory import SmartMemory          # Capa 3: RECUERDA
-from src.core.verdict_engine_module import VerdictEngine  # Verdict pipeline completo
-from src.core.agents.surgical_agent import SurgicalAgent
+from src.core.dag_parts.orchestrator import DAGOrchestrator
 
 logger = logging.getLogger(__name__)
 
-# === Extracted Constants (previously hardcoded inline) ===
-MAX_MEMORY_SNIPPET_LEN = 500      # Max chars for memory save snippets
-SANDBOX_TTL_MULTIPLIER = 3        # Sandbox TTL = timeout * multiplier
-SANDBOX_TTL_MIN = 120             # Minimum sandbox TTL in seconds
-MAX_CODE_SNIPPET_LEN = 200        # Max chars for code context snippets
 
-
-class TitanOrchestrator(BaseOrchestrator):
+class TitanOrchestrator:
     """
-    Orquestador v17 con Arquitectura de Veredicto.
+    Backward-compatible facade that delegates to DAGOrchestrator.
 
-    DEPRECATED: This orchestrator is being unified with DAGOrchestrator.
-    DAGOrchestrator now supports an optional VerdictEngine parameter.
-    When verdict_engine is provided, the VERDICT node in the DAG pipeline
-    arbitrates code before sandbox validation (same v17 behavior).
+    Creates a DAGOrchestrator with VerdictEngine enabled (v17 behavior)
+    and delegates all pipeline execution to it.
 
-    Migration guide:
-        # Before (v17):
-        orch = TitanOrchestrator()
-        # After (unified):
-        from src.core.verdict_engine_module import VerdictEngine
-        verdict = VerdictEngine(mini_ai=ai, semantic_engine=se, smart_memory=mem)
-        orch = DAGOrchestrator(verdict_engine=verdict)
-
-    This class is kept for backward compatibility. It now delegates
-    to DAGOrchestrator with VerdictEngine enabled.
-
-    CAMBIO PRINCIPAL: La IA ya NO hace tareas. Solo arbitra.
-
-    Flujo de decisión:
-      1. DeterministicPipeline ejecuta todas las tareas (sin IA)
-      2. EvidenceCollector recolecta evidencia (sin IA)
-      3. ConsensusResolver evalúa consenso (sin IA)
-      4. Si consenso claro → Decisión sin IA
-      5. Si empate → VerdictEngine pide a Qwen: "¿SÍ o NO?"
-
-    Esto garantiza que la IA NUNCA puede dar una mala respuesta
-    generativa porque solo puede decir SÍ o NO.
-
-    Inherits from BaseOrchestrator which provides:
-    - All shared initialization methods
-    - Public API methods (generate_app, build_logic, reason, etc.)
-    - Backward-compat delegation methods
-    - Shared properties
+    This ensures that both orchestrators follow the exact same code path,
+    eliminating duplication and drift.
     """
 
     def __init__(self) -> None:
@@ -110,311 +56,105 @@ class TitanOrchestrator(BaseOrchestrator):
             stacklevel=2,
         )
 
-        # 1. Common state
-        settings = load_settings()
-        self._init_common_state()
+        # Create VerdictEngine for v17 verdict arbitration
+        verdict_engine = None
+        try:
+            from src.core.semantic_engine import SemanticEngine
+            from src.core.mini_ai_engine import MiniAIEngine
+            from src.core.smart_memory import SmartMemory
+            from src.core.verdict_engine_module import VerdictEngine
 
-        # 2. Pipeline components
-        self._init_pipeline_components(settings)
+            semantic = SemanticEngine(auto_load=True)
+            ai = MiniAIEngine(auto_load=True)
+            memory = SmartMemory(semantic_engine=semantic)
+            verdict_engine = VerdictEngine(
+                mini_ai=ai,
+                semantic_engine=semantic,
+                smart_memory=memory,
+            )
+            logger.info("TitanOrchestrator: VerdictEngine created for DAGOrchestrator delegation")
+        except Exception as e:
+            logger.warning(
+                "TitanOrchestrator: VerdictEngine creation failed (%s). "
+                "Falling back to DAGOrchestrator without VerdictEngine.", e,
+            )
 
-        # 3. 4-Layer Verdict Architecture (v17)
-        semantic = SemanticEngine(auto_load=True)
-        ai = MiniAIEngine(auto_load=True)
-        memory = SmartMemory(semantic_engine=semantic)
-        self._init_ai_architecture(semantic, ai, memory)
+        # Delegate to DAGOrchestrator with VerdictEngine
+        self._dag_orchestrator = DAGOrchestrator(verdict_engine=verdict_engine)
 
-        # 3b. VerdictEngine - El pipeline completo de veredicto
-        self._verdict_engine = VerdictEngine(
-            mini_ai=ai,
-            semantic_engine=semantic,
-            smart_memory=memory,
-        )
+        # Re-expose key attributes for backward compatibility
+        # Code that accesses orchestrator._memory, orchestrator._ai, etc.
+        # will find them on the underlying DAGOrchestrator instance.
+        self._memory = self._dag_orchestrator._memory
+        self._semantic = self._dag_orchestrator._semantic
+        self._ai = self._dag_orchestrator._ai
+        self._model_mgr = self._dag_orchestrator._model_mgr
+        self._agent_runner = self._dag_orchestrator._agent_runner
+        self._surgical_agent = self._dag_orchestrator._surgical_agent
+        self._conversation_mgr = self._dag_orchestrator._conversation_mgr
+        self._verdict_engine = self._dag_orchestrator._verdict_engine
 
-        # 3c. Internal DAGOrchestrator for delegation
-        # TitanOrchestrator now delegates pipeline execution to DAGOrchestrator
-        # with its VerdictEngine, achieving architectural unification.
-        self._dag_orchestrator = None  # Lazy init to avoid circular deps
-
-        # Log AI status
-        sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
-        ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
-        verdict_status = "READY" if ai.is_loaded else "fallback_only"
         logger.info(
-            f"v17 Verdict Architecture (DEPRECATED → DAGOrchestrator): "
-            f"SemanticEngine={sem_status} | "
-            f"MiniAI(Qwen)={ai_status} (verdict-only) | "
-            f"SmartMemory=ready | "
-            f"VerdictEngine={verdict_status}"
+            "TitanOrchestrator: Delegating to DAGOrchestrator (verdict=%s)",
+            "ACTIVE" if verdict_engine else "SKIP",
         )
 
-        # 4. Extended architecture (with defaults)
-        self._init_extended_with_defaults()
+    async def execute(
+        self,
+        msg: str,
+        client_id: str = "default",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Delegate pipeline execution to DAGOrchestrator.
 
-        # 5. Decomposed sub-modules
-        self._init_decomposed_modules()
-
-        # 6. Agent framework (F1-F5)
-        self._init_agent_framework()
-
-        # 7. Step dispatcher
-        self._step_dispatcher = StepDispatcher(self)
-
-        # 8. God-level improvements
-        self._init_god_level_improvements()
-
-        # 9. Scan project
-        self._scan_project()
-
-    async def execute(self, msg: str) -> Dict[str, Any]:
+        All multi-turn context (ConversationState, ReferenceResolver),
+        VerdictEngine arbitration, and ResponseSynthesizer formatting
+        are handled by the DAG pipeline.
         """
-        Ejecuta el pipeline completo de 8 niveles con Arquitectura de Veredicto.
-
-        La IA solo interviene si hay un empate en el consenso
-        determinístico, y solo puede decir SÍ o NO.
-        """
-        start_time = time.time()
-        with self._request_count_lock:
-            self._request_count += 1
-
-        # ============================================================
-        #  CAPA 3: SmartMemory - Check semantic cache first
-        # ============================================================
-        cached = self._memory.check_cache(msg)
-        if cached:
-            elapsed = int((time.time() - start_time) * 1000)
-            logger.info(f"SmartMemory: Cache hit ({cached['source']}) for: {msg[:50]}")
-            self._analysis.log_request(None, "CACHED", elapsed, cache_hit=True)
-            return ResponseSynthesizer.cached(
-                code=cached.get("response", ""),
-                cache_source=cached["source"],
-                elapsed_ms=elapsed,
-            )
-
-        # ============================================================
-        #  INTENT CLASSIFICATION - Deterministic (sin IA)
-        # ============================================================
-        intent_output = self._surgical_agent.classify_with_runner(
-            self._agent_runner, msg, context=""
-        )
-        intent = self._surgical_agent.to_intent_payload(intent_output, context=msg)
-
-        # Extraer codigo del mensaje (separado de la clasificacion)
-        code_lang, raw_code = SurgicalAgent._extract_code_block(msg)
-        if raw_code:
-            intent.raw_code = raw_code
-            if code_lang:
-                intent.language = code_lang
-
-        logger.info(f"SurgicalAgent: {intent_output.operation}/{intent_output.goal} "
-                    f"(source={intent_output.source}, conf={intent_output.confidence:.2f}, "
-                    f"target={intent.target})")
-
-        # Nivel 3: Analisis AST del codigo proporcionado
-        ast_analysis = {}
-        if intent.raw_code:
-            ast_analysis = self.ast_engine.analyze_structure(intent.raw_code, intent.language)
-
-        # Nivel 8: Cache lookup (bypass O(1))
-        cache_hit = self.cache.lookup(intent, intent.raw_code, intent.language)
-        if cache_hit:
-            elapsed = int((time.time() - start_time) * 1000)
-            self._analysis.log_request(intent, "CACHED", elapsed, cache_hit=True)
-            return ResponseSynthesizer.cached(
-                code=cache_hit["data"].get("code", ""),
-                cache_source=cache_hit["source"],
-                elapsed_ms=elapsed,
-                hash_val=cache_hit["data"].get("h", "N/A"),
-                cache_hits=cache_hit["hits"],
-                ast_analysis=ast_analysis,
-            )
-
-        # Nivel 2: Macro Router (MoE Clasificador con firmas topologicas)
-        routing = self.router.route(intent)
-
-        # Nivel 4: APA Planner (Z3 + MCTS REALES)
-        plan = self.planner.generate_plan(routing)
-
-        # ============================================================
-        #  PROTOCOLO ABORTIVO: Auto-subdivision cuando solver timeout
-        # ============================================================
-        if plan.solver_status == "TIMEOUT_SUBDIVIDE_REQUIRED":
-            return await self._abortive.handle_abortive_protocol(
-                intent, routing, plan, ast_analysis, start_time
-            )
-
-        # Nivel 5: Ejecutar pasos del plan via StepDispatcher
-        code = intent.raw_code or ""
-        explanations = []
-        lang = intent.language
-
-        result_code, code, explanations = await self._step_dispatcher.execute_plan_steps(
-            plan, intent, code, explanations, lang, ast_analysis,
+        return await self._dag_orchestrator.execute(
+            msg=msg, client_id=client_id, **kwargs,
         )
 
-        final_code = result_code if result_code else code
+    # ── Attribute proxy for backward compatibility ──────────────
+    # Any attribute not found on TitanOrchestrator is looked up on
+    # the underlying DAGOrchestrator. This ensures that code like
+    # `orchestrator.router`, `orchestrator.cache`, etc. still works.
 
-        # ============================================================
-        #  VEREDICTO (v17) - La IA solo dice SÍ o NO
-        # ============================================================
-        # En vez de dejar que la IA decida sobre el código,
-        # usamos el VerdictEngine que sigue este flujo:
-        #   1. DeterministicPipeline evalúa sin IA
-        #   2. EvidenceCollector recolecta evidencia
-        #   3. ConsensusResolver decide por consenso
-        #   4. Si empate → Qwen arbitra: ¿SÍ o NO?
-        verdict_result = self._verdict_engine.verdict(
-            text=msg,
-            code=final_code,
-            language=lang,
-            question="Should this code transformation be approved?",
-            context={
-                "operation": intent.op,
-                "goal": intent.goal,
-                "route": routing.route,
-                "solver_status": plan.solver_status,
-            },
-        )
+    def __getattr__(self, name: str) -> Any:
+        """Proxy unknown attributes to the underlying DAGOrchestrator."""
+        if name.startswith('_') or name == '_dag_orchestrator':
+            raise AttributeError(name)
+        dag = object.__getattribute__(self, '_dag_orchestrator')
+        return getattr(dag, name)
 
-        # Nivel 7 (Snapshot) -> Nivel 6 (Sandbox Trial) -> Nivel 7 (Commit/Rollback)
-        sandbox_workspace = self._isolation_manager.create_workspace(
-            ttl_seconds=max(self.sandbox.timeout_seconds * SANDBOX_TTL_MULTIPLIER, SANDBOX_TTL_MIN)
-        )
-        p_dir = str(get_projects_dir())
-        self.ledger.snapshot(intent.target, p_dir, workspace=sandbox_workspace)
-
-        trial = await self.sandbox.validate_code(final_code, lang, intent.target)
-
-        # ============================================================
-        #  DECISIÓN FINAL: Veredicto + Sandbox
-        # ============================================================
-        # Si el veredicto es NO o el sandbox falla → ROLLBACK
-        # Si el veredicto es YES y sandbox pasa → COMMIT
-        # Principio de precaución: en caso de duda, NO
-
-        if verdict_result.verdict.value == "YES" and trial.status == "PASS" and final_code:
-            # APPROVED: Veredicto YES + Sandbox PASS
-            node = self.ledger.commit(intent.target, final_code, p_dir,
-                                       workspace=sandbox_workspace)
-            try:
-                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
-            except Exception as e:
-                logger.debug("Orchestrator: Failed to release workspace: %s", e)
-            self.cache.save(intent, "PROVEN",
-                          {"h": node.hash_sha256[:8], "code": final_code},
-                          final_code, lang)
-            elapsed = int((time.time() - start_time) * 1000)
-            self._analysis.log_request(intent, "SUCCESS", elapsed,
-                            solver_status=plan.solver_status,
-                            mcts_sims=plan.mcts_simulations)
-
-            # SmartMemory: Save successful interaction (learning)
-            importance = SmartMemory.compute_importance(
-                msg, intent.op, intent.goal, success=True, response_length=len(final_code))
-            self._memory.add_working(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
-            self._memory.save_to_cache(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
-
-            return ResponseSynthesizer.success(
-                code=final_code,
-                hash_val=node.hash_sha256[:12],
-                elapsed_ms=elapsed,
-                route=routing.route,
-                criticality=routing.criticality,
-                solver_status=plan.solver_status,
-                solver_proof=plan.solver_proof,
-                mcts_simulations=plan.mcts_simulations,
-                mcts_depth_reached=plan.mcts_depth_reached,
-                ast_analysis=ast_analysis,
-                explanations=explanations,
-                warnings=trial.warnings,
-                metrics=trial.metrics,
-                paths_explored=trial.paths_explored,
-                paths_pruned=trial.paths_pruned,
-                verdict=verdict_result.verdict.value,
-                verdict_source=verdict_result.source,
-                verdict_llm_used=verdict_result.llm_used,
-                verdict_evidence=verdict_result.evidence_summary,
-                mini_ai_stats=self._ai.stats,
-                semantic_stats=self._semantic.stats,
-                memory_stats=self._memory.stats,
-                verdict_engine_stats=self._verdict_engine.stats,
-            )
-        elif verdict_result.verdict.value == "NO":
-            # REJECTED: Veredicto NO - No necesita sandbox
-            self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
-            try:
-                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
-            except Exception as e:
-                logger.debug("Orchestrator: Failed to release workspace on NO: %s", e)
-            elapsed = int((time.time() - start_time) * 1000)
-            self._analysis.log_request(intent, "VERDICT_NO", elapsed,
-                            solver_status=plan.solver_status)
-
-            return ResponseSynthesizer.rejected(
-                code=final_code,
-                elapsed_ms=elapsed,
-                route=routing.route,
-                criticality=routing.criticality,
-                solver_status=plan.solver_status,
-                ast_analysis=ast_analysis,
-                explanations=explanations,
-                verdict="NO",
-                verdict_source=verdict_result.source,
-                verdict_llm_used=verdict_result.llm_used,
-                verdict_evidence=verdict_result.evidence_summary,
-            )
-        elif trial.status.startswith("FAIL") and final_code:
-            # Sandbox FAIL - Rollback
-            self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
-            try:
-                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
-            except Exception as e:
-                logger.debug("Orchestrator: Failed to release workspace: %s", e)
-            elapsed = int((time.time() - start_time) * 1000)
-            self._analysis.log_request(intent, "ROLLBACK", elapsed,
-                            solver_status=plan.solver_status)
-
-            # Si fallo por K-Path, devolver Razonamiento Parcial
-            if trial.status == "FAIL_K_PATH":
-                return self._partial_reasoning.build_partial_reasoning_response(
-                    intent, routing, plan, ast_analysis, trial, start_time
-                )
-
-            return ResponseSynthesizer.rollback(
-                code=final_code,
-                error_msg=trial.error_message,
-                elapsed_ms=elapsed,
-                route=routing.route,
-                criticality=routing.criticality,
-                solver_status=plan.solver_status,
-                ast_analysis=ast_analysis,
-                explanations=explanations,
-                warnings=trial.warnings,
-                paths_explored=trial.paths_explored,
-                paths_pruned=trial.paths_pruned,
-                verdict=verdict_result.verdict.value,
-                verdict_source=verdict_result.source,
-                verdict_llm_used=verdict_result.llm_used,
-            )
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Proxy attribute writes to the underlying DAGOrchestrator
+        for DAG-internal attributes, keep on self for facade attributes."""
+        if name in ('_dag_orchestrator', '_memory', '_semantic', '_ai',
+                     '_model_mgr', '_agent_runner', '_surgical_agent',
+                     '_conversation_mgr', '_verdict_engine'):
+            object.__setattr__(self, name, value)
         else:
-            # NO_OP path
             try:
-                self._isolation_manager.release_workspace(sandbox_workspace.sandbox_id)
-            except Exception as e:
-                logger.debug("Orchestrator: Failed to release workspace on NO_OP: %s", e)
+                dag = object.__getattribute__(self, '_dag_orchestrator')
+                setattr(dag, name, value)
+            except AttributeError:
+                object.__setattr__(self, name, value)
 
-            elapsed = int((time.time() - start_time) * 1000)
-            self._analysis.log_request(intent, "NO_OP", elapsed)
+    # ── Public API delegation ───────────────────────────────────
 
-            # Save to SmartMemory even on NO_OP (learning what doesn't work)
-            self._memory.add_working(msg, "NO_OP", intent.op, intent.goal, importance=0.2)
+    def set_client_id(self, client_id: str) -> None:
+        """Set the client_id for multi-client isolation."""
+        self._dag_orchestrator.set_client_id(client_id)
 
-            return ResponseSynthesizer.no_op(
-                elapsed_ms=elapsed,
-                route=routing.route,
-                criticality=routing.criticality,
-                solver_status=plan.solver_status,
-                ast_analysis=ast_analysis,
-                explanations=explanations,
-                verdict=verdict_result.verdict.value,
-                verdict_source=verdict_result.source,
-            )
+    def set_tenant_context(self, tenant_ctx) -> None:
+        """Set the TenantContext for multi-tenant isolation."""
+        self._dag_orchestrator.set_tenant_context(tenant_ctx)
+
+    async def get_system_status(self) -> Dict[str, Any]:
+        """Get complete system status."""
+        return await self._dag_orchestrator.get_system_status()
+
+    async def get_intelligence_status(self) -> Dict[str, Any]:
+        """Get intelligence subsystem status."""
+        return await self._dag_orchestrator.get_intelligence_status()

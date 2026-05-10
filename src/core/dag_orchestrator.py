@@ -1,16 +1,25 @@
 """
-TITAN OMNISCALE X - TitanAgent (F1) + DAG Orchestrator v16
+dag_orchestrator — Thin facade re-exporting DAGOrchestrator and DAG components.
 
-Thin facade: all implementation lives in src.core.dag_parts sub-modules.
-This module re-exports the public API for backward compatibility.
+This module exists for backward compatibility:
+    from src.core.dag_orchestrator import DAGOrchestrator
 
-Sub-modules:
+All implementation lives in src.core.dag_parts sub-modules:
   - dag_parts.definition:  DAGNode dataclass, PIPELINE_DAG, constants
   - dag_parts.titan_agent: TitanAgent class (F1 meta-router)
-  - dag_parts.node_executors:  NodeExecutorsMixin (first 10 _exec_* methods)
+  - dag_parts.node_executors:  NodeExecutorsMixin (first 12 _exec_* methods)
   - dag_parts.node_executors2: NodeExecutors2Mixin (remaining 9 _exec_* methods)
   - dag_parts.corrections: CorrectionsMixin (_apply_f5_corrections, generate_fractal_app)
   - dag_parts.orchestrator:  DAGOrchestrator class (inherits all mixins)
+
+Usage:
+    # Primary orchestrator (no VerdictEngine):
+    orch = DAGOrchestrator()
+
+    # With VerdictEngine (v17 verdict arbitration):
+    from src.core.verdict_engine_module import VerdictEngine
+    verdict = VerdictEngine(mini_ai=ai, semantic_engine=se, smart_memory=mem)
+    orch = DAGOrchestrator(verdict_engine=verdict)
 """
 
 from src.core.dag_parts.definition import (
