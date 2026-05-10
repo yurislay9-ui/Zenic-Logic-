@@ -81,11 +81,13 @@ class APAPlanner(
 
         # Skip Z3+MCTS when:
         # 1. Criticality is low_crit or standard (already skips SOLVER_VERIFY in DAG)
-        # 2. z3_mcts_enabled is False (config flag, default on ARM)
-        # 3. TITAN_SKIP_SOLVER env var is set
+        # 2. z3_mcts_enabled is False (config flag, default on ARM) — BUT NOT for high_crit
+        #    when Z3 is importable (HAS_Z3=True). High-crit requests always get formal
+        #    verification if the solver library is available, regardless of config flag.
+        # 3. TITAN_SKIP_SOLVER env var is set (explicit override, even for high_crit)
         should_skip_solver_mcts = (
             crit_path in ("low_crit", "standard")
-            or not self.z3_mcts_enabled
+            or (not self.z3_mcts_enabled and not (crit_path == "high_crit" and HAS_Z3))
             or skip_solver
         )
 

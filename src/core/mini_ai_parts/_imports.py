@@ -24,7 +24,7 @@ MAX_TOKENS_CODE_GENERATE = 1500   # Separate limit for full code generation (was
 MAX_TOKENS_EXPLAIN = 200
 MAX_TOKENS_SUBTASK = 200
 
-LLM_TIMEOUT_S = float(os.environ.get("TITAN_LLM_TIMEOUT_S", "120.0"))  # ARM needs 120s (was 60s, still not enough for Qwen3 on ARM)
+LLM_TIMEOUT_S = float(os.environ.get("TITAN_LLM_TIMEOUT_S", "45.0"))  # ARM: 45s per call (was 120s — caused 207s total latency with 5+ sequential agents)
 N_CTX = 2048                    # Context window
 N_THREADS = int(os.environ.get("TITAN_LLM_THREADS", "4"))  # CPU threads (configurable for ARM/low-power)
 TEMPERATURE = 0.1               # Low temperature = more deterministic

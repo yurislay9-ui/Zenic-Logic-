@@ -14,8 +14,10 @@ import logging
 # Disable ONNX Runtime thread affinity BEFORE any onnxruntime import.
 # On ARM/Termux/proot-distro, thread affinity causes:
 #   "pthread_setaffinity_np failed ... error code: 22 Invalid argument"
-# Setting this env var must happen before onnxruntime is first loaded.
+# Setting these env vars must happen before onnxruntime is first loaded.
 os.environ.setdefault("ORT_DISABLE_THREAD_AFFINITY", "1")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")   # Hide GPU from ORT (no GPU on ARM)
+os.environ.setdefault("ORT_DEVICE", "CPU")           # Force CPU-only mode
 
 from ._imports import EMBEDDING_MODEL, EMBEDDING_DIM, INTENT_PROTOTYPES, GOAL_PROTOTYPES, _get_numpy, HAS_NUMPY, logger
 

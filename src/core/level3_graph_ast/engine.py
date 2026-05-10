@@ -191,7 +191,9 @@ class GraphASTEngine:
                         "complexity": 0, "connections": "[]",
                     })
         except SyntaxError as e:
-            logging.getLogger(__name__).warning("Syntax error in %s: %s", file_path, e)
+            # Expected for non-Python code (JavaScript, HTML, etc.) — use debug level
+            # to avoid log spam when the AST engine receives mixed-language content.
+            logging.getLogger(__name__).debug("Syntax error in %s: %s", file_path, e)
         return nodes
 
     def _parse_regex(self, code, file_path, language):

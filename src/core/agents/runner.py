@@ -85,7 +85,7 @@ T = TypeVar('T')
 # Límites de seguridad para llamadas al LLM
 MAX_TOKENS_AGENT = 600          # Max tokens por llamada de agente
 MAX_TOKENS_CODE_GENERATE = 1500  # Max tokens para generación de código (was unused, now active)
-AGENT_TIMEOUT_S = 60.0          # Timeout por llamada (was 10s, must be >= LLM_TIMEOUT_S for ARM)
+AGENT_TIMEOUT_S = 50.0          # Timeout por llamada (was 60s, reduced to match LLM_TIMEOUT_S=45s + margin)
 MAX_RETRIES = 1                 # Reintentos antes de fallback
 TEMPERATURE_AGENT = 0.15        # Temperatura baja = más determinista
 
