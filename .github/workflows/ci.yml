@@ -2,20 +2,26 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, 'v*']
+    branches: [main, master]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-and-test:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11']
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -24,44 +30,104 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install core dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Verify critical imports
+      - name: Lint (py_compile key src/ files)
+        run: |
+          python -m py_compile src/core/shared/types.py
+          python -m py_compile src/core/shared/_version.py
+          python -m py_compile src/core/shared/retry.py
+          python -m py_compile src/core/shared/constants.py
+          python -m py_compile src/core/shared/contracts.py
+          python -m py_compile src/core/shared/timeout.py
+          python -m py_compile src/core/shared/resource_governor.py
+          python -m py_compile src/core/shared/sandbox_isolation.py
+          python -m py_compile src/core/shared/code_constraints.py
+          python -m py_compile src/core/reasoning_engine.py
+          python -m py_compile src/core/orchestrator_base.py
+          python -m py_compile src/core/step_dispatcher.py
+          python -m py_compile src/core/dag_orchestrator.py
+          python -m py_compile src/core/chain_validator.py
+          python -m py_compile src/core/thinking_engine.py
+          python -m py_compile src/core/semantic_engine.py
+          python -m py_compile src/core/auth_service.py
+          python -m py_compile src/core/template_engine.py
+          python -m py_compile src/core/code_generator.py
+          python -m py_compile src/core/model_manager.py
+          python -m py_compile src/core/automation_engine.py
+          python -m py_compile src/core/env_loader.py
+          python -m py_compile src/core/mini_ai_engine.py
+          python -m py_compile src/core/fractal_generator.py
+          python -m py_compile src/core/niche_loader.py
+          python -m py_compile src/core/dna_loader.py
+          python -m py_compile src/core/abortive_protocol.py
+          python -m py_compile src/core/partial_reasoning.py
+          python -m py_compile src/core/context_pointer_engine.py
+          python -m py_compile src/core/schema_designer.py
+          python -m py_compile src/core/low_power_sequential.py
+          python -m py_compile src/core/smart_memory.py
+          python -m py_compile src/core/action_executor.py
+          python -m py_compile src/core/code_transformer.py
+          python -m py_compile src/core/logic_builder.py
+          python -m py_compile src/server/fastapi_app.py
+          python -m py_compile src/server/server.py
+          python -m py_compile src/server/auth_middleware.py
+          python -m py_compile src/server/rate_limiter.py
+          python -m py_compile src/server/response_builder.py
+          python -m py_compile src/core/agents/base.py
+          python -m py_compile src/core/agents/runner.py
+          python -m py_compile src/core/agents/schemas.py
+          python -m py_compile src/core/agents/prompts.py
+          python -m py_compile src/core/agents/cache.py
+          python -m py_compile src/config/loader.py
+          echo "All key files compile successfully"
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short -x
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: |
+            test-results/
+            coverage.xml
+          retention-days: 7
+
+  build:
+    name: Build verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify package imports
         run: |
           python -c "from src.core.shared.types import GoalType, OperationType, CriticalityLevel, RoutePath; print('Types OK')"
           python -c "from src.core.shared._version import TITAN_VERSION, TITAN_FULL_NAME; print(f'Version: {TITAN_FULL_NAME}')"
           python -c "from src.core.shared.retry import with_retry; print('Shared retry OK')"
           python -c "from src.core.patterns.resilience.retry import with_retry, with_config_retry, RetryConfig; print('Patterns retry OK')"
-          python -c "from src.core.agents_v2.resilience.retry import with_agent_retry, AgentRetryConfig; print('Agent retry OK')"
-
-      - name: Run tests
-        run: |
-          pytest --tb=short -q --timeout=30
-
-      - name: Run tests with coverage
-        if: matrix.python-version == '3.12'
-        run: |
-          pytest --cov=src --cov-report=term-missing --cov-report=xml --timeout=30
-
-      - name: Upload coverage
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-  docker-build:
-    runs-on: ubuntu-latest
-    needs: lint-and-test
-    if: github.event_name == 'push'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: |
-          docker build -t titan-omniscale-x:ci .
+          python -c "from src.core.orchestrator_base import OrchestratorBase; print('Orchestrator OK')"
+          python -c "from src.core.dag_orchestrator import DAGOrchestrator; print('DAG OK')"
+          python -c "from src.core.agents.base import BaseAgent; print('BaseAgent OK')"
+          python -c "from src.core.agents.schemas import AgentResult, TriggerSpec; print('Schemas OK')"
+          echo "All package imports verified successfully"

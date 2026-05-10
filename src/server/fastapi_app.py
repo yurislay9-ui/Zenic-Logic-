@@ -868,7 +868,19 @@ def create_app(
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
-        """OpenAI-compatible chat completions endpoint with SSE streaming for Open Design."""
+        """OpenAI-compatible chat completions endpoint with SSE streaming for Open Design.
+
+        Supports standard OpenAI parameters:
+          - messages: List of message dicts with role/content
+          - model: Model name (accepted but ignored — always uses titan-omniscale-x)
+          - temperature: Sampling temperature (0.0-2.0, default: 0.15)
+          - max_tokens: Max completion tokens (default: 600)
+          - stream: If true, returns SSE chunks
+          - n: Number of completions (only n=1 supported)
+          - stop: Stop sequences (not supported, accepted for compat)
+
+        Qwen3-specific: Strips `/no_think` suffix from user messages.
+        """
         try:
             body = await request.json()
         except Exception:
@@ -878,9 +890,24 @@ def create_app(
         if not messages:
             raise HTTPException(status_code=400, detail="No messages provided")
 
+        # ── Extract OpenAI parameters ──
+        temperature = body.get("temperature", 0.15)
+        max_tokens = body.get("max_tokens", 600)
+        # Clamp temperature to safe range
+        if isinstance(temperature, (int, float)):
+            temperature = max(0.0, min(2.0, float(temperature)))
+        else:
+            temperature = 0.15
+        if isinstance(max_tokens, int):
+            max_tokens = max(1, min(4096, max_tokens))
+        else:
+            max_tokens = 600
+
+        # ── Extract user message (last user message) ──
         user_msg = ""
+        system_msg = ""
         for msg in reversed(messages):
-            if msg.get("role") == "user":
+            if msg.get("role") == "user" and not user_msg:
                 raw_content = msg.get("content", "")
                 # Handle OpenAI multimodal content (list of parts or string)
                 if isinstance(raw_content, list):
@@ -895,10 +922,22 @@ def create_app(
                     user_msg = raw_content
                 else:
                     user_msg = str(raw_content) if raw_content else ""
-                break
+            elif msg.get("role") == "system" and not system_msg:
+                system_msg = msg.get("content", "")
+
+        # Qwen3-specific: strip /no_think suffix from user message
+        if user_msg.endswith("/no_think"):
+            user_msg = user_msg[:-len("/no_think")].rstrip()
 
         if not user_msg:
             raise HTTPException(status_code=400, detail="No user message found")
+
+        # ── Build enriched message for orchestrator ──
+        # If a system message is present, prepend it to the user message
+        # so the pipeline has full context (TitanOrchestrator only takes msg: str)
+        enriched_msg = user_msg
+        if system_msg:
+            enriched_msg = f"[System: {system_msg}]\n{user_msg}"
 
         # ── Open Design Detection ──
         detection_result = None
@@ -920,6 +959,7 @@ def create_app(
                 detection_result = None
 
         # Execute with retry + circuit breaker (non-blocking via run_in_executor)
+        # Pass enriched_msg (includes system message if present) and OpenAI params
         try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
@@ -929,7 +969,7 @@ def create_app(
                 _run_orchestrator,
                 _ORCH_RETRY,
                 orchestrator,
-                user_msg,
+                enriched_msg,
             )
         except CircuitOpenError as e:
             raise HTTPException(

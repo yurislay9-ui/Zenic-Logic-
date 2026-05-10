@@ -17,6 +17,23 @@ Uso principal:
 
 Antes (v16): La IA hacía 7 tareas + 6 agentes + 3 motores la llamaban
 Ahora (v17): La IA solo responde SÍ/NO cuando hay empate en el consenso
+
+Thin facade: all implementation lives in verdict_parts sub-modules.
+This module re-exports the public API for backward compatibility.
+
+Sub-modules:
+  - verdict_parts.types:                 Verdict, Evidence, EvidenceType, VerdictInput/Output dataclasses, VerdictConfidence
+  - verdict_parts.evidence_collector:    EvidenceCollector (evidence gathering for/against)
+  - verdict_parts.consensus_resolver:    ConsensusResolver (multi-signal consensus without LLM)
+  - verdict_parts.deterministic_pipeline: DeterministicPipeline (classify, extract, generate, validate)
+  - verdict_parts.verdict_engine:        VerdictEngine (LLM arbitration when consensus fails)
+  - verdict_parts.resilience:            Circuit Breaker, Retry, Health Monitor, Auditor patterns
+
+Public API:
+  Classes:    Verdict, Evidence, EvidenceType, VerdictInput, VerdictOutput,
+              ConsensusResult, DeterministicResult, VerdictConfidence,
+              EvidenceCollector, ConsensusResolver, DeterministicPipeline,
+              VerdictEngine
 """
 
 from .verdict_parts import (

@@ -147,8 +147,33 @@ class TestAgentRunnerLLMFlow:
         # With max_attempts=1, should call LLM exactly once
         assert mini_ai._call_llm.call_count == 1
 
+    def test_validate_output_retries_with_custom_max_attempts(self):
+        """Should retry N times when custom RetryConfig has max_attempts=N."""
+        from src.core.patterns.resilience import RetryConfig
+
+        agent = StubAgent(name="test")
+        agent.validate_output = MagicMock(return_value=False)
+
+        mini_ai = MagicMock()
+        mini_ai.is_loaded = True
+        mini_ai._call_llm.return_value = "response"
+
+        # Custom RetryConfig with 3 attempts — verifies retry mechanism works
+        test_retry = RetryConfig(max_attempts=3, base_delay=0.01, jitter=False)
+        runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False, retry_config=test_retry)
+        result = runner.run(agent, "input")
+        assert result.source == "fallback"
+        # With max_attempts=3, should call LLM exactly 3 times
+        assert mini_ai._call_llm.call_count == 3
+
     def test_validate_output_retries_with_default_config(self):
-        """Should retry 3 times with default RetryConfig when validate_output fails."""
+        """Should retry with default RetryConfig when validate_output fails.
+
+        DEFAULT_RETRY_CONFIG uses max_attempts=1 (ARM-optimized: no retries
+        by default). This test verifies the default behavior — a single
+        attempt then fallback. For multi-retry behavior, pass a custom
+        RetryConfig with higher max_attempts (see test above).
+        """
         agent = StubAgent(name="test")
         agent.validate_output = MagicMock(return_value=False)
 
@@ -159,8 +184,8 @@ class TestAgentRunnerLLMFlow:
         runner = self._fresh_runner(mini_ai=mini_ai, enable_cache=False)
         result = runner.run(agent, "input")
         assert result.source == "fallback"
-        # Default RetryConfig has max_attempts=3
-        assert mini_ai._call_llm.call_count == 3
+        # Default RetryConfig has max_attempts=1 (ARM-optimized)
+        assert mini_ai._call_llm.call_count == 1
 
     def test_llm_exception_retries_then_falls_back(self):
         """Should retry on LLM exception, then fallback."""

@@ -123,8 +123,8 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
     "VALIDATE": DAGNode(
         name="VALIDATE",
         exec_method="_exec_validate",
-        transitions={"clean": "SANDBOX", "issues_found": "EXECUTE_STEPS"},
-        default_next="SANDBOX",
+        transitions={"clean": "VERDICT", "issues_found": "EXECUTE_STEPS"},
+        default_next="VERDICT",
         max_retries=3,  # F5: Bucle de corrección secuencial (máx 3 ciclos)
     ),
     "ABORTIVE": DAGNode(
@@ -132,6 +132,17 @@ PIPELINE_DAG: Dict[str, DAGNode] = {
         exec_method="_exec_abortive",
         transitions={"*": "DONE"},
         default_next="DONE",
+    ),
+    "VERDICT": DAGNode(
+        name="VERDICT",
+        exec_method="_exec_verdict",
+        transitions={
+            "YES": "SANDBOX",
+            "NO": "LEDGER_ROLLBACK",
+            "skip": "SANDBOX",  # When VerdictEngine is not available, pass through
+        },
+        default_next="SANDBOX",
+        max_retries=1,
     ),
     "SANDBOX": DAGNode(
         name="SANDBOX",

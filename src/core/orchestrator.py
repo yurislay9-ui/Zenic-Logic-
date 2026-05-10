@@ -38,6 +38,7 @@ from typing import Dict, Any, List, Optional
 from src.config.loader import load_settings
 from src.core.shared.db_initializer import get_projects_dir
 from src.core.shared.contracts import OperationType, GoalType, RoutePath
+from src.core.shared.response_synthesizer import ResponseSynthesizer
 
 # Base class with shared initialization, public API, backward-compat
 from src.core.orchestrator_base import BaseOrchestrator
@@ -65,6 +66,22 @@ class TitanOrchestrator(BaseOrchestrator):
     """
     Orquestador v17 con Arquitectura de Veredicto.
 
+    DEPRECATED: This orchestrator is being unified with DAGOrchestrator.
+    DAGOrchestrator now supports an optional VerdictEngine parameter.
+    When verdict_engine is provided, the VERDICT node in the DAG pipeline
+    arbitrates code before sandbox validation (same v17 behavior).
+
+    Migration guide:
+        # Before (v17):
+        orch = TitanOrchestrator()
+        # After (unified):
+        from src.core.verdict_engine_module import VerdictEngine
+        verdict = VerdictEngine(mini_ai=ai, semantic_engine=se, smart_memory=mem)
+        orch = DAGOrchestrator(verdict_engine=verdict)
+
+    This class is kept for backward compatibility. It now delegates
+    to DAGOrchestrator with VerdictEngine enabled.
+
     CAMBIO PRINCIPAL: La IA ya NO hace tareas. Solo arbitra.
 
     Flujo de decisión:
@@ -85,6 +102,14 @@ class TitanOrchestrator(BaseOrchestrator):
     """
 
     def __init__(self) -> None:
+        import warnings
+        warnings.warn(
+            "TitanOrchestrator is deprecated. Use DAGOrchestrator(verdict_engine=...) instead. "
+            "See TitanOrchestrator docstring for migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         # 1. Common state
         settings = load_settings()
         self._init_common_state()
@@ -105,12 +130,17 @@ class TitanOrchestrator(BaseOrchestrator):
             smart_memory=memory,
         )
 
+        # 3c. Internal DAGOrchestrator for delegation
+        # TitanOrchestrator now delegates pipeline execution to DAGOrchestrator
+        # with its VerdictEngine, achieving architectural unification.
+        self._dag_orchestrator = None  # Lazy init to avoid circular deps
+
         # Log AI status
         sem_status = "ACTIVE" if self._semantic.is_loaded else "fallback"
         ai_status = "ACTIVE" if self._ai.is_loaded else "fallback"
         verdict_status = "READY" if ai.is_loaded else "fallback_only"
         logger.info(
-            f"v17 Verdict Architecture: "
+            f"v17 Verdict Architecture (DEPRECATED → DAGOrchestrator): "
             f"SemanticEngine={sem_status} | "
             f"MiniAI(Qwen)={ai_status} (verdict-only) | "
             f"SmartMemory=ready | "
@@ -154,14 +184,11 @@ class TitanOrchestrator(BaseOrchestrator):
             elapsed = int((time.time() - start_time) * 1000)
             logger.info(f"SmartMemory: Cache hit ({cached['source']}) for: {msg[:50]}")
             self._analysis.log_request(None, "CACHED", elapsed, cache_hit=True)
-            return {
-                "status": "CACHED",
-                "code": cached.get("response", ""),
-                "hash": "mem",
-                "error": "",
-                "cache_source": cached["source"],
-                "processing_time_ms": elapsed,
-            }
+            return ResponseSynthesizer.cached(
+                code=cached.get("response", ""),
+                cache_source=cached["source"],
+                elapsed_ms=elapsed,
+            )
 
         # ============================================================
         #  INTENT CLASSIFICATION - Deterministic (sin IA)
@@ -192,16 +219,14 @@ class TitanOrchestrator(BaseOrchestrator):
         if cache_hit:
             elapsed = int((time.time() - start_time) * 1000)
             self._analysis.log_request(intent, "CACHED", elapsed, cache_hit=True)
-            return {
-                "status": "CACHED",
-                "code": cache_hit["data"].get("code", ""),
-                "hash": cache_hit["data"].get("h", "N/A"),
-                "error": "",
-                "cache_source": cache_hit["source"],
-                "cache_hits": cache_hit["hits"],
-                "processing_time_ms": elapsed,
-                "ast_analysis": ast_analysis,
-            }
+            return ResponseSynthesizer.cached(
+                code=cache_hit["data"].get("code", ""),
+                cache_source=cache_hit["source"],
+                elapsed_ms=elapsed,
+                hash_val=cache_hit["data"].get("h", "N/A"),
+                cache_hits=cache_hit["hits"],
+                ast_analysis=ast_analysis,
+            )
 
         # Nivel 2: Macro Router (MoE Clasificador con firmas topologicas)
         routing = self.router.route(intent)
@@ -288,29 +313,31 @@ class TitanOrchestrator(BaseOrchestrator):
             self._memory.add_working(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
             self._memory.save_to_cache(msg, final_code[:MAX_MEMORY_SNIPPET_LEN], intent.op, intent.goal, importance)
 
-            return {
-                "status": "SUCCESS", "code": final_code,
-                "hash": node.hash_sha256[:12], "error": "",
-                "processing_time_ms": elapsed, "route": routing.route,
-                "criticality": routing.criticality,
-                "solver_status": plan.solver_status,
-                "solver_proof": plan.solver_proof,
-                "mcts_simulations": plan.mcts_simulations,
-                "mcts_depth_reached": plan.mcts_depth_reached,
-                "ast_analysis": ast_analysis,
-                "explanations": explanations,
-                "warnings": trial.warnings, "metrics": trial.metrics,
-                "paths_explored": trial.paths_explored,
-                "paths_pruned": trial.paths_pruned,
-                "verdict": verdict_result.verdict.value,
-                "verdict_source": verdict_result.source,
-                "verdict_llm_used": verdict_result.llm_used,
-                "verdict_evidence": verdict_result.evidence_summary,
-                "mini_ai_stats": self._ai.stats,
-                "verdict_engine_stats": self._verdict_engine.stats,
-                "semantic_stats": self._semantic.stats,
-                "memory_stats": self._memory.stats,
-            }
+            return ResponseSynthesizer.success(
+                code=final_code,
+                hash_val=node.hash_sha256[:12],
+                elapsed_ms=elapsed,
+                route=routing.route,
+                criticality=routing.criticality,
+                solver_status=plan.solver_status,
+                solver_proof=plan.solver_proof,
+                mcts_simulations=plan.mcts_simulations,
+                mcts_depth_reached=plan.mcts_depth_reached,
+                ast_analysis=ast_analysis,
+                explanations=explanations,
+                warnings=trial.warnings,
+                metrics=trial.metrics,
+                paths_explored=trial.paths_explored,
+                paths_pruned=trial.paths_pruned,
+                verdict=verdict_result.verdict.value,
+                verdict_source=verdict_result.source,
+                verdict_llm_used=verdict_result.llm_used,
+                verdict_evidence=verdict_result.evidence_summary,
+                mini_ai_stats=self._ai.stats,
+                semantic_stats=self._semantic.stats,
+                memory_stats=self._memory.stats,
+                verdict_engine_stats=self._verdict_engine.stats,
+            )
         elif verdict_result.verdict.value == "NO":
             # REJECTED: Veredicto NO - No necesita sandbox
             self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
@@ -322,19 +349,19 @@ class TitanOrchestrator(BaseOrchestrator):
             self._analysis.log_request(intent, "VERDICT_NO", elapsed,
                             solver_status=plan.solver_status)
 
-            return {
-                "status": "REJECTED", "code": final_code, "hash": "N/A",
-                "error": f"Verdict: NO (source={verdict_result.source})",
-                "processing_time_ms": elapsed, "route": routing.route,
-                "criticality": routing.criticality,
-                "solver_status": plan.solver_status,
-                "ast_analysis": ast_analysis,
-                "explanations": explanations,
-                "verdict": "NO",
-                "verdict_source": verdict_result.source,
-                "verdict_llm_used": verdict_result.llm_used,
-                "verdict_evidence": verdict_result.evidence_summary,
-            }
+            return ResponseSynthesizer.rejected(
+                code=final_code,
+                elapsed_ms=elapsed,
+                route=routing.route,
+                criticality=routing.criticality,
+                solver_status=plan.solver_status,
+                ast_analysis=ast_analysis,
+                explanations=explanations,
+                verdict="NO",
+                verdict_source=verdict_result.source,
+                verdict_llm_used=verdict_result.llm_used,
+                verdict_evidence=verdict_result.evidence_summary,
+            )
         elif trial.status.startswith("FAIL") and final_code:
             # Sandbox FAIL - Rollback
             self.ledger.rollback(intent.target, p_dir, workspace=sandbox_workspace)
@@ -352,21 +379,22 @@ class TitanOrchestrator(BaseOrchestrator):
                     intent, routing, plan, ast_analysis, trial, start_time
                 )
 
-            return {
-                "status": "ROLLBACK", "code": final_code, "hash": "N/A",
-                "error": trial.error_message,
-                "processing_time_ms": elapsed, "route": routing.route,
-                "criticality": routing.criticality,
-                "solver_status": plan.solver_status,
-                "ast_analysis": ast_analysis,
-                "explanations": explanations,
-                "warnings": trial.warnings,
-                "paths_explored": trial.paths_explored,
-                "paths_pruned": trial.paths_pruned,
-                "verdict": verdict_result.verdict.value,
-                "verdict_source": verdict_result.source,
-                "verdict_llm_used": verdict_result.llm_used,
-            }
+            return ResponseSynthesizer.rollback(
+                code=final_code,
+                error_msg=trial.error_message,
+                elapsed_ms=elapsed,
+                route=routing.route,
+                criticality=routing.criticality,
+                solver_status=plan.solver_status,
+                ast_analysis=ast_analysis,
+                explanations=explanations,
+                warnings=trial.warnings,
+                paths_explored=trial.paths_explored,
+                paths_pruned=trial.paths_pruned,
+                verdict=verdict_result.verdict.value,
+                verdict_source=verdict_result.source,
+                verdict_llm_used=verdict_result.llm_used,
+            )
         else:
             # NO_OP path
             try:
@@ -380,14 +408,13 @@ class TitanOrchestrator(BaseOrchestrator):
             # Save to SmartMemory even on NO_OP (learning what doesn't work)
             self._memory.add_working(msg, "NO_OP", intent.op, intent.goal, importance=0.2)
 
-            return {
-                "status": "NO_OP", "code": "", "hash": "N/A",
-                "error": "No new code generated",
-                "processing_time_ms": elapsed, "route": routing.route,
-                "criticality": routing.criticality,
-                "solver_status": plan.solver_status,
-                "ast_analysis": ast_analysis,
-                "explanations": explanations,
-                "verdict": verdict_result.verdict.value,
-                "verdict_source": verdict_result.source,
-            }
+            return ResponseSynthesizer.no_op(
+                elapsed_ms=elapsed,
+                route=routing.route,
+                criticality=routing.criticality,
+                solver_status=plan.solver_status,
+                ast_analysis=ast_analysis,
+                explanations=explanations,
+                verdict=verdict_result.verdict.value,
+                verdict_source=verdict_result.source,
+            )

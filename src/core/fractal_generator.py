@@ -31,7 +31,19 @@ Restricciones de diseño:
   - Todo tiene fallback determinista
   - Compatible con Android/Termux, 500MB RAM
 
-Facade module — all implementation lives in the fractal_parts sub-package.
+Thin facade: all implementation lives in fractal_parts sub-modules.
+This module re-exports the public API for backward compatibility.
+
+Sub-modules:
+  - fractal_parts.types:       FileBlueprint, FractalSpec, FractalResult dataclasses
+  - fractal_parts.structure:   StructureMixin (Phase 1 — structural generation), PROJECT_TEMPLATES, DEFAULT_TEMPLATE
+  - fractal_parts.skeletons:   SkeletonsMixin (Phase 2 — code skeleton injection)
+  - fractal_parts.fill:        FillMixin (Phase 3 — logic fill-in per function/class)
+  - fractal_parts.generator:   FractalGenerator class (inherits all mixins)
+
+Public API:
+  Classes:    FractalGenerator, FileBlueprint, FractalSpec, FractalResult
+  Constants:  PROJECT_TEMPLATES, DEFAULT_TEMPLATE
 """
 
 from .fractal_parts import (

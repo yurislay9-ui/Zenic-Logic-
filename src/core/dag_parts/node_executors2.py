@@ -133,6 +133,69 @@ class NodeExecutors2Mixin:
         )
         return {**result, "_dag_done": True}
 
+    async def _exec_verdict(self, ctx: Dict) -> str:
+        """Nodo VERDICT: VerdictEngine (v17 architecture) arbitration.
+
+        When VerdictEngine is available, it evaluates the code transformation
+        before the expensive sandbox validation. If the verdict is NO, we skip
+        sandbox entirely and go straight to ROLLBACK, saving time.
+
+        When VerdictEngine is not available (DAGOrchestrator without v17),
+        passes through to SANDBOX (skip mode).
+        """
+        verdict_engine = getattr(self, '_verdict_engine', None)
+        if verdict_engine is None:
+            # No VerdictEngine configured — pass through to sandbox
+            logger.debug("VERDICT: No VerdictEngine, passing through to SANDBOX")
+            return "skip"
+
+        final_code = ctx.get("final_code", "")
+        intent = ctx.get("intent")
+        msg = ctx.get("msg", "")
+        lang = ctx.get("lang", "python")
+        routing = ctx.get("routing")
+        plan = ctx.get("plan")
+
+        # If no code was generated, skip verdict (no need to arbitrate nothing)
+        if not final_code or not final_code.strip():
+            logger.debug("VERDICT: No code to arbitrate, passing through")
+            return "skip"
+
+        # Run VerdictEngine
+        try:
+            verdict_result = verdict_engine.verdict(
+                text=msg,
+                code=final_code,
+                language=lang,
+                question="Should this code transformation be approved?",
+                context={
+                    "operation": intent.op if intent else "",
+                    "goal": intent.goal if intent else "",
+                    "route": routing.route if routing else "",
+                    "solver_status": plan.solver_status if plan else "",
+                },
+            )
+
+            ctx["verdict_result"] = verdict_result
+
+            verdict_value = verdict_result.verdict.value
+            logger.info(
+                "VERDICT: %s (source=%s, llm_used=%s, evidence=%s)",
+                verdict_value, verdict_result.source,
+                verdict_result.llm_used, verdict_result.evidence_summary[:100],
+            )
+
+            if verdict_value == "YES":
+                return "YES"
+            else:
+                # Verdict is NO — skip sandbox, go to rollback
+                logger.warning("VERDICT: REJECTED by VerdictEngine (source=%s)", verdict_result.source)
+                return "NO"
+
+        except Exception as e:
+            logger.error("VERDICT: VerdictEngine failed: %s — falling back to SANDBOX", e)
+            return "skip"
+
     async def _exec_sandbox(self, ctx: Dict) -> str:
         """Nodo SANDBOX: Validación en sandbox aislado.
 

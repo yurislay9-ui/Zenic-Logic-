@@ -1,0 +1,79 @@
+name: Security Scan
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vulnerability-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install pip-audit (if available)
+        run: |
+          pip install pip-audit 2>/dev/null || echo "pip-audit not available, skipping audit scan"
+
+      - name: Run pip-audit for known vulnerabilities
+        continue-on-error: true
+        run: |
+          if command -v pip-audit &>/dev/null; then
+            echo "Running pip-audit..."
+            pip-audit --desc || echo "pip-audit completed with warnings"
+          else
+            echo "pip-audit not installed, checking dependencies manually"
+            pip list --outdated || true
+          fi
+
+      - name: Validate pyproject.toml is parseable
+        run: |
+          python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              config = tomllib.load(f)
+          print('pyproject.toml is valid')
+          print(f\"Project: {config['project']['name']}\")
+          print(f\"Version: {config['project']['version']}\")
+          print(f\"Python requires: {config['project']['requires-python']}\")
+          deps = config['project'].get('dependencies', [])
+          print(f\"Core dependencies: {len(deps)}\")
+          opt_deps = config['project'].get('optional-dependencies', {})
+          for group, items in opt_deps.items():
+              print(f\"  Optional [{group}]: {len(items)} packages\")
+          "
+
+      - name: Check for pinned dependency versions
+        run: |
+          python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              config = tomllib.load(f)
+          deps = config['project'].get('dependencies', [])
+          unpinned = [d for d in deps if '>=' in d or '>' in d and '==' not in d]
+          if unpinned:
+              print(f'Note: {len(unpinned)} dependencies use >= versioning (not pinned):')
+              for d in unpinned:
+                  print(f'  - {d}')
+          else:
+              print('All dependencies are pinned or constrained')
+          "

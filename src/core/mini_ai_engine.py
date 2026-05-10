@@ -53,6 +53,33 @@ Optimizado para:
   - Xiaomi Redmi 12R Pro (12+8GB, MediaTek Dimensity 6100+)
   - Qwen3-0.6B Q4_K_M (378MB, ~25-30 tok/s en ARM)
   - llama-cpp-python con n_ctx=2048, n_threads=4
+
+Thin facade: re-exports from mini_ai_parts and verdict_parts sub-modules.
+This module re-exports the public API for backward compatibility.
+
+Sub-modules (mini_ai_parts):
+  - mini_ai_parts._imports:            Constants (MODEL_DIR, MODEL_PATH, token limits, etc.), IntentResult dataclass
+  - mini_ai_parts._lifecycle:          ModelLifecycleMixin (model load/unload lifecycle)
+  - mini_ai_parts._tasks:              BoundedTasksMixin (7 deterministic bounded tasks)
+  - mini_ai_parts._fallbacks:          FallbackMethodsMixin (fallback methods when LLM unavailable)
+  - mini_ai_parts._verdict_mixin:      VerdictMixin (binary YES/NO verdict via LLM)
+  - mini_ai_parts._generative_mixin:   GenerativeMixin (code and text generation via LLM)
+  - mini_ai_parts._engine:             MiniAIEngine class (inherits all mixins)
+
+Sub-modules (verdict_parts):
+  - verdict_parts.types:                 Verdict, Evidence, EvidenceType, VerdictInput/Output dataclasses
+  - verdict_parts.evidence_collector:    EvidenceCollector (evidence gathering for/against)
+  - verdict_parts.consensus_resolver:    ConsensusResolver (multi-signal consensus without LLM)
+  - verdict_parts.deterministic_pipeline: DeterministicPipeline (classify, extract, generate, validate)
+  - verdict_parts.verdict_engine:        VerdictEngine (LLM arbitration when consensus fails)
+  - verdict_parts.resilience:            Circuit Breaker, Retry, Health Monitor, Auditor patterns
+
+Public API:
+  Classes:    MiniAIEngine, IntentResult, VerdictEngine, Verdict, VerdictOutput
+  Constants:  MODEL_DIR, MODEL_FILENAME, MODEL_PATH,
+              MAX_TOKENS_CLASSIFY, MAX_TOKENS_EXTRACT, MAX_TOKENS_PATTERN,
+              MAX_TOKENS_TEMPLATE, MAX_TOKENS_GENERATE, MAX_TOKENS_EXPLAIN,
+              MAX_TOKENS_SUBTASK, LLM_TIMEOUT_S, N_CTX, N_THREADS, TEMPERATURE
 """
 
 from .mini_ai_parts import *  # noqa: F401,F403

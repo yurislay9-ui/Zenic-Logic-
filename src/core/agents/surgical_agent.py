@@ -26,6 +26,19 @@ Restricciones de diseño:
   - ≤600 tokens por llamada LLM (Qwen3-0.6B)
   - Fallback determinista siempre disponible
   - Compatible con Android/Termux, 500MB RAM
+
+Thin facade: all implementation lives in surgical_agent_parts sub-modules.
+This module re-exports the public API for backward compatibility.
+
+Sub-modules:
+  - surgical_agent_parts._imports:      Keyword maps (OP_KW, GOAL_KW, etc.), IntentInput/IntentOutput/AgentResult dataclasses
+  - surgical_agent_parts._base:         BaseInterfaceMixin (public interface: classify, run)
+  - surgical_agent_parts._cables:       CablesMixin (4-cable classification: cache, semantic, LLM, TF-IDF)
+  - surgical_agent_parts._extractors:   ExtractorsMixin (intent/entity extraction helpers)
+  - surgical_agent_parts._agent:        SurgicalAgent class (inherits all mixins + BaseAgent)
+
+Public API:
+  Classes:    SurgicalAgent
 """
 
 from .surgical_agent_parts import *  # noqa: F401,F403

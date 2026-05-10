@@ -13,6 +13,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from src.config.loader import load_settings
+from src.core.shared.response_synthesizer import ResponseSynthesizer
 from src.core.tenant._context import (
     TenantContext,
     set_current_tenant,
@@ -79,7 +80,7 @@ class DAGOrchestrator(
     - Fractal app generation
     """
 
-    def __init__(self) -> None:
+    def __init__(self, verdict_engine: Any = None) -> None:
         self._pipeline_dag = dict(PIPELINE_DAG)
 
         # 1. Common state
@@ -143,12 +144,18 @@ class DAGOrchestrator(
         # 9. R04: ConversationState manager for multi-turn reference resolution
         self._conversation_mgr = ConversationStateManager()
 
-        # 10. God-level improvements
+        # 10. VerdictEngine (v17 architecture integration)
+        # When provided, the VERDICT node arbitrates code before sandbox.
+        # When None, the VERDICT node passes through (skip mode).
+        self._verdict_engine = verdict_engine
+
+        # 11. God-level improvements
         self._init_god_level_improvements()
 
         # Log status
         sem_s = "LAZY" if not self._model_mgr.semantic_loaded else "ACTIVE"
         ai_s = "LAZY" if not self._model_mgr.ai_loaded else "ACTIVE"
+        verdict_s = "ACTIVE" if self._verdict_engine else "SKIP"
         logger.info(
             f"DAGOrchestrator v16 [HYBRID MODE]: SemanticEngine={sem_s} | "
             f"MiniAI(Qwen)={ai_s} | SmartMemory=ready | "
@@ -156,6 +163,7 @@ class DAGOrchestrator(
             f"ContextAgent(F3)=ready | CriticalityAgent(F4)=ready | "
             f"ValidationAgent(F5)=ready | "
             f"ConversationState(R04)=ready | "
+            f"VerdictEngine(v17)={verdict_s} | "
             f"DAG={len(self._pipeline_dag)} nodes | "
             f"ModelManager=lazy(idle={self._model_mgr._idle_timeout_s}s, budget={self._model_mgr._ram_budget_mb}MB)"
         )
@@ -441,72 +449,14 @@ class DAGOrchestrator(
     # ============================================================
 
     def _build_response(self, ctx: Dict, status: str, elapsed: int) -> Dict:
-        """Construye la respuesta final del pipeline."""
-        trial = ctx.get("trial")
-        merkle_node = ctx.get("merkle_node")
-        routing = ctx.get("routing")
-        plan = ctx.get("plan")
-        crit_output = ctx.get("criticality_output")
+        """Construye la respuesta final del pipeline usando ResponseSynthesizer."""
+        response = ResponseSynthesizer.from_dag_context(ctx, status, elapsed)
 
-        response = {
-            "status": status,
-            "code": ctx.get("final_code", ""),
-            "hash": merkle_node.hash_sha256[:12] if merkle_node else "N/A",
-            "error": trial.error_message if trial and status == "ROLLBACK" else "",
-            "processing_time_ms": elapsed,
-            "route": routing.route if routing else "",
-            "criticality": routing.criticality if routing else "",
-            "criticality_detail": {
-                "level": crit_output.level if crit_output else None,
-                "path": crit_output.path if crit_output else None,
-                "reason": crit_output.reason if crit_output else None,
-                "confidence": crit_output.confidence if crit_output else None,
-                "source": crit_output.source if crit_output else None,
-            } if crit_output else None,
-            "solver_status": plan.solver_status if plan else "",
-            "solver_proof": plan.solver_proof if plan else "",
-            "mcts_simulations": plan.mcts_simulations if plan else 0,
-            "mcts_depth_reached": plan.mcts_depth_reached if plan else 0,
-            "ast_analysis": ctx.get("ast_analysis", {}),
-            "explanations": ctx.get("explanations", []),
-        }
-
-        if trial:
-            response["warnings"] = trial.warnings
-            response["metrics"] = trial.metrics
-            response["paths_explored"] = trial.paths_explored
-            response["paths_pruned"] = trial.paths_pruned
-
+        # Add subsystem stats for SUCCESS responses
         if status == "SUCCESS":
             response["mini_ai_stats"] = self._ai.stats
             response["semantic_stats"] = self._semantic.stats
             response["memory_stats"] = self._memory.stats
-            # Open Design: Include visual bypass info in response
-            od_detection = ctx.get("open_design_detection")
-            if od_detection and od_detection.get("is_visual_request"):
-                response["visual_bypass"] = {
-                    "enabled": True,
-                    "solver_skipped": od_detection.get("bypass_solver", False),
-                    "design_system_preserved": od_detection.get("has_design_system", False),
-                    "signals": od_detection.get("detection_signals", []),
-                }
-            context_output = ctx.get("context_output")
-            if context_output:
-                response["context_metrics"] = {
-                    "entries_used": context_output.entries_used,
-                    "entries_total": context_output.entries_total,
-                    "compression_ratio": context_output.compression_ratio,
-                    "token_budget": context_output.token_budget,
-                    "source": context_output.source,
-                }
-            v_out = ctx.get("validation_output")
-            if v_out:
-                response["validation_metrics"] = {
-                    "risk_score": ctx.get("validation_risk_score", 0.0),
-                    "issues_count": len(ctx.get("validation_issues", [])),
-                    "correction_loops": ctx.get("correction_count", 0),
-                    "source": getattr(v_out, 'source', 'unknown'),
-                }
 
         return response
 

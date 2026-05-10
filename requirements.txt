@@ -1,5 +1,8 @@
+# Auto-generated from pyproject.toml — do not edit independently
+# Source: pyproject.toml [project.dependencies] + [project.optional-dependencies]
+
 # ============================================================
-#  TITAN OMNISCALE X v16 - Core Dependencies
+#  Core Dependencies  (pip install -e .)
 # ============================================================
 
 # Web Framework
@@ -9,16 +12,17 @@ jinja2>=3.1.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
 
-# Database
+# Database (SQLite — always available)
 aiosqlite>=0.19.0
-# Phase 3: PostgreSQL support for production VPS
-# Uncomment for Docker/production deployment:
-# psycopg2-binary>=2.9.9
-# asyncpg>=0.29.0
 
-# AI / NLP
-# llama-cpp-python>=0.3.0  # Qwen3-0.6B - uncomment if model available
+# AI/ML
 numpy>=1.24.0
+
+# Configuration
+pyyaml>=6.0
+
+# Production Server
+gunicorn>=21.2.0
 
 # Scheduling & Async
 apscheduler>=3.10.0
@@ -28,61 +32,61 @@ aiosmtplib>=3.0.0
 # Auth & Security
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.0.0,<4.1.0  # passlib 1.7.4 breaks with bcrypt 4.1+ (no __about__)
+bcrypt>=4.0.0,<4.1.0  # passlib 1.7.4 requires bcrypt <4.1 for __about__
 
-# SSH / Remote Access (scripts/git_push.py, scripts/ssh_wrapper.py)
-# paramiko>=3.4.0  # Only needed for scripts/git_push.py
-
-# Configuration (YAML parsing in src/config/loader.py)
-pyyaml>=6.0
-
-# PDF & Reports
-# weasyprint>=59.0  # Uncomment for PDF generation
-
-# File operations
+# Utilities
 aiofiles>=23.0.0
 
 # ============================================================
-#  Production Dependencies (Phase 3: VPS Deploy)
+#  Optional: PostgreSQL  (pip install -e ".[postgres]")
+#  Not available on Termux/ARM — uncomment for Docker/production
 # ============================================================
 
-# Phase 5: Observability
+# asyncpg>=0.29.0
+# psycopg2-binary>=2.9.9
+
+# ============================================================
+#  Optional: Other  (pip install -e ".[<group>]")
+# ============================================================
+
+# Z3 SMT Solver:  pip install -e ".[z3]"
+# z3-solver>=4.12.0
+
+# Textual TUI:  pip install -e ".[tui]"
+# textual>=2.0.0
+
+# Semantic Embeddings:  pip install -e ".[embeddings]"
+# fastembed>=0.2.0
+
+# Stripe Payments:  pip install -e ".[stripe]"
+# stripe>=7.0.0
+
+# Google Sheets:  pip install -e ".[sheets]"
+# gspread>=5.0.0
+# oauth2client>=4.1.0
+
+# LLM (Qwen3-0.6B):  pip install -e ".[llm]"
+# llama-cpp-python>=0.3.0
+
+# PDF generation:  pip install -e ".[pdf]"
+# weasyprint>=59.0
+
+# ============================================================
+#  Optional: Observability  (pip install -e ".[observability]")
+# ============================================================
+
+# aioredis>=2.0.0
 # opentelemetry-api>=1.20.0
 # opentelemetry-sdk>=1.20.0
 # opentelemetry-exporter-otlp-proto-grpc>=1.20.0
 # prometheus-client>=0.19.0
 
-# WSGI/ASGI Server
-gunicorn>=21.2.0
-
 # ============================================================
-#  Optional Dependencies
-# ============================================================
-
-# Z3 SMT Solver (formal verification)
-# pip install z3-solver>=4.12.0
-
-# Semantic Embeddings (SemanticEngine)
-# pip install fastembed>=0.2.0
-
-# Textual TUI (Terminal UI — reemplazo de Kivy)
-# textual>=2.0.0
-
-# Stripe Payments
-# stripe>=7.0.0
-
-# Phase 5: Security
-# bcrypt pinned above (4.0.x) for passlib compatibility
-
-# Google Sheets Integration
-# gspread>=5.0.0
-# oauth2client>=4.1.0
-
-# ============================================================
-#  Testing Dependencies
+#  Testing Dependencies  (pip install -e ".[dev]")
+#  Source: pyproject.toml [project.optional-dependencies.dev]
 # ============================================================
 
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
-pytest-cov>=4.1.0
+pytest-cov>=4.0.0
 pytest-timeout>=2.1.0
