@@ -1155,6 +1155,83 @@ def create_app(
             logger.error("Niche generation error: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/v1/generate/code")
+    async def generate_code(request: Request):
+        """Generate real functional code from description using CodeAssembler.
+
+        Uses the M1 CodeAssembler + M2 SmartPromptChain to generate
+        REAL functional code (not stubs). Accepts description, optional
+        entities, and returns a complete project with validation.
+
+        Body:
+            description: What to generate (required)
+            project_name: Name for the project (optional)
+            entities: List of entity dicts with name + fields (optional)
+            language: Target language (optional, default: python)
+            strategy: "assembler" | "smart_chain" | "auto" (optional, default: auto)
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        description = body.get("description", "")
+        if not description:
+            raise HTTPException(status_code=400, detail="Missing 'description' field")
+
+        project_name = body.get("project_name", "titan_app")
+        entities = body.get("entities", [])
+        language = body.get("language", "python")
+        strategy = body.get("strategy", "auto")
+
+        try:
+            # Use CodeGenerator with real code generation
+            code_gen = getattr(orchestrator, '_code_gen', None)
+            if not code_gen:
+                raise HTTPException(status_code=503, detail="CodeGenerator not available")
+
+            if strategy == "smart_chain" or (strategy == "auto" and not entities):
+                # M2: SmartPromptChain (fragmented LLM generation)
+                result = code_gen.generate_fragmented(
+                    task_description=description,
+                    language=language,
+                    entity_info=entities[0] if entities else None,
+                )
+                return {
+                    "status": "generated",
+                    "strategy": "smart_chain",
+                    "code": result["code"],
+                    "success": result["success"],
+                    "steps_completed": result["steps_completed"],
+                    "steps_total": result["steps_total"],
+                    "repair_count": result["repair_count"],
+                    "language": language,
+                }
+
+            # M1: CodeAssembler (template-based, always works)
+            result = code_gen.generate_real_code(
+                description=description,
+                niche_plan=None,
+                entities=entities,
+                project_name=project_name,
+            )
+            return {
+                "status": "generated",
+                "strategy": "assembler",
+                "project_name": result.get("project_name", project_name),
+                "total_files": result.get("total_files", 0),
+                "files": {k: v[:200] + "..." if len(v) > 200 else v
+                         for k, v in result.get("files", {}).items()},
+                "validation": result.get("validation", {}),
+                "blocks": result.get("blocks", []),
+                "language": language,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Code generation error: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/v1/design/schema")
     async def design_schema(request: Request):
         """Design a database schema from description. Requires 'schema_design' feature."""

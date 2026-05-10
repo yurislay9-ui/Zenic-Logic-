@@ -216,14 +216,68 @@ class StepDispatcher:
     ):
         """Handle GENERATE_CODE action.
 
-        R2 FIX: Try LLM-based code generation first (via CodeAgent),
-        then fall back to deterministic template generation (CodeGenerator).
-        This hybrid approach produces better code when the LLM is available,
-        while always having a working fallback.
+        Generation strategy (ordered by quality):
+        1. M1: CodeAssembler — real code from templates (always available, deterministic)
+        2. LLM-augmented via CodeAgent — when LLM is loaded
+        3. M2: SmartPromptChain — fragmented generation for small LLMs
+        4. Deterministic template fallback — contextual generation
         """
-        llm_code = None
-        # Try LLM-augmented generation via CodeAgent
-        if (
+        generated_code = None
+        source = "template"
+
+        # ── Strategy 1: M1 CodeAssembler (real code from templates) ──
+        if hasattr(self._orch, '_code_gen') and hasattr(self._orch._code_gen, 'generate_real_code'):
+            try:
+                description = str(intent) if intent else ""
+                entity_info = None
+                # Extract entities from intent if available
+                if hasattr(intent, 'raw_code') and intent.raw_code:
+                    import ast as _ast
+                    try:
+                        tree = _ast.parse(intent.raw_code)
+                        for node in _ast.walk(tree):
+                            if isinstance(node, _ast.ClassDef):
+                                entity_info = entity_info or []
+                                fields = []
+                                for item in node.body:
+                                    if isinstance(item, _ast.AnnAssign) and isinstance(item.target, _ast.Name):
+                                        fields.append({"name": item.target.id, "type": "str"})
+                                entity_info.append({"name": node.name, "fields": fields})
+                    except (SyntaxError, AttributeError):
+                        pass
+
+                real_result = self._orch._code_gen.generate_real_code(
+                    description=description,
+                    niche_plan=None,
+                    entities=entity_info,
+                    project_name=intent.target if hasattr(intent, 'target') else "module",
+                )
+                if real_result and real_result.get("files"):
+                    files = real_result["files"]
+                    # Return the most relevant file
+                    for key in ["blocks/crud_service.py", "blocks/jwt_auth.py", "main.py"]:
+                        if key in files and len(files[key]) > 100:
+                            generated_code = files[key]
+                            source = "assembler"
+                            explanations.append(
+                                f"Code generated for {intent.op} via CodeAssembler "
+                                f"({real_result.get('total_files', 0)} files)"
+                            )
+                            break
+                    if not generated_code:
+                        # Return first substantial file
+                        for key, content in files.items():
+                            if key.endswith(".py") and len(content) > 100:
+                                generated_code = content
+                                source = "assembler"
+                                explanations.append(f"Code generated for {intent.op} via CodeAssembler")
+                                break
+            except Exception as e:
+                import logging as _log
+                _log.getLogger(__name__).debug("CodeAssembler generation failed: %s", e)
+
+        # ── Strategy 2: LLM-augmented via CodeAgent ──
+        if not generated_code and (
             hasattr(self._orch, '_code_agent') and self._orch._code_agent is not None
             and hasattr(self._orch, '_agent_runner') and self._orch._agent_runner is not None
             and hasattr(self._orch, '_ai') and self._orch._ai.is_loaded
@@ -235,21 +289,45 @@ class StepDispatcher:
                     language=lang,
                 )
                 if code_result and code_result.code:
-                    llm_code = code_result.code
+                    generated_code = code_result.code
                     source = getattr(code_result, 'source', 'llm')
                     explanations.append(f"Code generated for {intent.op} via {source}")
             except Exception as e:
                 import logging as _log
                 _log.getLogger(__name__).debug("CodeAgent LLM generation failed: %s", e)
 
-        if llm_code:
-            result_code = llm_code
-        else:
-            # Fallback to deterministic template generation
+        # ── Strategy 3: M2 SmartPromptChain (fragmented for small LLMs) ──
+        if not generated_code and hasattr(self._orch, '_code_gen'):
+            smart_chain = getattr(self._orch._code_gen, '_smart_chain', None)
+            if smart_chain:
+                try:
+                    entity_info = None
+                    chain_result = smart_chain.generate_code(
+                        task_description=str(intent),
+                        language=lang or "python",
+                        entity_info=entity_info,
+                    )
+                    if chain_result and chain_result.success and chain_result.code:
+                        generated_code = chain_result.code
+                        source = "smart_chain"
+                        explanations.append(
+                            f"Code generated for {intent.op} via SmartPromptChain "
+                            f"({chain_result.steps_completed}/{chain_result.steps_total} steps, "
+                            f"{chain_result.repair_count} repairs)"
+                        )
+                except Exception as e:
+                    import logging as _log
+                    _log.getLogger(__name__).debug("SmartPromptChain generation failed: %s", e)
+
+        # ── Strategy 4: Deterministic template fallback ──
+        if not generated_code:
             result_code = self._orch._code_gen.generate_contextual_code(
                 intent, ast_analysis, plan, lang
             )
             explanations.append(f"Code generated for {intent.op} (template fallback)")
+        else:
+            result_code = generated_code
+
         return result_code, code, explanations
 
     async def _handle_replace_ast_node(
@@ -267,15 +345,18 @@ class StepDispatcher:
                     step.target_node_name, str(intent)
                 )
                 explanations.append(f"MiniAI suggests pattern: {pattern}")
+            # FIX: Pass raw_code to optimizer so it can analyze the actual function
+            raw_code = code or getattr(intent, 'raw_code', None) or ""
             new_snippet = self._orch._code_transform.optimize_function(
-                step.target_node_name, lang, ast_analysis, solver_insights
+                step.target_node_name, lang, ast_analysis, solver_insights,
+                raw_code=raw_code
             )
             result_code = self._orch.surgeon.mutate_node(
                 code, step.target_node_name, new_snippet, lang
             )
             explanations.append(
                 f"Function '{step.target_node_name}' replaced "
-                f"via AST surgery"
+                f"via AST surgery (optimizer received raw_code)"
             )
         else:
             result_code = self._orch._code_gen.generate_contextual_code(
