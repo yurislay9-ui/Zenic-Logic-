@@ -239,9 +239,10 @@ class GitHubScrapAgent(
         if icon_score >= 1:
             return "iconstack"
 
-        # Check imagenes
+        # Check imagenes (require 2+ matches to avoid false routing)
+        # Single "image" or "background" keyword is too ambiguous for code requests
         image_score = sum(1 for kw in self.IMAGE_KEYWORDS if kw in query_lower)
-        if image_score >= 1:
+        if image_score >= 2:
             return "picsum"
 
         # Check documentacion

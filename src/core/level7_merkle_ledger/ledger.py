@@ -251,6 +251,13 @@ class MerkleLedger:
                     workspace.get_db_path("merkle_ledger.sqlite"), tenant_id=tid
                 )
                 logger.debug("Snapshot (sandbox): %s in workspace %s [tenant=%s]", rel_path, workspace.sandbox_id, tid)
+            else:
+                # File doesn't exist yet (CREATE operation) — no backup needed
+                logger.debug(
+                    "Snapshot (sandbox): %s does not exist in workspace %s — "
+                    "no backup needed (new file) [tenant=%s]",
+                    rel_path, workspace.sandbox_id, tid,
+                )
         else:
             # MODO LEGACY: operar en el filesystem del sistema
             # Security: Validate rel_path stays within project_dir

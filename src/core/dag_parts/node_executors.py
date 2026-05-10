@@ -272,12 +272,27 @@ class NodeExecutorsMixin:
         return "*"
 
     async def _exec_ast_analyze(self, ctx: Dict) -> str:
-        """Nodo AST_ANALYZE: Análisis AST del código."""
+        """Nodo AST_ANALYZE: Análisis AST del código.
+
+        CRITICAL: Always initialize ctx["ast_analysis"], even for CREATE
+        operations where raw_code is empty. Without this, ast_analysis is
+        None, which causes code generation to produce generic code without
+        structural awareness, and downstream "Structure: 0 functions, 0 classes".
+        """
         intent = ctx.get("intent")
         if intent and intent.raw_code:
             ctx["ast_analysis"] = self.ast_engine.analyze_structure(
                 intent.raw_code, intent.language
             )
+        else:
+            # CREATE operations have no raw_code — initialize with empty defaults
+            # so downstream nodes don't crash on None
+            ctx["ast_analysis"] = {
+                "functions": 0, "classes": 0, "imports": 0,
+                "max_complexity": 0, "total_complexity": 0,
+                "avg_complexity": 0, "connections": [],
+                "function_names": [], "class_names": [],
+            }
         return "*"
 
     async def _exec_theorem_cache(self, ctx: Dict) -> Union[str, Dict]:
@@ -462,6 +477,20 @@ class NodeExecutorsMixin:
         ctx["result_code"] = result_code
         ctx["explanations"] = explanations
         ctx["final_code"] = result_code if result_code else code
+
+        # Re-analyze generated code with AST (was empty for CREATE operations)
+        # This gives VALIDATE and downstream nodes structural awareness
+        generated = ctx["final_code"]
+        if generated and isinstance(ctx.get("ast_analysis"), dict):
+            current_funcs = ctx["ast_analysis"].get("functions", 0)
+            if current_funcs == 0:
+                try:
+                    ctx["ast_analysis"] = self.ast_engine.analyze_structure(
+                        generated, lang
+                    )
+                except Exception as e:
+                    logger.debug("AST re-analysis of generated code failed: %s", e)
+
         return "*"
 
     async def _exec_visual_bypass(self, ctx: Dict) -> str:
