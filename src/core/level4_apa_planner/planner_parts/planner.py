@@ -97,7 +97,7 @@ class APAPlanner(
                 "APAPlanner: SKIP solver+MCTS (%s) for crit=%d — heuristic steps only",
                 reason, crit_level
             )
-            steps = self._build_steps(intent, routing, best_action=None)
+            steps = self._build_steps(intent, routing, best_action_hint=None)
             return ExecutionPlan(
                 plan_id=str(uuid.uuid4()),
                 steps=steps,
