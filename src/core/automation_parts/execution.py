@@ -148,24 +148,17 @@ class ExecutionMixin:
         return self._execute_action(action)
 
     def _execute_action(self, action: Action) -> bool:
-        """Ejecuta una acción individual usando ActionExecutor si disponible."""
-        # Use real ActionExecutor if registry is available
-        if self._executor_registry:
-            try:
-                result = self._executor_registry.execute_action(
-                    action.type.value, action.config, {}
-                )
-                if result.success:
-                    logger.info(f"Automation: {action.type.value} executed successfully in {result.duration_ms:.0f}ms")
-                else:
-                    logger.warning(f"Automation: {action.type.value} failed: {result.error}")
-                return result.success
-            except Exception as e:
-                logger.error(f"Automation: Executor error for {action.type.value}: {e}")
-                # Fall through to legacy stubs
+        """Ejecuta una acción individual usando legacy stubs.
 
+        S04 FIX: ExecutorRegistry.execute_action() is async and cannot
+        be called from this sync method without await. The async path
+        (_execute_action_async) already handles the registry correctly.
+        This sync fallback only provides legacy stubs.
+
+        If you need the registry, call _execute_action_async() instead.
+        """
         # Legacy fallback: logger.info stubs (backward compatible)
-        logger.warning(f"Automation: Using legacy stub for {action.type.value}")
+        logger.info(f"Automation: Executing {action.type.value} (legacy stub)")
         if action.type == ActionType.SEND_NOTIFICATION:
             logger.info(f"Automation: Notification - {action.config.get('message', 'No message')}")
             return True

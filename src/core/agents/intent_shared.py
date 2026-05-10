@@ -111,6 +111,10 @@ GOAL_KEYWORDS: dict[str, list[str]] = {
         "legibilidad", "readability", "documentar", "document",
         "comentar", "comment", "claro", "clear", "nombrar",
     ],
+    "AUTOMATION": [
+        "automatizar", "automate", "workflow", "trigger", "schedule",
+        "cron", "programar", "pipeline", "ci/cd", "automacion",
+    ],
 }
 
 

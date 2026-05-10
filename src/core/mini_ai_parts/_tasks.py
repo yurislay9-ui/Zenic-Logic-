@@ -73,6 +73,7 @@ class BoundedTasksMixin:
         "MODERN_PATTERN": ["modern", "update", "upgrade", "moderno", "actualizar", "migrate", "migrar"],
         "COMPLEXITY_REDUCTION": ["simplify", "reduce", "complex", "simplificar", "reducir", "complejo"],
         "READABILITY": ["readable", "clean", "comment", "legible", "limpio", "documentar", "claro"],
+        "AUTOMATION": ["automate", "automatizar", "workflow", "trigger", "schedule", "cron", "programar", "pipeline"],
     }
 
     def classify_intent(self, text: str) -> IntentResult:

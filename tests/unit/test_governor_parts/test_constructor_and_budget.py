@@ -73,8 +73,8 @@ class TestResourceGovernorConstructor:
 
     def test_default_constants(self):
         """Should have sensible default constants."""
-        assert ResourceGovernor.DEFAULT_RAM_LIMIT_MB == 2048
-        assert ResourceGovernor.DEFAULT_GC_THRESHOLD_MB == 1536
+        assert ResourceGovernor.DEFAULT_RAM_LIMIT_MB == 4096
+        assert ResourceGovernor.DEFAULT_GC_THRESHOLD_MB == 3072
         assert ResourceGovernor.THERMAL_SCALE_BACK_THRESHOLD == 30
 
 
@@ -220,7 +220,7 @@ class TestAdaptiveBudgets:
     def test_adaptive_solver_timeout_reduced_ram(self):
         """High RAM usage should reduce solver timeout."""
         gov = ResourceGovernor()
-        gov._ram_usage_mb = 1900
+        gov._ram_usage_mb = 3500  # > 0.8 * 4096 = 3276, triggers 0.6 scale
         gov._thermal_throttle = 1.0
         timeout = gov.get_adaptive_solver_timeout(base_timeout_ms=15000)
         assert timeout < 15000
