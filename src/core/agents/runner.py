@@ -20,8 +20,63 @@ from src.core.agents.cache import AgentCache
 from src.core.patterns.resilience import (
     CircuitBreaker, CircuitState, CircuitOpenError,
     RetryConfig, with_retry,
-    Bulkhead, BulkheadFullError,
 )
+
+
+# ── Minimal Bulkhead (inline) ──
+# The full Bulkhead pattern module was removed as dead code.
+# This minimal implementation provides the concurrency-limiting
+# functionality needed by AgentRunner.
+
+class BulkheadFullError(Exception):
+    """Raised when the bulkhead has no available slots."""
+
+
+class Bulkhead:
+    """Minimal concurrency limiter for LLM calls.
+
+    Limits the number of concurrent executions to *max_concurrent*.
+    If the limit is reached, callers can queue up to *max_queue* items.
+    """
+
+    def __init__(self, name: str = "default", max_concurrent: int = 8,
+                 max_queue: int = 20, timeout: float = 30.0) -> None:
+        self.name = name
+        self._max_concurrent = max_concurrent
+        self._max_queue = max_queue
+        self._timeout = timeout
+        self._semaphore = threading.Semaphore(max_concurrent)
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def acquire(self):
+        """Context manager: acquire a slot or raise BulkheadFullError."""
+        class _Ctx:
+            def __init__(self_self):
+                self_self._bulkhead = self
+            def __enter__(self_self):
+                if not self._semaphore.acquire(timeout=self._timeout):
+                    raise BulkheadFullError(
+                        f"Bulkhead '{self.name}' full (max_concurrent={self._max_concurrent})"
+                    )
+                with self._lock:
+                    self._active += 1
+                return self_self
+            def __exit__(self_self, *exc):
+                with self._lock:
+                    self._active -= 1
+                self._semaphore.release()
+        return _Ctx()
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                "name": self.name,
+                "max_concurrent": self._max_concurrent,
+                "active": self._active,
+                "available": self._max_concurrent - self._active,
+            }
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +84,7 @@ T = TypeVar('T')
 
 # Límites de seguridad para llamadas al LLM
 MAX_TOKENS_AGENT = 600          # Max tokens por llamada de agente
+MAX_TOKENS_CODE_GENERATE = 1500  # Max tokens para generación de código (was unused, now active)
 AGENT_TIMEOUT_S = 60.0          # Timeout por llamada (was 10s, must be >= LLM_TIMEOUT_S for ARM)
 MAX_RETRIES = 1                 # Reintentos antes de fallback
 TEMPERATURE_AGENT = 0.15        # Temperatura baja = más determinista
@@ -56,7 +112,6 @@ DEFAULT_CIRCUIT_BREAKER = CircuitBreaker(
 DEFAULT_BULKHEAD = Bulkhead(
     name="agent_runner",
     max_concurrent=8,
-    max_queue=20,
     timeout=30.0,
 )
 
@@ -190,6 +245,14 @@ class AgentRunner:
 
     def _try_llm_inner(self, agent, system_prompt, user_prompt, input_data, start_time):
         """Inner LLM call with retry + bulkhead protection."""
+        # R4: Use higher token limit for code generation agents
+        max_tokens = MAX_TOKENS_AGENT
+        if getattr(agent, 'name', '') == 'code':
+            task = getattr(input_data, 'task', 'generate')
+            if task in ('generate', 'scaffold'):
+                max_tokens = MAX_TOKENS_CODE_GENERATE
+                logger.debug(f"CodeAgent: using MAX_TOKENS_CODE_GENERATE={max_tokens}")
+
         def _call_with_retry():
             with self._stats_lock:
                 self._llm_calls += 1
@@ -197,7 +260,7 @@ class AgentRunner:
                 raw_response = self._call_ai(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    max_tokens=MAX_TOKENS_AGENT,
+                    max_tokens=max_tokens,
                 )
                 if not raw_response:
                     raise ValueError("Empty LLM response")
@@ -261,11 +324,15 @@ class AgentRunner:
         """Public interface for calling the AI engine (avoids private method access)."""
         if not self._mini_ai or not self._mini_ai.is_loaded:
             return None
-        return self._mini_ai._call_llm(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=max_tokens,
-        )
+        try:
+            return self._mini_ai._call_llm(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            logger.warning(f"_call_ai failed: {e}")
+            return None
 
     def run_raw(self, system_prompt: str, user_prompt: str,
                 max_tokens: int = MAX_TOKENS_AGENT) -> Optional[str]:

@@ -4,17 +4,88 @@ TITAN OMNISCALE X - Agent Schemas (Pydantic)
 Esquemas de entrada/salida para cada agente.
 Validación automática de respuestas del LLM.
 
-NOTE: TriggerSpec, ActionSpec, ScheduleSpec, ValidationIssue are now
-re-exported from agents_v2/schemas/types.py (single source of truth).
+Includes unified types (AgentResult, TriggerSpec, ActionSpec,
+ScheduleSpec, ValidationIssue) — single source of truth.
 """
 
 from typing import Any, Optional
 from dataclasses import dataclass, field
+from enum import Enum
 
-# ── Re-export unified types from v2 schemas (single source of truth) ──
-from src.core.agents_v2.schemas.types import (  # noqa: F401
-    TriggerSpec, ActionSpec, ScheduleSpec, ValidationIssue,
-)
+
+# ============================================================
+#  UNIFIED BASE TYPES (single source of truth)
+# ============================================================
+
+@dataclass
+class AgentResult:
+    """Universal result wrapper for all agents."""
+    success: bool = False
+    data: Any = None
+    source: str = "deterministic"  # "deterministic", "cached", "fallback", "llm"
+    duration_ms: float = 0.0
+    confidence: float = 0.0
+    error: str = ""
+    cache_hit: bool = False
+
+
+@dataclass
+class ValidationIssue:
+    """A single validation finding."""
+    severity: str = "warning"  # error|warning|info
+    code: str = ""
+    message: str = ""
+    line: int = 0
+    suggestion: str = ""
+
+
+@dataclass
+class TriggerSpec:
+    """Trigger specification for automation agents."""
+    type: str = "manual"  # manual|schedule|event|webhook
+    config: dict[str, Any] = field(default_factory=dict)
+    description: str = ""
+    source: str = "deterministic"
+
+
+@dataclass
+class ActionSpec:
+    """Action specification for automation agents."""
+    type: str = "log"  # email|http|db|file|webhook|notification|transform|schedule|log
+    config: dict[str, Any] = field(default_factory=dict)
+    description: str = ""
+    source: str = "deterministic"
+
+
+class ScheduleSpec:
+    """Schedule specification for automation agents.
+
+    Note: This class uses a manual __init__ instead of @dataclass because
+    it supports a backward-compatible ``cron_expression`` alias parameter.
+    """
+
+    # Instance attributes (set by __init__, documented here for IDE support)
+    type: str          # manual|interval|cron|once
+    cron: str
+    interval_seconds: int
+    description: str
+    source: str
+
+    def __init__(self, type: str = "manual", cron: str = "",
+                 interval_seconds: int = 0, description: str = "",
+                 source: str = "deterministic",
+                 cron_expression: str = "") -> None:
+        """Allow both ``cron`` and ``cron_expression`` for backward compatibility."""
+        self.type = type
+        self.cron = cron or cron_expression  # cron_expression is an alias
+        self.interval_seconds = interval_seconds
+        self.description = description
+        self.source = source
+
+    @property
+    def cron_expression(self) -> str:
+        """Backward-compatible alias for ``cron``."""
+        return self.cron
 
 
 # ============================================================
@@ -145,7 +216,7 @@ class AutomationInput:
     context: dict[str, Any] = field(default_factory=dict)
 
 
-# NOTE: TriggerSpec, ActionSpec, ScheduleSpec are imported from agents_v2/schemas/types.py
+# NOTE: TriggerSpec, ActionSpec, ScheduleSpec defined above in this file
 
 
 @dataclass
@@ -173,7 +244,7 @@ class ValidationInput:
     language: str = "python"
 
 
-# NOTE: ValidationIssue is imported from agents_v2/schemas/types.py
+# NOTE: ValidationIssue defined above in this file
 
 
 @dataclass

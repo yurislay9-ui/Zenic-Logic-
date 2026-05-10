@@ -101,6 +101,22 @@ RULES:
 4. Follow language conventions
 5. Keep code concise but readable
 
+Output ONLY the code inside a ```{language} code block. No explanations, no JSON.
+Example:
+```python
+def hello():
+    print("hello")
+```"""
+
+    CODE_SYSTEM_GENERATE_JSON = """You are a code generation engine. Generate clean, well-structured code.
+
+RULES:
+1. Generate production-quality code
+2. Include proper error handling
+3. Add docstrings/comments
+4. Follow language conventions
+5. Keep code concise but readable
+
 Reply with ONLY a JSON object:
 {"code":"...","language":"...","files":[{"path":"...","content":"...","language":"..."}],"test_code":"...","explanation":"..."}"""
 

@@ -13,11 +13,6 @@ from .sandbox_isolation import (
 )
 from .shared_memory_bus import (
     SharedMemoryBus, BusMessage, MessageType, Priority,
-    RingBuffer, AgentMailbox, SharedState, BusMetrics,
-)
-from .fast_connection_pool import (
-    FastPool, fast_pool, get_pooled_connection,
-    batch_commit, close_all_pools,
 )
 
 __all__ = [
@@ -34,8 +29,4 @@ __all__ = [
     "create_sandbox_builtins", "create_sandbox_globals",
     # From shared_memory_bus
     "SharedMemoryBus", "BusMessage", "MessageType", "Priority",
-    "RingBuffer", "AgentMailbox", "SharedState", "BusMetrics",
-    # From fast_connection_pool
-    "FastPool", "fast_pool", "get_pooled_connection",
-    "batch_commit", "close_all_pools",
 ]

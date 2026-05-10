@@ -1,21 +1,16 @@
 """
 TITAN OMNISCALE X - Orchestration Patterns (Facade Module)
 
-Re-exports all orchestration pattern components from their dedicated
-sub-modules for convenient unified imports.
+Re-exports active orchestration pattern components.
 
 Pattern Catalog:
 - EventBus: Observer/Pub-Sub pattern for decoupled event-driven communication
 - Mediator: Centralized request/response dispatcher for agent coordination
-- CommandBus: Formal Command pattern replacing if/elif dispatch chains
-- Saga: Multi-step rollback pattern for distributed operations
 
 Usage::
 
     from src.core.patterns.orchestration import EventBus, Event, EventHandler
     from src.core.patterns.orchestration import Mediator, Request, Response
-    from src.core.patterns.orchestration import CommandBus, Command, CommandResult
-    from src.core.patterns.orchestration import Saga, SagaStep, SagaContext
 
 Designed for resource-constrained environments (Android/Termux, 500MB RAM).
 No external dependencies beyond Python stdlib.
@@ -43,28 +38,6 @@ from .mediator import (
 )
 
 # ============================================================
-#  COMMAND BUS - Command Pattern
-# ============================================================
-
-from .command_bus import (
-    Command,
-    CommandBus,
-    CommandHandler,
-    CommandResult,
-)
-
-# ============================================================
-#  SAGA - Multi-Step Rollback Pattern
-# ============================================================
-
-from .saga import (
-    Saga,
-    SagaContext,
-    SagaStep,
-    SagaStatus,
-)
-
-# ============================================================
 #  PUBLIC API
 # ============================================================
 
@@ -78,14 +51,4 @@ __all__ = [
     "Request",
     "Response",
     "RequestHandler",
-    # Command Bus
-    "CommandBus",
-    "Command",
-    "CommandHandler",
-    "CommandResult",
-    # Saga
-    "Saga",
-    "SagaStep",
-    "SagaContext",
-    "SagaStatus",
 ]

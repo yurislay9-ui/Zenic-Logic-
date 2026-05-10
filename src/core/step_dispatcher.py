@@ -214,11 +214,42 @@ class StepDispatcher:
     async def _handle_generate_code(
         self, step, intent, code, result_code, explanations, lang, ast_analysis, plan
     ):
-        """Handle GENERATE_CODE action."""
-        result_code = self._orch._code_gen.generate_contextual_code(
-            intent, ast_analysis, plan, lang
-        )
-        explanations.append(f"Code generated for {intent.op}")
+        """Handle GENERATE_CODE action.
+
+        R2 FIX: Try LLM-based code generation first (via CodeAgent),
+        then fall back to deterministic template generation (CodeGenerator).
+        This hybrid approach produces better code when the LLM is available,
+        while always having a working fallback.
+        """
+        llm_code = None
+        # Try LLM-augmented generation via CodeAgent
+        if (
+            hasattr(self._orch, '_code_agent') and self._orch._code_agent is not None
+            and hasattr(self._orch, '_agent_runner') and self._orch._agent_runner is not None
+            and hasattr(self._orch, '_ai') and self._orch._ai.is_loaded
+        ):
+            try:
+                code_result = self._orch._code_agent.generate_with_runner(
+                    self._orch._agent_runner,
+                    requirements=str(intent),
+                    language=lang,
+                )
+                if code_result and code_result.code:
+                    llm_code = code_result.code
+                    source = getattr(code_result, 'source', 'llm')
+                    explanations.append(f"Code generated for {intent.op} via {source}")
+            except Exception as e:
+                import logging as _log
+                _log.getLogger(__name__).debug("CodeAgent LLM generation failed: %s", e)
+
+        if llm_code:
+            result_code = llm_code
+        else:
+            # Fallback to deterministic template generation
+            result_code = self._orch._code_gen.generate_contextual_code(
+                intent, ast_analysis, plan, lang
+            )
+            explanations.append(f"Code generated for {intent.op} (template fallback)")
         return result_code, code, explanations
 
     async def _handle_replace_ast_node(

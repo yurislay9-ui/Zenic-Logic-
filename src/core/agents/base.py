@@ -16,8 +16,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Optional, TypeVar, Union
 
-# ── Unified AgentResult: re-export from v2 schemas (single source of truth) ──
-from src.core.agents_v2.schemas.types import AgentResult  # noqa: F401 — re-export
+# ── Unified AgentResult: local single source of truth ──
+from src.core.agents.schemas import AgentResult  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
 

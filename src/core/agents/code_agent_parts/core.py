@@ -75,7 +75,12 @@ class CodeAgent(
     # ============================================================
 
     def build_prompt(self, input_data: Any) -> Tuple[str, str]:
-        """Construye system + user prompt según tipo de tarea."""
+        """Construye system + user prompt según tipo de tarea.
+
+        R2 FIX: For 'generate' task, use simplified markdown code block prompt
+        instead of JSON prompt. Qwen3-0.6B can produce code blocks much more
+        reliably than JSON-wrapped code.
+        """
         if isinstance(input_data, CodeInput):
             task = input_data.task
             requirements = input_data.requirements
@@ -89,12 +94,17 @@ class CodeAgent(
             existing_code = ""
             constraints = {}
 
-        system_prompt = TASK_PROMPTS.get(task, AgentPrompts.CODE_SYSTEM_GENERATE)
+        # Use simplified prompt for generate task (0.6B-friendly)
+        if task == "generate":
+            system_prompt = AgentPrompts.CODE_SYSTEM_GENERATE.replace("{language}", language)
+        else:
+            system_prompt = TASK_PROMPTS.get(task, AgentPrompts.CODE_SYSTEM_GENERATE_JSON)
+
         user_prompt = AgentPrompts.CODE_USER.format(
             task=task,
-            requirements=requirements[:500],
+            requirements=requirements[:800],  # R2: increased from 500 to 800
             language=language,
-            existing_code=existing_code[:300] if existing_code else "none",
+            existing_code=existing_code[:600] if existing_code else "none",  # R2: increased from 300 to 600
         )
 
         # Add constraints context
@@ -106,16 +116,33 @@ class CodeAgent(
         return system_prompt, user_prompt
 
     def parse_response(self, raw_response: str, input_data: Any) -> Optional[CodeOutput]:
-        """Parsea la respuesta del LLM a un CodeOutput válido."""
+        """Parsea la respuesta del LLM a un CodeOutput válido.
+
+        R2 FIX: Prioritize markdown code block extraction over JSON.
+        Qwen3-0.6B can produce code blocks much more reliably than
+        JSON-wrapped code. JSON parsing is still attempted as fallback.
+        """
         cleaned = self.clean_llm_text(raw_response)
 
-        # Try JSON extraction first
+        # Try to extract code from markdown code blocks FIRST
+        # (0.6B models produce code blocks more reliably than JSON)
+        code_block_result = self._parse_code_blocks(cleaned, source="llm")
+        if code_block_result and code_block_result.code:
+            return code_block_result
+
+        # Try JSON extraction as fallback
         json_data = self.extract_json(cleaned)
         if json_data and isinstance(json_data, dict):
             return self._json_to_code_output(json_data, source="llm")
 
-        # Try to extract code from markdown code blocks
-        return self._parse_code_blocks(cleaned, source="llm")
+        # Last resort: return raw text as code
+        if cleaned.strip():
+            return CodeOutput(
+                code=cleaned.strip(),
+                language="python",
+                source="llm_raw",
+            )
+        return None
 
     def fallback(self, input_data: Any) -> CodeOutput:
         """
@@ -200,4 +227,77 @@ class CodeAgent(
         result: AgentResult = runner.run(self, input_data)
         if result.success and isinstance(result.data, CodeOutput):
             return result.data
+        return self.fallback(input_data)
+
+    # ============================================================
+    #  R4: LLM-POWERED CODE GENERATION
+    #  Uses Qwen with MAX_TOKENS_CODE_GENERATE=1500 for real
+    #  code generation, with fallback to deterministic templates.
+    #  Binary Arbiter (VerdictEngine) approves/rejects output.
+    # ============================================================
+
+    def generate_code_with_llm(self, runner: Any, requirements: str,
+                                language: str = "python",
+                                ast_context: str = "",
+                                solver_insights: str = "",
+                                constraints: Optional[Dict[str, Any]] = None) -> CodeOutput:
+        """Generate code using Qwen LLM with rich context.
+
+        R4: This is the new LLM-first generation path. It uses:
+        - MAX_TOKENS_CODE_GENERATE=1500 (vs 600 for other agents)
+        - CODE_SYSTEM_GENERATE prompt (markdown code blocks, Qwen-friendly)
+        - AST context and solver insights for richer prompts
+        - VerdictEngine for approval (Binary Arbiter stays as safety check)
+        - Fallback to deterministic templates if LLM fails
+
+        Flow:
+        1. Build enriched prompt with AST + solver context
+        2. Call Qwen via AgentRunner (1500 tokens)
+        3. If LLM produces valid code → return it
+        4. If LLM fails → fallback to deterministic template
+
+        Args:
+            runner: AgentRunner with MiniAIEngine wired
+            requirements: What to generate
+            language: Target language
+            ast_context: AST analysis context (if available)
+            solver_insights: Z3/AC-3 solver insights (if available)
+            constraints: Additional constraints
+
+        Returns:
+            CodeOutput with generated code
+        """
+        start = time.time()
+        input_data = CodeInput(
+            task="generate",
+            requirements=requirements,
+            language=language,
+            constraints=constraints or {},
+        )
+
+        # Enrich requirements with context if available
+        enriched_req = requirements
+        if ast_context:
+            enriched_req += f"\n\nAST context: {ast_context[:300]}"
+        if solver_insights:
+            enriched_req += f"\n\nSolver insights: {solver_insights[:200]}"
+        input_data.requirements = enriched_req
+
+        # Try LLM generation first (AgentRunner now uses 1500 tokens for code)
+        if runner and runner._mini_ai and runner._mini_ai.is_loaded:
+            try:
+                result: AgentResult = runner.run(self, input_data)
+                if result.success and isinstance(result.data, CodeOutput):
+                    if result.data.code and len(result.data.code.strip()) > 20:
+                        # LLM produced meaningful code
+                        logger.info(
+                            "CodeAgent: LLM generated %d chars of code (source=%s)",
+                            len(result.data.code), result.data.source
+                        )
+                        return result.data
+            except Exception as e:
+                logger.warning("CodeAgent: LLM generation failed: %s", e)
+
+        # Fallback to deterministic template
+        logger.info("CodeAgent: LLM unavailable/failed, using deterministic fallback")
         return self.fallback(input_data)

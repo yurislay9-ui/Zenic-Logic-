@@ -29,7 +29,7 @@ from src.core.shared.contracts import HAS_Z3
 from src.core.shared.db_initializer import initialize_databases
 from src.core.shared._version import TITAN_VERSION_STR, TITAN_FULL_NAME
 
-# Use DAGOrchestrator as primary, with TitanOrchestrator as fallback
+# DAG Orchestrator — v16 production pipeline (tested with Cline)
 try:
     from src.core.dag_orchestrator import DAGOrchestrator as _Orchestrator
 except ImportError:
