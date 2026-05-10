@@ -3,13 +3,17 @@ CodeAssembler — Connects Jinja2 templates + niche YAML + executors
 to generate REAL functional code instead of stubs.
 
 This is the bridge that closes GAP 1:
-  Before: CodeGenerator._process() → {"processed": True, "input": payload}
+  Before: CodeGenerator._process() -> {"processed": True, "input": payload}
   After:  CodeAssembler assembles real modules from .j2 templates
 
 Architecture:
-  1. resolve_modules() — maps intent → blocks → templates
+  1. resolve_modules() — maps intent -> blocks -> templates
   2. assemble_project() — renders templates + wires imports
   3. build_service_method() — generates _process() with REAL logic
+
+BUG FIX: Previously, generated CRUD/analytics code called async DatabaseExecutor
+methods synchronously (db.execute_query() which didn't exist). Now uses sqlite3
+directly (stdlib) so generated code is standalone, synchronous, and actually runs.
 """
 
 import os
@@ -19,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# ── Block → Template mapping (matches src/templates/blocks/) ──
+# ── Block -> Template mapping (matches src/templates/blocks/) ──
 BLOCK_TEMPLATE_MAP = {
     # Auth
     "jwt_auth": "blocks/auth/jwt_auth.py.j2",
@@ -46,7 +50,7 @@ BLOCK_TEMPLATE_MAP = {
     "report_generator": "blocks/business_logic/report_generator.py.j2",
 }
 
-# ── Keyword → Block suggestion mapping ──
+# ── Keyword -> Block suggestion mapping ──
 KEYWORD_BLOCK_MAP = {
     "auth": ["jwt_auth"],
     "login": ["jwt_auth"],
@@ -142,7 +146,7 @@ class CodeAssembler:
             entities: List of entity dicts from niche YAML
 
         Returns:
-            Dict mapping filename → file content (all real code)
+            Dict mapping filename -> file content (all real code)
         """
         blocks = self.resolve_blocks(description, niche_plan)
         entities = entities or []
@@ -258,7 +262,11 @@ class CodeAssembler:
 
     def _build_crud_process(self, entity_name: str, table_name: str,
                             fields: List[Dict]) -> str:
-        """Generate a REAL _process() method with CRUD operations."""
+        """Generate a REAL _process() method with CRUD operations.
+
+        Uses sqlite3 directly (stdlib) instead of async DatabaseExecutor,
+        so the generated code is standalone, synchronous, and actually runs.
+        """
         field_names = [f.get("name", "field") for f in fields]
         param_str = ", ".join('"%s"' % f for f in field_names)
         search_col = field_names[0] if field_names else "name"
@@ -266,11 +274,10 @@ class CodeAssembler:
         # Use string formatting (not f-string) to avoid nested brace issues
         return '''
     def _process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """CRUD operations for {entity} — REAL logic, not a stub."""
+        """CRUD operations for {entity} — REAL logic using sqlite3."""
+        import sqlite3
         action = payload.get("action", "list")
-        from src.core.executors.database_executor import DatabaseExecutor
-
-        db = DatabaseExecutor()
+        db_path = payload.get("db_path", "{table}.sqlite")
 
         if action == "create":
             data = payload.get("data", {{}})
@@ -278,130 +285,259 @@ class CodeAssembler:
             values = [data.get(col) for col in columns]
             placeholders = ", ".join(["?" for _ in columns])
             col_str = ", ".join(columns)
-            db.execute_query(
-                "INSERT INTO {table} (" + col_str + ") VALUES (" + placeholders + ")",
-                values
-            )
-            return {{"success": True, "action": "create", "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "INSERT INTO {table} (" + col_str + ") VALUES (" + placeholders + ")",
+                    values
+                )
+                conn.commit()
+                last_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            finally:
+                conn.close()
+            return {{"success": True, "action": "create", "entity": "{entity}", "id": last_id}}
 
         elif action == "read":
             item_id = payload.get("id")
-            result = db.execute_query(
-                "SELECT * FROM {table} WHERE id = ?", (item_id,)
-            )
-            return {{"success": True, "data": result, "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT * FROM {table} WHERE id = ?", (item_id,)
+                )
+                row = dict(cursor.fetchone()) if cursor.fetchone() else None
+            finally:
+                conn.close()
+            return {{"success": True, "data": row, "entity": "{entity}"}}
 
         elif action == "update":
             item_id = payload.get("id")
             data = payload.get("data", {{}})
+            if not data:
+                return {{"success": False, "error": "No data provided for update"}}
             set_parts = [str(k) + " = ?" for k in data.keys()]
             set_clause = ", ".join(set_parts)
             values = list(data.values()) + [item_id]
-            db.execute_query(
-                "UPDATE {table} SET " + set_clause + " WHERE id = ?", values
-            )
-            return {{"success": True, "action": "update", "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "UPDATE {table} SET " + set_clause + " WHERE id = ?", values
+                )
+                conn.commit()
+                affected = conn.execute("SELECT changes()").fetchone()[0]
+            finally:
+                conn.close()
+            return {{"success": True, "action": "update", "entity": "{entity}", "affected": affected}}
 
         elif action == "delete":
             item_id = payload.get("id")
-            db.execute_query(
-                "DELETE FROM {table} WHERE id = ?", (item_id,)
-            )
-            return {{"success": True, "action": "delete", "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "DELETE FROM {table} WHERE id = ?", (item_id,)
+                )
+                conn.commit()
+                affected = conn.execute("SELECT changes()").fetchone()[0]
+            finally:
+                conn.close()
+            return {{"success": True, "action": "delete", "entity": "{entity}", "affected": affected}}
 
         elif action == "list":
             limit = payload.get("limit", 50)
             offset = payload.get("offset", 0)
-            result = db.execute_query(
-                "SELECT * FROM {table} LIMIT ? OFFSET ?", (limit, offset)
-            )
-            return {{"success": True, "data": result, "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT * FROM {table} LIMIT ? OFFSET ?", (limit, offset)
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+            return {{"success": True, "data": rows, "entity": "{entity}", "count": len(rows)}}
 
         elif action == "search":
             query = payload.get("query", "")
             column = payload.get("search_column", "{search_col}")
-            result = db.execute_query(
-                "SELECT * FROM {table} WHERE " + column + " LIKE ?", ("%" + query + "%",)
-            )
-            return {{"success": True, "data": result, "entity": "{entity}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT * FROM {table} WHERE " + column + " LIKE ?", ("%" + query + "%",)
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+            return {{"success": True, "data": rows, "entity": "{entity}", "count": len(rows)}}
+
+        elif action == "count":
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.execute("SELECT COUNT(*) as total FROM {table}")
+                total = cursor.fetchone()[0]
+            finally:
+                conn.close()
+            return {{"success": True, "total": total, "entity": "{entity}"}}
 
         return {{"success": False, "error": "Unknown action: " + str(action)}}
 '''.format(entity=entity_name, table=table_name, params=param_str, search_col=search_col)
 
     def _build_analytics_process(self, entity_name: str, table_name: str,
                                   fields: List[Dict]) -> str:
-        """Generate a REAL _process() method with analytics logic."""
+        """Generate a REAL _process() method with analytics logic.
+
+        Uses sqlite3 directly (stdlib) instead of async DatabaseExecutor,
+        so the generated code is standalone, synchronous, and actually runs.
+        """
         numeric_fields = [f for f in fields
                          if f.get("type", "").lower() in ("float", "int", "integer", "number", "decimal")]
         num_names = [f.get("name", "count") for f in numeric_fields] or ["count"]
+        default_metric = num_names[0]
 
-        return f'''
+        # Use .format() to avoid nested f-string brace issues
+        return '''
     def _process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Analytics for {entity_name} — REAL aggregation logic."""
+        """Analytics for {entity} — REAL aggregation using sqlite3."""
+        import sqlite3
         action = payload.get("action", "summary")
-        from src.core.executors.database_executor import DatabaseExecutor
-
-        db = DatabaseExecutor()
+        db_path = payload.get("db_path", "{table}.sqlite")
 
         if action == "summary":
-            result = db.execute_query("SELECT COUNT(*) as total FROM {table_name}")
-            return {{"success": True, "summary": result, "entity": "{entity_name}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute("SELECT COUNT(*) as total, AVG({metric}) as avg_{metric} FROM {table}")
+                row = dict(cursor.fetchone()) if cursor.fetchone() else {{}}
+            finally:
+                conn.close()
+            return {{"success": True, "summary": row, "entity": "{entity}"}}
 
         elif action == "aggregate":
-            metric = payload.get("metric", "{num_names[0]}")
+            metric = payload.get("metric", "{metric}")
             period = payload.get("period", "daily")
-            result = db.execute_query(
-                f"SELECT date(created_at) as period, {{metric}} FROM {table_name} GROUP BY period ORDER BY period"
-            )
-            return {{"success": True, "data": result, "metric": metric, "entity": "{entity_name}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT date(created_at) as period, " + metric + " FROM {table} GROUP BY period ORDER BY period"
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+            return {{"success": True, "data": rows, "metric": metric, "entity": "{entity}"}}
 
         elif action == "distribution":
             column = payload.get("column", "status")
-            result = db.execute_query(
-                f"SELECT {{column}}, COUNT(*) as count FROM {table_name} GROUP BY {{column}}"
-            )
-            return {{"success": True, "distribution": result, "entity": "{entity_name}"}}
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT " + column + ", COUNT(*) as count FROM {table} GROUP BY " + column
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+            return {{"success": True, "distribution": rows, "entity": "{entity}"}}
 
-        return {{"success": False, "error": f"Unknown analytics action: {{action}}"}}
-'''
+        elif action == "trend":
+            metric = payload.get("metric", "{metric}")
+            days = payload.get("days", 30)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(
+                    "SELECT date(created_at) as day, SUM(" + metric + ") as total "
+                    "FROM {table} WHERE created_at >= date('now', '-' || ? || ' days') "
+                    "GROUP BY day ORDER BY day", (days,)
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+            return {{"success": True, "trend": rows, "metric": metric, "entity": "{entity}"}}
+
+        return {{"success": False, "error": "Unknown analytics action: " + str(action)}}
+'''.format(entity=entity_name, table=table_name, metric=default_metric)
 
     def _build_notification_process(self, entity_name: str, fields: List[Dict]) -> str:
-        """Generate a REAL _process() method for notifications."""
-        return f'''
-    def _process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Notification for {entity_name} — REAL sending logic."""
-        action = payload.get("action", "send")
-        from src.core.executors.notification_executor import NotificationExecutor
+        """Generate a REAL _process() method for notifications.
 
-        notifier = NotificationExecutor()
+        Uses smtplib directly (stdlib) instead of async NotificationExecutor,
+        so the generated code is standalone, synchronous, and actually runs.
+        """
+        # Use .format() to avoid nested f-string brace issues
+        return '''
+    def _process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Notification for {entity} — REAL sending via smtplib."""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        action = payload.get("action", "send")
 
         if action == "send":
             channel = payload.get("channel", "email")
             message = payload.get("message", "")
             recipient = payload.get("recipient", "")
-            result = notifier.execute({{
-                "channel": channel,
-                "message": message,
-                "recipient": recipient,
-                "subject": payload.get("subject", "Notification from {entity_name}"),
-            }})
-            return {{"success": result.success, "channel": channel, "entity": "{entity_name}"}}
+            subject = payload.get("subject", "Notification from {entity}")
+            smtp_host = payload.get("smtp_host", "localhost")
+            smtp_port = payload.get("smtp_port", 587)
+            smtp_user = payload.get("smtp_user", "")
+            smtp_pass = payload.get("smtp_pass", "")
+
+            if channel == "email" and recipient:
+                msg = MIMEMultipart()
+                msg["From"] = smtp_user or "noreply@{entity}.local"
+                msg["To"] = recipient
+                msg["Subject"] = subject
+                msg.attach(MIMEText(message, "plain"))
+                try:
+                    server = smtplib.SMTP(smtp_host, smtp_port)
+                    if smtp_user:
+                        server.starttls()
+                        server.login(smtp_user, smtp_pass)
+                    server.send_message(msg)
+                    server.quit()
+                    return {{"success": True, "channel": "email", "recipient": recipient, "entity": "{entity}"}}
+                except Exception as e:
+                    return {{"success": False, "error": str(e), "entity": "{entity}"}}
+            return {{"success": True, "channel": channel, "message": "logged", "entity": "{entity}"}}
 
         elif action == "broadcast":
             recipients = payload.get("recipients", [])
             message = payload.get("message", "")
+            subject = payload.get("subject", "Broadcast from {entity}")
+            smtp_host = payload.get("smtp_host", "localhost")
+            smtp_port = payload.get("smtp_port", 587)
+            smtp_user = payload.get("smtp_user", "")
+            smtp_pass = payload.get("smtp_pass", "")
             results = []
             for r in recipients:
-                result = notifier.execute({{
-                    "channel": payload.get("channel", "email"),
-                    "message": message,
-                    "recipient": r,
-                }})
-                results.append({{"recipient": r, "success": result.success}})
-            return {{"success": True, "results": results, "entity": "{entity_name}"}}
+                try:
+                    msg = MIMEMultipart()
+                    msg["From"] = smtp_user or "noreply@{entity}.local"
+                    msg["To"] = r
+                    msg["Subject"] = subject
+                    msg.attach(MIMEText(message, "plain"))
+                    server = smtplib.SMTP(smtp_host, smtp_port)
+                    if smtp_user:
+                        server.starttls()
+                        server.login(smtp_user, smtp_pass)
+                    server.send_message(msg)
+                    server.quit()
+                    results.append({{"recipient": r, "success": True}})
+                except Exception as e:
+                    results.append({{"recipient": r, "success": False, "error": str(e)}})
+            return {{"success": True, "results": results, "entity": "{entity}"}}
 
-        return {{"success": False, "error": f"Unknown notification action: {{action}}"}}
-'''
+        elif action == "log":
+            import logging
+            _logger = logging.getLogger("{entity}")
+            level = payload.get("level", "info")
+            message = payload.get("message", "")
+            getattr(_logger, level, _logger.info)(message)
+            return {{"success": True, "action": "log", "entity": "{entity}"}}
+
+        return {{"success": False, "error": "Unknown notification action: " + str(action)}}
+'''.format(entity=entity_name)
 
     # ================================================================
     #  PROJECT SCAFFOLDING
@@ -482,6 +618,7 @@ class CodeAssembler:
             '',
             'import os',
             'import logging',
+            'import sqlite3',
             'from typing import Optional, List, Dict, Any',
             'from fastapi import FastAPI, HTTPException, Depends',
             'from fastapi.middleware.cors import CORSMiddleware',
@@ -541,7 +678,11 @@ class CodeAssembler:
         return '\n'.join(import_lines + init_lines + health_lines + endpoint_lines)
 
     def _generate_entity_endpoints(self, entity_name: str, entity: Dict) -> List[str]:
-        """Generate CRUD endpoints for an entity."""
+        """Generate CRUD endpoints for an entity.
+
+        Uses sqlite3 directly instead of async DatabaseExecutor
+        so endpoints work synchronously within FastAPI async handlers.
+        """
         cls = self._block_to_class(entity_name)
         table = entity_name.lower() + "s"
         lines = [
@@ -551,35 +692,73 @@ class CodeAssembler:
             f'@app.post("/v1/{table}")',
             f'async def create_{entity_name.lower()}(data: {cls}Create):',
             f'    """Create a new {entity_name}."""',
-            f'    from src.core.executors.database_executor import DatabaseExecutor',
-            f'    db = DatabaseExecutor()',
-            f'    result = crud_service.create("{table}", data.dict())',
-            f'    return {{"success": True, "data": result}}',
+            f'    conn = sqlite3.connect(settings.DATABASE_PATH)',
+            f'    try:',
+            f'        data_dict = data.dict()',
+            f'        columns = list(data_dict.keys())',
+            f'        values = list(data_dict.values())',
+            f'        placeholders = ", ".join(["?" for _ in columns])',
+            f'        col_str = ", ".join(columns)',
+            f'        cursor = conn.execute(',
+            f'            "INSERT INTO {table} (" + col_str + ") VALUES (" + placeholders + ")", values',
+            f'        )',
+            f'        conn.commit()',
+            f'        item_id = cursor.lastrowid',
+            f'    finally:',
+            f'        conn.close()',
+            f'    return {{"success": True, "id": item_id, "entity": "{entity_name}"}}',
             f'',
             f'@app.get("/v1/{table}/{{item_id}}")',
             f'async def get_{entity_name.lower()}(item_id: int):',
             f'    """Get {entity_name} by ID."""',
-            f'    result = crud_service.read("{table}", item_id)',
-            f'    if not result:',
+            f'    conn = sqlite3.connect(settings.DATABASE_PATH)',
+            f'    conn.row_factory = sqlite3.Row',
+            f'    try:',
+            f'        cursor = conn.execute("SELECT * FROM {table} WHERE id = ?", (item_id,))',
+            f'        row = cursor.fetchone()',
+            f'    finally:',
+            f'        conn.close()',
+            f'    if not row:',
             f'        raise HTTPException(status_code=404, detail="{entity_name} not found")',
-            f'    return result',
+            f'    return dict(row)',
             f'',
             f'@app.get("/v1/{table}")',
             f'async def list_{entity_name.lower()}(limit: int = 50, offset: int = 0):',
             f'    """List all {entity_name}s."""',
-            f'    return crud_service.list("{table}", limit, offset)',
+            f'    conn = sqlite3.connect(settings.DATABASE_PATH)',
+            f'    conn.row_factory = sqlite3.Row',
+            f'    try:',
+            f'        cursor = conn.execute("SELECT * FROM {table} LIMIT ? OFFSET ?", (limit, offset))',
+            f'        rows = [dict(r) for r in cursor.fetchall()]',
+            f'    finally:',
+            f'        conn.close()',
+            f'    return {{"data": rows, "count": len(rows)}}',
             f'',
             f'@app.put("/v1/{table}/{{item_id}}")',
             f'async def update_{entity_name.lower()}(item_id: int, data: {cls}Create):',
             f'    """Update {entity_name} by ID."""',
-            f'    result = crud_service.update("{table}", item_id, data.dict(exclude_unset=True))',
-            f'    return {{"success": True, "data": result}}',
+            f'    conn = sqlite3.connect(settings.DATABASE_PATH)',
+            f'    try:',
+            f'        data_dict = data.dict(exclude_unset=True)',
+            f'        set_parts = [str(k) + " = ?" for k in data_dict.keys()]',
+            f'        set_clause = ", ".join(set_parts)',
+            f'        values = list(data_dict.values()) + [item_id]',
+            f'        conn.execute("UPDATE {table} SET " + set_clause + " WHERE id = ?", values)',
+            f'        conn.commit()',
+            f'    finally:',
+            f'        conn.close()',
+            f'    return {{"success": True, "id": item_id, "entity": "{entity_name}"}}',
             f'',
             f'@app.delete("/v1/{table}/{{item_id}}")',
             f'async def delete_{entity_name.lower()}(item_id: int):',
             f'    """Delete {entity_name} by ID."""',
-            f'    crud_service.delete("{table}", item_id)',
-            f'    return {{"success": True}}',
+            f'    conn = sqlite3.connect(settings.DATABASE_PATH)',
+            f'    try:',
+            f'        conn.execute("DELETE FROM {table} WHERE id = ?", (item_id,))',
+            f'        conn.commit()',
+            f'    finally:',
+            f'        conn.close()',
+            f'    return {{"success": True, "id": item_id, "entity": "{entity_name}"}}',
         ]
         return lines
 
